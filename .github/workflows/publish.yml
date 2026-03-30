@@ -1,0 +1,24 @@
+name: Publish to PyPI
+
+on:
+  workflow_run:
+    workflows: ["Bump Version and Tag"]
+    types:
+      - completed
+
+jobs:
+  pypi-publish:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: snok/install-poetry@v1
+      - run: poetry build
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}

@@ -1,0 +1,70 @@
+name: Bump Version and Tag
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "zamp_sdk/**"
+      - "pyproject.toml"
+
+env:
+  ORG: Zampfi
+  TARGET_REPO: zamp-sdk
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  bump-version:
+    name: Bump Version
+    runs-on: ubuntu-latest
+    if: ${{ github.event.head_commit.author.name != 'zampactionbot[bot]' }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Mint GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          owner: ${{ env.ORG }}
+          repositories: ${{ env.TARGET_REPO }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install poetry
+        uses: snok/install-poetry@v1
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          poetry version patch
+          NEW_VERSION=$(poetry version -s)
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "Bumped version to $NEW_VERSION"
+
+      - name: Configure git
+        run: |
+          git config user.name "${{ steps.app-token.outputs.app-slug }}[bot]"
+          git config user.email "224820880+zampactionbot[bot]@users.noreply.github.com"
+
+      - name: Commit version bump
+        run: |
+          git add pyproject.toml
+          git commit -m "Bump version to ${{ steps.bump.outputs.new_version }}"
+          git push
+
+      - name: Create and push tag
+        run: |
+          git tag "${{ steps.bump.outputs.new_version }}"
+          git push origin "${{ steps.bump.outputs.new_version }}"
