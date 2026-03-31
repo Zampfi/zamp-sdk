@@ -15,6 +15,7 @@ class TestHttpClientUrlBuilding:
         client = HttpClient(base_url="https://api.zamp.test/")
         assert client._build_url("/actions") == "https://api.zamp.test/actions"
 
+    # If the input URL is already absolute, it should be returned as-is regardless of the base URL.
     def test_builds_url_without_base(self):
         client = HttpClient()
         assert client._build_url("https://full.url/path") == "https://full.url/path"
