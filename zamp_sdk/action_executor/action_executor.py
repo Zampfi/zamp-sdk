@@ -23,8 +23,9 @@ class ActionExecutor:
     ``ZAMP_AUTH_TOKEN`` environment variables.
     """
 
+    @classmethod
     def _resolve_config(
-        self,
+        cls,
         base_url: str | None,
         auth_token: str | None,
     ) -> SdkConfig:
@@ -34,8 +35,9 @@ class ActionExecutor:
             auth_token=auth_token or os.environ["ZAMP_AUTH_TOKEN"],
         )
 
+    @classmethod
     async def execute(
-        self,
+        cls,
         action_name: str,
         params: dict[str, Any],
         *,
@@ -46,9 +48,9 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        config = self._resolve_config(base_url, auth_token)
+        config = cls._resolve_config(base_url, auth_token)
 
-        return await self._execute_action(
+        return await cls._execute_action(
             action_name=action_name,
             params=params,
             config=config,
@@ -58,8 +60,9 @@ class ActionExecutor:
             action_start_to_close_timeout=action_start_to_close_timeout,
         )
 
+    @classmethod
     async def _execute_action(
-        self,
+        cls,
         action_name: str,
         params: dict[str, Any],
         *,
@@ -89,7 +92,7 @@ class ActionExecutor:
 
         response = await client.post("/actions", data=body)
         action_id = response["id"]
-        result = await self._poll_action_result(client, action_id)
+        result = await cls._poll_action_result(client, action_id)
 
         if return_type and hasattr(return_type, "model_validate"):
             return return_type.model_validate(result)
