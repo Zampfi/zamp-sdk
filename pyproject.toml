@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "zamp-sdk"
-version = "0.0.2"
+version = "0.0.3"
 description = "Customer-facing SDK for executing actions on the Zamp platform"
 authors = ["Zamp Engineering <engineering@zamp.com>"]
 readme = "README.md"
