@@ -11,34 +11,21 @@ need to depend on the Pantheon repository.
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class CodeWorkflowCoreParams(BaseModel):
     """
-    Core parameters for V2 workflow execution supporting both S3 and filesystem sources.
+    Core parameters for workflow execution.
 
-    Either ``zip_file_name`` (for S3) or ``code_file_path`` (for filesystem) must be
-    provided. When both are set, ``code_file_path`` takes precedence.
+    ``code_file_path`` points to a Python script (or directory of scripts) in
+    the org filesystem that the engine will load and execute.
     """
 
-    zip_file_name: Optional[str] = Field(
-        default=None,
-        description="Name of the zip file in S3. Required when using S3 source.",
+    code_file_path: str = Field(
+        ...,
+        description="Path to a Python script or directory in the org filesystem.",
     )
-    code_file_path: Optional[str] = Field(
-        default=None,
-        description=(
-            "Path to a Python script in the org filesystem. "
-            "When provided, code is read from the filesystem instead of S3 zip."
-        ),
-    )
-
-    @model_validator(mode="after")
-    def validate_source(self) -> "CodeWorkflowCoreParams":
-        if not self.zip_file_name and not self.code_file_path:
-            raise ValueError("Either zip_file_name or code_file_path must be provided")
-        return self
 
 
 class BaseWorkflow(ABC):
@@ -74,13 +61,9 @@ class UniversalWorkflowV2Input(BaseModel):
     core_params: CodeWorkflowCoreParams
     workflow_name: str
 
-    @model_validator(mode="after")
-    def validate_code_source(self) -> "UniversalWorkflowV2Input":
-        if not self.code_string and not self.core_params.code_file_path:
-            raise ValueError(
-                "Either code_string or core_params.code_file_path must be provided"
-            )
-        return self
+    # code_file_path is now required on CodeWorkflowCoreParams, so the engine
+    # always has a filesystem source. code_string is optional (pre-fetched code
+    # that skips the filesystem read when provided).
 
 
 class ExecuteDynamicActivityWorkflowInput(BaseModel):
