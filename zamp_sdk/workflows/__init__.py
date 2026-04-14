@@ -1,5 +1,5 @@
+from zamp_sdk.workflows.base_workflow import BaseWorkflow
 from zamp_sdk.workflows.models import (
-    BaseWorkflow,
     CodeWorkflowCoreParams,
     ExecuteDynamicActivityWorkflowInput,
     ExecuteDynamicActivityWorkflowOutput,

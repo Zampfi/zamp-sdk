@@ -1,14 +1,12 @@
 """
-Workflow type stubs exposed to customers.
+Workflow models for the Zamp SDK.
 
-These models mirror the shapes accepted by Pantheon's V2 universal workflow
-engine (`UniversalWorkflowV2`) and dynamic-activity workflow
-(`ExecuteDynamicActivityWorkflow`). Customers subclass `BaseWorkflow` to
-implement workflow logic; the SDK ships these types so customer code does not
-need to depend on the Pantheon repository.
+These models mirror the shapes accepted by the universal workflow engine
+(`UniversalWorkflowV2`) and dynamic-activity workflow
+(`ExecuteDynamicActivityWorkflow`). The SDK ships these types so workflow
+authors do not need to depend on the Pantheon repository.
 """
 
-from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -26,25 +24,6 @@ class CodeWorkflowCoreParams(BaseModel):
         ...,
         description="Path to a directory in the org filesystem containing Python scripts.",
     )
-
-
-class BaseWorkflow(ABC):
-    """
-    Base class for customer-authored workflows executed by Pantheon's V2 universal
-    workflow engine.
-
-    Subclasses must implement ``workflow_impl``. The signature is enforced so that
-    workflow code can be discovered and invoked by name at runtime.
-    """
-
-    @abstractmethod
-    async def workflow_impl(
-        self,
-        workflow_params: Dict[str, Any],
-        core_params: CodeWorkflowCoreParams,
-    ) -> Any:
-        """Main workflow implementation function."""
-        ...
 
 
 class UniversalWorkflowV2Input(BaseModel):
