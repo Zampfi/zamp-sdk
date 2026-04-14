@@ -1,4 +1,4 @@
-"""Base class for customer-authored workflows."""
+"""Base class for workflows executed by the universal workflow engine."""
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict
