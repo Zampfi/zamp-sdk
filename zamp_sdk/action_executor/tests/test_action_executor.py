@@ -12,15 +12,11 @@ _MODULE = "zamp_sdk.action_executor.action_executor"
 class TestExecute:
     """Tests for the public ActionExecutor.execute() entry point."""
 
-    def _executor(self) -> ActionExecutor:
-        return ActionExecutor()
-
     async def test_explicit_config_forwarded(self, base_url, auth_token):
-        executor = self._executor()
-        with patch.object(executor, "_execute_action", new_callable=AsyncMock) as mock:
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock:
             mock.return_value = {"result": "ok"}
 
-            result = await executor.execute(
+            result = await ActionExecutor.execute(
                 "send_invoice",
                 {"id": "inv_1"},
                 base_url=base_url,
@@ -35,14 +31,13 @@ class TestExecute:
             assert config.auth_token == auth_token
 
     async def test_falls_back_to_env_vars(self, base_url, auth_token):
-        executor = self._executor()
         env = {"ZAMP_BASE_URL": base_url, "ZAMP_AUTH_TOKEN": auth_token}
         with (
-            patch.object(executor, "_execute_action", new_callable=AsyncMock) as mock,
+            patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
             patch.dict("os.environ", env, clear=False),
         ):
             mock.return_value = "done"
-            result = await executor.execute("my_action", {"k": "v"})
+            result = await ActionExecutor.execute("my_action", {"k": "v"})
 
             assert result == "done"
             mock.assert_awaited_once()
@@ -51,22 +46,20 @@ class TestExecute:
             assert config.auth_token == auth_token
 
     async def test_raises_when_env_vars_missing(self):
-        executor = self._executor()
         with (
             patch.dict("os.environ", {}, clear=True),
             pytest.raises(KeyError, match="ZAMP_BASE_URL"),
         ):
-            await executor.execute("action", {})
+            await ActionExecutor.execute("action", {})
 
     async def test_forwards_all_params(self, base_url, auth_token):
-        executor = self._executor()
         retry = RetryPolicy.default()
         timeout = timedelta(minutes=5)
 
-        with patch.object(executor, "_execute_action", new_callable=AsyncMock) as mock:
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock:
             mock.return_value = None
 
-            await executor.execute(
+            await ActionExecutor.execute(
                 "action",
                 {"x": 1},
                 base_url=base_url,
@@ -84,11 +77,10 @@ class TestExecute:
             assert call_kwargs["action_start_to_close_timeout"] == timeout
 
     async def test_returns_result(self, base_url, auth_token):
-        executor = self._executor()
-        with patch.object(executor, "_execute_action", new_callable=AsyncMock) as mock:
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock:
             mock.return_value = {"amount": 42}
 
-            result = await executor.execute(
+            result = await ActionExecutor.execute(
                 "calc",
                 {},
                 base_url=base_url,
