@@ -29,5 +29,3 @@ htmlcov/
 Thumbs.db
 
 *.log
-
-poetry.lock
