@@ -52,9 +52,7 @@ class UniversalWorkflowV2Input(BaseModel):
 
     code_string: Optional[str] = Field(
         default=None,
-        description=(
-            "Python code to execute. Required unless core_params.code_file_path is set."
-        ),
+        description=("Python code to execute. Required unless core_params.code_file_path is set."),
     )
     imports_list: Optional[List[str]] = None
     workflow_params: Dict[str, Any]
@@ -74,9 +72,7 @@ class ExecuteDynamicActivityWorkflowInput(BaseModel):
         ...,
         description="Core parameters; code_file_path provides the directory for code fetch",
     )
-    kwargs: Dict[str, Any] = Field(
-        default_factory=dict, description="Keyword arguments to pass to the activity"
-    )
+    kwargs: Dict[str, Any] = Field(default_factory=dict, description="Keyword arguments to pass to the activity")
     timeout_seconds: int = Field(
         default=30,
         description="Maximum execution time allowed for the activity in seconds",
@@ -86,9 +82,5 @@ class ExecuteDynamicActivityWorkflowInput(BaseModel):
 class ExecuteDynamicActivityWorkflowOutput(BaseModel):
     """Output schema for the ``ExecuteDynamicActivityWorkflow`` action."""
 
-    result: Optional[Dict[str, Any]] = Field(
-        None, description="Result of the activity execution if successful"
-    )
-    execution_time: float = Field(
-        ..., description="Time taken for execution in seconds"
-    )
+    result: Optional[Dict[str, Any]] = Field(None, description="Result of the activity execution if successful")
+    execution_time: float = Field(..., description="Time taken for execution in seconds")
