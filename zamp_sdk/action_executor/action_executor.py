@@ -50,10 +50,6 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        # Inside a Modal sandbox the private ``zamp_public_workflow_sdk`` is
-        # not installed, so fall back to the HTTP path. Otherwise the caller
-        # is running in a process that has ActionsHub available (e.g. a
-        # Pantheon/Temporal worker) and we delegate directly.
         if os.environ.get("INSIDE_SANDBOX") == "true":
             config = cls._resolve_config(base_url, auth_token)
             return await cls._execute_action(
@@ -88,13 +84,6 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None,
         action_start_to_close_timeout: timedelta | None,
     ) -> Any:
-        """Delegate to ``ActionsHub.execute_action`` via a lazy import.
-
-        Only reachable when ``INSIDE_SANDBOX`` is not set. The import will
-        raise ``ImportError`` if the private workflow SDK is not installed,
-        which is the expected signal that the caller is in an environment
-        where this path is not supported.
-        """
         from zamp_public_workflow_sdk.actions_hub import ActionsHub
         from zamp_public_workflow_sdk.actions_hub.models.core_models import (
             RetryPolicy as AHRetryPolicy,

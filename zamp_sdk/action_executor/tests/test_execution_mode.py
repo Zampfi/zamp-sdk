@@ -42,9 +42,7 @@ class TestResolveAhExecutionMode:
             assert resolve_ah_execution_mode(ExecutionMode.ASYNC) == "TEMPORAL_ASYNC_SENTINEL"
             assert resolve_ah_execution_mode(ExecutionMode.INLINE) == "INLINE_SENTINEL"
 
-    def test_raises_import_error_when_private_sdk_missing(self):
-        # Simulate the private SDK being absent by overriding ``__import__`` to
-        # raise for the specific module path resolve_ah_execution_mode depends on.
+    def test_raises_import_error_when_dependency_missing(self):
         real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
 
         def fake_import(name, *args, **kwargs):
