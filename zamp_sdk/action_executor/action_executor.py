@@ -50,24 +50,45 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        if os.environ.get("INSIDE_SANDBOX") == "true":
-            config = cls._resolve_config(base_url, auth_token)
-            return await cls._execute_action(
-                action_name=action_name,
-                params=params,
-                config=config,
-                return_type=return_type,
-                summary=summary,
-                action_retry_policy=action_retry_policy,
-                action_start_to_close_timeout=action_start_to_close_timeout,
-            )
-
-        return await cls._execute_via_actions_hub(
+        shared = dict(
             action_name=action_name,
             params=params,
             summary=summary,
             return_type=return_type,
+            action_retry_policy=action_retry_policy,
+            action_start_to_close_timeout=action_start_to_close_timeout,
+        )
+        if os.environ.get("INSIDE_SANDBOX") == "true":
+            return await cls._execute_in_sandbox(
+                base_url=base_url,
+                auth_token=auth_token,
+                **shared,
+            )
+        return await cls._execute_via_actions_hub(
             execution_mode=execution_mode,
+            **shared,
+        )
+
+    @classmethod
+    async def _execute_in_sandbox(
+        cls,
+        action_name: str,
+        params: dict[str, Any],
+        *,
+        base_url: str | None,
+        auth_token: str | None,
+        summary: str | None,
+        return_type: type | None,
+        action_retry_policy: RetryPolicy | None,
+        action_start_to_close_timeout: timedelta | None,
+    ) -> Any:
+        config = cls._resolve_config(base_url, auth_token)
+        return await cls._execute_action(
+            action_name=action_name,
+            params=params,
+            config=config,
+            return_type=return_type,
+            summary=summary,
             action_retry_policy=action_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
         )
