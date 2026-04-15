@@ -203,7 +203,8 @@ class TestExecuteViaActionsHub:
             fake_ah.execute_action.assert_awaited_once()
             kwargs = fake_ah.execute_action.call_args.kwargs
             assert kwargs["execution_mode"] == "TEMPORAL_SYNC_SENTINEL"
-            assert kwargs["inject_zamp_metadata_context"] is True
+            assert "inject_zamp_metadata_context" not in kwargs
+            assert "return_type" not in kwargs
             assert kwargs["action_retry_policy"] is None
             assert kwargs["action_start_to_close_timeout"] == timedelta(seconds=30)
             # Action name and params are passed positionally.
