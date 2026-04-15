@@ -107,10 +107,10 @@ class TestExecuteDispatch:
     async def test_sandbox_env_takes_http_path(self, base_url, auth_token):
         with (
             patch.dict("os.environ", _SANDBOX_ENV, clear=False),
-            patch.object(ActionExecutor, "_execute_in_sandbox", new_callable=AsyncMock) as sbx_mock,
+            patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
-            sbx_mock.return_value = "sandbox-result"
+            api_mock.return_value = "sandbox-result"
 
             result = await ActionExecutor.execute(
                 "action",
@@ -121,16 +121,16 @@ class TestExecuteDispatch:
             )
 
             assert result == "sandbox-result"
-            sbx_mock.assert_awaited_once()
+            api_mock.assert_awaited_once()
             ah_mock.assert_not_called()
-            kwargs = sbx_mock.call_args.kwargs
+            kwargs = api_mock.call_args.kwargs
             assert kwargs["base_url"] == base_url
             assert kwargs["auth_token"] == auth_token
 
     async def test_non_sandbox_uses_actions_hub_path(self, base_url, auth_token):
         with (
             patch.dict("os.environ", {}, clear=True),
-            patch.object(ActionExecutor, "_execute_in_sandbox", new_callable=AsyncMock) as sbx_mock,
+            patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
             ah_mock.return_value = "hub-result"
@@ -143,14 +143,14 @@ class TestExecuteDispatch:
 
             assert result == "hub-result"
             ah_mock.assert_awaited_once()
-            sbx_mock.assert_not_called()
+            api_mock.assert_not_called()
             kwargs = ah_mock.call_args.kwargs
             assert kwargs["execution_mode"] is ExecutionMode.ASYNC
 
     async def test_sandbox_value_other_than_true_uses_actions_hub(self):
         with (
             patch.dict("os.environ", {"INSIDE_SANDBOX": "false"}, clear=True),
-            patch.object(ActionExecutor, "_execute_in_sandbox", new_callable=AsyncMock) as sbx_mock,
+            patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
             ah_mock.return_value = "hub"
@@ -158,7 +158,7 @@ class TestExecuteDispatch:
             await ActionExecutor.execute("action", {})
 
             ah_mock.assert_awaited_once()
-            sbx_mock.assert_not_called()
+            api_mock.assert_not_called()
 
 
 class TestExecuteViaActionsHub:

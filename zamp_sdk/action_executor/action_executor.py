@@ -59,7 +59,7 @@ class ActionExecutor:
             action_start_to_close_timeout=action_start_to_close_timeout,
         )
         if os.environ.get("INSIDE_SANDBOX") == "true":
-            return await cls._execute_in_sandbox(
+            return await cls._execute_via_api(
                 base_url=base_url,
                 auth_token=auth_token,
                 **shared,
@@ -70,7 +70,7 @@ class ActionExecutor:
         )
 
     @classmethod
-    async def _execute_in_sandbox(
+    async def _execute_via_api(
         cls,
         action_name: str,
         params: dict[str, Any],
