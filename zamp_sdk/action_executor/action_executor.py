@@ -123,8 +123,6 @@ class ActionExecutor:
             action_name,
             params,
             summary=summary,
-            return_type=return_type,
-            inject_zamp_metadata_context=True,
             execution_mode=ah_mode,
             action_retry_policy=ah_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
