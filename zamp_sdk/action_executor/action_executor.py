@@ -11,6 +11,7 @@ from zamp_sdk.action_executor.constants import (
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
 )
+from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient
 
@@ -45,18 +46,75 @@ class ActionExecutor:
         auth_token: str | None = None,
         summary: str | None = None,
         return_type: type | None = None,
+        execution_mode: ExecutionMode | None = None,
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        config = cls._resolve_config(base_url, auth_token)
+        # Inside a Modal sandbox the private ``zamp_public_workflow_sdk`` is
+        # not installed, so fall back to the HTTP path. Otherwise the caller
+        # is running in a process that has ActionsHub available (e.g. a
+        # Pantheon/Temporal worker) and we delegate directly.
+        if os.environ.get("INSIDE_SANDBOX") == "true":
+            config = cls._resolve_config(base_url, auth_token)
+            return await cls._execute_action(
+                action_name=action_name,
+                params=params,
+                config=config,
+                return_type=return_type,
+                summary=summary,
+                action_retry_policy=action_retry_policy,
+                action_start_to_close_timeout=action_start_to_close_timeout,
+            )
 
-        return await cls._execute_action(
+        return await cls._execute_via_actions_hub(
             action_name=action_name,
             params=params,
-            config=config,
-            return_type=return_type,
             summary=summary,
+            return_type=return_type,
+            execution_mode=execution_mode,
             action_retry_policy=action_retry_policy,
+            action_start_to_close_timeout=action_start_to_close_timeout,
+        )
+
+    @classmethod
+    async def _execute_via_actions_hub(
+        cls,
+        action_name: str,
+        params: dict[str, Any],
+        *,
+        summary: str | None,
+        return_type: type | None,
+        execution_mode: ExecutionMode | None,
+        action_retry_policy: RetryPolicy | None,
+        action_start_to_close_timeout: timedelta | None,
+    ) -> Any:
+        """Delegate to ``ActionsHub.execute_action`` via a lazy import.
+
+        Only reachable when ``INSIDE_SANDBOX`` is not set. The import will
+        raise ``ImportError`` if the private workflow SDK is not installed,
+        which is the expected signal that the caller is in an environment
+        where this path is not supported.
+        """
+        from zamp_public_workflow_sdk.actions_hub import ActionsHub
+        from zamp_public_workflow_sdk.actions_hub.models.core_models import (
+            RetryPolicy as AHRetryPolicy,
+        )
+
+        ah_mode = resolve_ah_execution_mode(execution_mode)
+        ah_retry_policy = (
+            AHRetryPolicy(**action_retry_policy.model_dump())
+            if action_retry_policy is not None
+            else None
+        )
+
+        return await ActionsHub.execute_action(
+            action_name,
+            params,
+            summary=summary,
+            return_type=return_type,
+            inject_zamp_metadata_context=True,
+            execution_mode=ah_mode,
+            action_retry_policy=ah_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
         )
 
