@@ -50,23 +50,25 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        shared = dict(
+        if os.environ.get("INSIDE_SANDBOX") == "true":
+            return await cls._execute_via_api(
+                action_name=action_name,
+                params=params,
+                base_url=base_url,
+                auth_token=auth_token,
+                summary=summary,
+                return_type=return_type,
+                action_retry_policy=action_retry_policy,
+                action_start_to_close_timeout=action_start_to_close_timeout,
+            )
+        return await cls._execute_via_actions_hub(
             action_name=action_name,
             params=params,
             summary=summary,
             return_type=return_type,
+            execution_mode=execution_mode,
             action_retry_policy=action_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
-        )
-        if os.environ.get("INSIDE_SANDBOX") == "true":
-            return await cls._execute_via_api(
-                base_url=base_url,
-                auth_token=auth_token,
-                **shared,
-            )
-        return await cls._execute_via_actions_hub(
-            execution_mode=execution_mode,
-            **shared,
         )
 
     @classmethod
