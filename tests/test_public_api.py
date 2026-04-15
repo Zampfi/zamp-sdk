@@ -32,6 +32,4 @@ class TestPublicApi:
         assert "BaseActivity" in zamp_sdk.__all__
         assert "BaseWorkflow" in zamp_sdk.__all__
         assert "CodeWorkflowCoreParams" in zamp_sdk.__all__
-        assert "ExecuteDynamicActivityWorkflowInput" in zamp_sdk.__all__
-        assert "ExecuteDynamicActivityWorkflowOutput" in zamp_sdk.__all__
-        assert len(zamp_sdk.__all__) == 9
+        assert len(zamp_sdk.__all__) == 7

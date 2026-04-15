@@ -36,6 +36,10 @@ class ActionExecutor:
             auth_token=auth_token or os.environ["ZAMP_AUTH_TOKEN"],
         )
 
+    @staticmethod
+    def _is_inside_sandbox() -> bool:
+        return os.environ.get("INSIDE_SANDBOX") == "true"
+
     @classmethod
     async def execute(
         cls,
@@ -50,7 +54,7 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        if os.environ.get("INSIDE_SANDBOX") == "true":
+        if cls._is_inside_sandbox():
             return await cls._execute_via_api(
                 action_name=action_name,
                 params=params,

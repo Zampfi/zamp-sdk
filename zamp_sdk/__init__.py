@@ -11,8 +11,6 @@ __all__ = [
     "BaseActivity",
     "BaseWorkflow",
     "CodeWorkflowCoreParams",
-    "ExecuteDynamicActivityWorkflowInput",
-    "ExecuteDynamicActivityWorkflowOutput",
     "ExecutionMode",
     "RetryPolicy",
     "SdkConfig",
