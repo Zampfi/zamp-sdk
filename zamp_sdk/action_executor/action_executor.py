@@ -113,11 +113,7 @@ class ActionExecutor:
         )
 
         ah_mode = resolve_ah_execution_mode(execution_mode)
-        ah_retry_policy = (
-            AHRetryPolicy(**action_retry_policy.model_dump())
-            if action_retry_policy is not None
-            else None
-        )
+        ah_retry_policy = AHRetryPolicy(**action_retry_policy.model_dump()) if action_retry_policy is not None else None
 
         return await ActionsHub.execute_action(
             action_name,
