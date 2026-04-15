@@ -4,16 +4,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
+from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
+_SANDBOX_ENV = {"INSIDE_SANDBOX": "true"}
 
 
 class TestExecute:
-    """Tests for the public ActionExecutor.execute() entry point."""
+    """Tests for the public ActionExecutor.execute() entry point (sandbox path)."""
 
     async def test_explicit_config_forwarded(self, base_url, auth_token):
-        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock:
+        with (
+            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
+        ):
             mock.return_value = {"result": "ok"}
 
             result = await ActionExecutor.execute(
@@ -31,7 +36,7 @@ class TestExecute:
             assert config.auth_token == auth_token
 
     async def test_falls_back_to_env_vars(self, base_url, auth_token):
-        env = {"ZAMP_BASE_URL": base_url, "ZAMP_AUTH_TOKEN": auth_token}
+        env = {"ZAMP_BASE_URL": base_url, "ZAMP_AUTH_TOKEN": auth_token, **_SANDBOX_ENV}
         with (
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
             patch.dict("os.environ", env, clear=False),
@@ -47,7 +52,7 @@ class TestExecute:
 
     async def test_raises_when_env_vars_missing(self):
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _SANDBOX_ENV, clear=True),
             pytest.raises(KeyError, match="ZAMP_BASE_URL"),
         ):
             await ActionExecutor.execute("action", {})
@@ -56,7 +61,10 @@ class TestExecute:
         retry = RetryPolicy.default()
         timeout = timedelta(minutes=5)
 
-        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock:
+        with (
+            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
+        ):
             mock.return_value = None
 
             await ActionExecutor.execute(
@@ -77,7 +85,10 @@ class TestExecute:
             assert call_kwargs["action_start_to_close_timeout"] == timeout
 
     async def test_returns_result(self, base_url, auth_token):
-        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock:
+        with (
+            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
+        ):
             mock.return_value = {"amount": 42}
 
             result = await ActionExecutor.execute(
@@ -88,6 +99,161 @@ class TestExecute:
             )
 
             assert result == {"amount": 42}
+
+
+class TestExecuteDispatch:
+    """Tests for the sandbox-vs-actions-hub dispatch in ActionExecutor.execute()."""
+
+    async def test_sandbox_env_takes_http_path(self, base_url, auth_token):
+        with (
+            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
+            patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
+        ):
+            api_mock.return_value = "sandbox-result"
+
+            result = await ActionExecutor.execute(
+                "action",
+                {},
+                base_url=base_url,
+                auth_token=auth_token,
+                execution_mode=ExecutionMode.SYNC,
+            )
+
+            assert result == "sandbox-result"
+            api_mock.assert_awaited_once()
+            ah_mock.assert_not_called()
+            kwargs = api_mock.call_args.kwargs
+            assert kwargs["base_url"] == base_url
+            assert kwargs["auth_token"] == auth_token
+
+    async def test_non_sandbox_uses_actions_hub_path(self, base_url, auth_token):
+        with (
+            patch.dict("os.environ", {}, clear=True),
+            patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
+            patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
+        ):
+            ah_mock.return_value = "hub-result"
+
+            result = await ActionExecutor.execute(
+                "action",
+                {"p": 1},
+                execution_mode=ExecutionMode.ASYNC,
+            )
+
+            assert result == "hub-result"
+            ah_mock.assert_awaited_once()
+            api_mock.assert_not_called()
+            kwargs = ah_mock.call_args.kwargs
+            assert kwargs["execution_mode"] is ExecutionMode.ASYNC
+
+    async def test_sandbox_value_other_than_true_uses_actions_hub(self):
+        with (
+            patch.dict("os.environ", {"INSIDE_SANDBOX": "false"}, clear=True),
+            patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
+            patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
+        ):
+            ah_mock.return_value = "hub"
+
+            await ActionExecutor.execute("action", {})
+
+            ah_mock.assert_awaited_once()
+            api_mock.assert_not_called()
+
+
+class TestExecuteViaActionsHub:
+    """Tests for the private ActionExecutor._execute_via_actions_hub() method."""
+
+    async def test_delegates_to_actions_hub_with_mapped_mode(self):
+        fake_ah = MagicMock()
+        fake_ah.execute_action = AsyncMock(return_value="ok")
+
+        fake_ah_mode = MagicMock(name="AHExecutionMode")
+        fake_ah_mode.TEMPORAL_SYNC = "TEMPORAL_SYNC_SENTINEL"
+
+        fake_retry_cls = MagicMock(name="AHRetryPolicy")
+
+        with (
+            patch.dict(
+                "sys.modules",
+                {
+                    "zamp_public_workflow_sdk": MagicMock(),
+                    "zamp_public_workflow_sdk.actions_hub": MagicMock(ActionsHub=fake_ah),
+                    "zamp_public_workflow_sdk.actions_hub.constants": MagicMock(
+                        ExecutionMode=fake_ah_mode,
+                    ),
+                    "zamp_public_workflow_sdk.actions_hub.models": MagicMock(),
+                    "zamp_public_workflow_sdk.actions_hub.models.core_models": MagicMock(
+                        RetryPolicy=fake_retry_cls,
+                    ),
+                },
+            ),
+        ):
+            result = await ActionExecutor._execute_via_actions_hub(
+                action_name="send",
+                params={"x": 1},
+                summary="s",
+                return_type=None,
+                execution_mode=ExecutionMode.SYNC,
+                action_retry_policy=None,
+                action_start_to_close_timeout=timedelta(seconds=30),
+            )
+
+            assert result == "ok"
+            fake_ah.execute_action.assert_awaited_once()
+            kwargs = fake_ah.execute_action.call_args.kwargs
+            assert kwargs["execution_mode"] == "TEMPORAL_SYNC_SENTINEL"
+            assert kwargs["inject_zamp_metadata_context"] is True
+            assert kwargs["action_retry_policy"] is None
+            assert kwargs["action_start_to_close_timeout"] == timedelta(seconds=30)
+            # Action name and params are passed positionally.
+            args = fake_ah.execute_action.call_args.args
+            assert args == ("send", {"x": 1})
+
+    async def test_converts_retry_policy_to_ah_retry_policy(self):
+        fake_ah = MagicMock()
+        fake_ah.execute_action = AsyncMock(return_value=None)
+
+        fake_ah_mode = MagicMock()
+        fake_ah_mode.INLINE = "INLINE_SENTINEL"
+
+        constructed: dict = {}
+
+        class FakeAHRetry:
+            def __init__(self, **kwargs):
+                constructed.update(kwargs)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "zamp_public_workflow_sdk": MagicMock(),
+                "zamp_public_workflow_sdk.actions_hub": MagicMock(ActionsHub=fake_ah),
+                "zamp_public_workflow_sdk.actions_hub.constants": MagicMock(
+                    ExecutionMode=fake_ah_mode,
+                ),
+                "zamp_public_workflow_sdk.actions_hub.models": MagicMock(),
+                "zamp_public_workflow_sdk.actions_hub.models.core_models": MagicMock(
+                    RetryPolicy=FakeAHRetry,
+                ),
+            },
+        ):
+            retry = RetryPolicy.default()
+            await ActionExecutor._execute_via_actions_hub(
+                action_name="a",
+                params={},
+                summary=None,
+                return_type=None,
+                execution_mode=ExecutionMode.INLINE,
+                action_retry_policy=retry,
+                action_start_to_close_timeout=None,
+            )
+
+        assert constructed["maximum_attempts"] == retry.maximum_attempts
+        assert constructed["initial_interval"] == retry.initial_interval
+        assert constructed["maximum_interval"] == retry.maximum_interval
+        assert constructed["backoff_coefficient"] == retry.backoff_coefficient
+        forwarded = fake_ah.execute_action.call_args.kwargs["action_retry_policy"]
+        assert isinstance(forwarded, FakeAHRetry)
 
 
 class TestExecuteAction:

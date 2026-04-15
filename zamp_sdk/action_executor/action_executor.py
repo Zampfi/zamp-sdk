@@ -11,6 +11,7 @@ from zamp_sdk.action_executor.constants import (
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
 )
+from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient
 
@@ -35,6 +36,10 @@ class ActionExecutor:
             auth_token=auth_token or os.environ["ZAMP_AUTH_TOKEN"],
         )
 
+    @staticmethod
+    def _is_inside_sandbox() -> bool:
+        return os.environ.get("INSIDE_SANDBOX") == "true"
+
     @classmethod
     async def execute(
         cls,
@@ -45,11 +50,45 @@ class ActionExecutor:
         auth_token: str | None = None,
         summary: str | None = None,
         return_type: type | None = None,
+        execution_mode: ExecutionMode | None = None,
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        config = cls._resolve_config(base_url, auth_token)
+        if cls._is_inside_sandbox():
+            return await cls._execute_via_api(
+                action_name=action_name,
+                params=params,
+                base_url=base_url,
+                auth_token=auth_token,
+                summary=summary,
+                return_type=return_type,
+                action_retry_policy=action_retry_policy,
+                action_start_to_close_timeout=action_start_to_close_timeout,
+            )
+        return await cls._execute_via_actions_hub(
+            action_name=action_name,
+            params=params,
+            summary=summary,
+            return_type=return_type,
+            execution_mode=execution_mode,
+            action_retry_policy=action_retry_policy,
+            action_start_to_close_timeout=action_start_to_close_timeout,
+        )
 
+    @classmethod
+    async def _execute_via_api(
+        cls,
+        action_name: str,
+        params: dict[str, Any],
+        *,
+        base_url: str | None,
+        auth_token: str | None,
+        summary: str | None,
+        return_type: type | None,
+        action_retry_policy: RetryPolicy | None,
+        action_start_to_close_timeout: timedelta | None,
+    ) -> Any:
+        config = cls._resolve_config(base_url, auth_token)
         return await cls._execute_action(
             action_name=action_name,
             params=params,
@@ -57,6 +96,37 @@ class ActionExecutor:
             return_type=return_type,
             summary=summary,
             action_retry_policy=action_retry_policy,
+            action_start_to_close_timeout=action_start_to_close_timeout,
+        )
+
+    @classmethod
+    async def _execute_via_actions_hub(
+        cls,
+        action_name: str,
+        params: dict[str, Any],
+        *,
+        summary: str | None,
+        return_type: type | None,
+        execution_mode: ExecutionMode | None,
+        action_retry_policy: RetryPolicy | None,
+        action_start_to_close_timeout: timedelta | None,
+    ) -> Any:
+        from zamp_public_workflow_sdk.actions_hub import ActionsHub
+        from zamp_public_workflow_sdk.actions_hub.models.core_models import (
+            RetryPolicy as AHRetryPolicy,
+        )
+
+        ah_mode = resolve_ah_execution_mode(execution_mode)
+        ah_retry_policy = AHRetryPolicy(**action_retry_policy.model_dump()) if action_retry_policy is not None else None
+
+        return await ActionsHub.execute_action(
+            action_name,
+            params,
+            summary=summary,
+            return_type=return_type,
+            inject_zamp_metadata_context=True,
+            execution_mode=ah_mode,
+            action_retry_policy=ah_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
         )
 

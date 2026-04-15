@@ -17,11 +17,19 @@ class TestPublicApi:
 
         assert hasattr(SdkConfig, "model_fields")
 
+    def test_execution_mode_importable(self):
+        from zamp_sdk import ExecutionMode
+
+        assert ExecutionMode.SYNC.value == "SYNC"
+        assert ExecutionMode.ASYNC.value == "ASYNC"
+        assert ExecutionMode.INLINE.value == "INLINE"
+
     def test_all_exports(self):
         assert "ActionExecutor" in zamp_sdk.__all__
         assert "RetryPolicy" in zamp_sdk.__all__
         assert "SdkConfig" in zamp_sdk.__all__
+        assert "ExecutionMode" in zamp_sdk.__all__
         assert "BaseActivity" in zamp_sdk.__all__
         assert "BaseWorkflow" in zamp_sdk.__all__
         assert "CodeWorkflowCoreParams" in zamp_sdk.__all__
-        assert len(zamp_sdk.__all__) == 6
+        assert len(zamp_sdk.__all__) == 7
