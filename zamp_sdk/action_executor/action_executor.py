@@ -117,8 +117,6 @@ class ActionExecutor:
         )
 
         ah_mode = resolve_ah_execution_mode(execution_mode)
-        # The SDK owns its own retry default (short, fail-fast) so callers that
-        # pass nothing get it instead of inheriting ActionsHub's longer default.
         effective_retry_policy = action_retry_policy if action_retry_policy is not None else RetryPolicy.default()
         ah_retry_policy = AHRetryPolicy(**effective_retry_policy.model_dump())
 
