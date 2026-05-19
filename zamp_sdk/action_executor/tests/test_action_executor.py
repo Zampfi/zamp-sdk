@@ -171,7 +171,11 @@ class TestExecuteViaActionsHub:
         fake_ah_mode = MagicMock(name="AHExecutionMode")
         fake_ah_mode.TEMPORAL_SYNC = "TEMPORAL_SYNC_SENTINEL"
 
-        fake_retry_cls = MagicMock(name="AHRetryPolicy")
+        constructed: dict = {}
+
+        class FakeAHRetry:
+            def __init__(self, **kwargs):
+                constructed.update(kwargs)
 
         with (
             patch.dict(
@@ -184,7 +188,7 @@ class TestExecuteViaActionsHub:
                     ),
                     "zamp_public_workflow_sdk.actions_hub.models": MagicMock(),
                     "zamp_public_workflow_sdk.actions_hub.models.core_models": MagicMock(
-                        RetryPolicy=fake_retry_cls,
+                        RetryPolicy=FakeAHRetry,
                     ),
                 },
             ),
@@ -205,7 +209,11 @@ class TestExecuteViaActionsHub:
             assert kwargs["execution_mode"] == "TEMPORAL_SYNC_SENTINEL"
             assert "inject_zamp_metadata_context" not in kwargs
             assert "return_type" not in kwargs
-            assert kwargs["action_retry_policy"] is None
+            # When the caller passes no policy, the SDK's own default flows through
+            # instead of None — guarantees we don't inherit ActionsHub's longer default.
+            assert isinstance(kwargs["action_retry_policy"], FakeAHRetry)
+            sdk_default = RetryPolicy.default()
+            assert constructed["maximum_attempts"] == sdk_default.maximum_attempts
             assert kwargs["action_start_to_close_timeout"] == timedelta(seconds=30)
             # Action name and params are passed positionally.
             args = fake_ah.execute_action.call_args.args
@@ -287,12 +295,35 @@ class TestExecuteAction:
             assert body["params"] == {"to": "a@b.com"}
             assert body["is_external_action"] is True
 
+    async def test_sends_sdk_default_retry_policy_when_none_passed(self):
+        # When the caller does not supply a retry policy, the SDK must inject its
+        # own (short) default so the server doesn't apply its longer fallback.
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-default"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client):
+            await self._executor()._execute_action(
+                action_name="fallback",
+                params={},
+                config=self._make_config(),
+            )
+
+            body = mock_client.post.call_args.kwargs["data"]
+            sdk_default = RetryPolicy.default()
+            assert body["retry_policy"]["maximum_attempts"] == sdk_default.maximum_attempts
+
     async def test_includes_optional_fields(self):
         mock_client = AsyncMock()
         mock_client.post.return_value = {"id": "action-456"}
         mock_client.get.return_value = {"status": "COMPLETED", "result": None}
 
-        retry = RetryPolicy.default()
+        retry = RetryPolicy(
+            initial_interval=timedelta(seconds=1),
+            maximum_attempts=7,
+            maximum_interval=timedelta(minutes=2),
+            backoff_coefficient=2.0,
+        )
 
         with patch(f"{_MODULE}.HttpClient", return_value=mock_client):
             await self._executor()._execute_action(
@@ -306,7 +337,8 @@ class TestExecuteAction:
 
             body = mock_client.post.call_args.kwargs["data"]
             assert body["summary"] == "Test summary"
-            assert "retry_policy" in body
+            # Caller-supplied policy is forwarded verbatim, not overridden by the SDK default.
+            assert body["retry_policy"]["maximum_attempts"] == 7
             assert body["start_to_close_timeout_seconds"] == 600.0
 
     async def test_polls_after_post(self):

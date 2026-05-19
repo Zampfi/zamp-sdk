@@ -81,7 +81,7 @@ from zamp_sdk import RetryPolicy
 
 policy = RetryPolicy(
     initial_interval=timedelta(seconds=30),
-    maximum_attempts=11,
+    maximum_attempts=3,
     maximum_interval=timedelta(minutes=15),
     backoff_coefficient=1.5,
 )
@@ -90,10 +90,15 @@ policy = RetryPolicy(
 policy = RetryPolicy.default()
 ```
 
+When `action_retry_policy` is omitted from `ActionExecutor.execute()`, the SDK
+applies `RetryPolicy.default()` automatically — actions fail fast (2 retries +
+1 initial attempt) so script failures surface quickly. Pass an explicit policy
+to opt into longer retries when needed.
+
 | Field | Type | Default (via `.default()`) |
 |-------|------|---------------------------|
 | `initial_interval` | `timedelta` | 30 seconds |
-| `maximum_attempts` | `int` | 11 |
+| `maximum_attempts` | `int` | 3 |
 | `maximum_interval` | `timedelta` | 15 minutes |
 | `backoff_coefficient` | `float` | 1.5 |
 

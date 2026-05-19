@@ -117,7 +117,8 @@ class ActionExecutor:
         )
 
         ah_mode = resolve_ah_execution_mode(execution_mode)
-        ah_retry_policy = AHRetryPolicy(**action_retry_policy.model_dump()) if action_retry_policy is not None else None
+        effective_retry_policy = action_retry_policy if action_retry_policy is not None else RetryPolicy.default()
+        ah_retry_policy = AHRetryPolicy(**effective_retry_policy.model_dump())
 
         return await ActionsHub.execute_action(
             action_name,
@@ -146,15 +147,18 @@ class ActionExecutor:
             default_headers={"Authorization": f"Bearer {config.auth_token}"},
         )
 
+        # Always send the SDK's retry policy so the server doesn't fall back to
+        # its own (longer) default; callers can still override per-call.
+        effective_retry_policy = action_retry_policy if action_retry_policy is not None else RetryPolicy.default()
+
         body: dict = {
             "action_name": action_name,
             "params": params,
             "is_external_action": True,
+            "retry_policy": effective_retry_policy.model_dump(mode="json"),
         }
         if summary is not None:
             body["summary"] = summary
-        if action_retry_policy is not None:
-            body["retry_policy"] = action_retry_policy.model_dump(mode="json")
         if action_start_to_close_timeout is not None:
             body["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
 

@@ -3,7 +3,8 @@ from datetime import timedelta
 from pydantic import BaseModel
 
 DEFAULT_RETRY_INITIAL_INTERVAL = timedelta(seconds=30)
-DEFAULT_RETRY_MAXIMUM_ATTEMPTS = 11
+# 2 retries + 1 initial attempt. Kept small so script/CLI failures surface fast.
+DEFAULT_RETRY_MAXIMUM_ATTEMPTS = 3
 DEFAULT_RETRY_MAXIMUM_INTERVAL = timedelta(minutes=15)
 DEFAULT_RETRY_BACKOFF_COEFFICIENT = 1.5
 
