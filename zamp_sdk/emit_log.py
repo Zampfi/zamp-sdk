@@ -77,24 +77,38 @@ def _resolve_context() -> dict[str, Any]:
 
 
 async def emit_log(
-    message: str,
+    message: Optional[str] = None,
     *,
     level: LogLevel = "info",
     title: Optional[str] = None,
+    tool_name: Optional[str] = None,
+    tool_input: Optional[dict[str, Any]] = None,
+    tool_output: Optional[str] = None,
+    is_error: bool = False,
     target: LogTarget = "current",
     task_title: Optional[str] = None,
     metadata: Optional[dict[str, Any]] = None,
     base_url: Optional[str] = None,
     auth_token: Optional[str] = None,
 ) -> EmitLogResult:
-    """Emit a log line to the current agent context (or a new task).
+    """Emit a log entry to the current agent context (or a new task).
+
+    Two block kinds:
+    - **markdown** (default): pass ``message`` (+ optional ``level`` / ``title``).
+    - **tool_call**: pass ``tool_name`` (+ optional ``tool_input`` / ``tool_output`` /
+      ``is_error``) to render a proper tool-call block — e.g. when a script
+      invokes a tool via the SDK and wants it shown like an agent tool call.
 
     Blocking: waits for the platform action to complete before returning.
 
     Args:
-        message: The log content to show the user.
+        message: Markdown log content (for the markdown block kind).
         level: Severity — ``debug`` | ``info`` | ``warning`` | ``error``.
         title: Optional short heading to group/label this entry.
+        tool_name: Tool name — when set, emits a tool-call block instead of markdown.
+        tool_input: Tool input arguments (dict) for the tool-call block.
+        tool_output: Tool result/output content for the tool-call block.
+        is_error: Mark the tool result as an error.
         target: ``"current"`` attaches the log to the conversation/task the
             command is running under; ``"new_task"`` creates a dedicated task
             (subtask of the current context) and routes the log there.
@@ -107,11 +121,21 @@ async def emit_log(
         :class:`EmitLogResult`. ``ok=False`` on any failure — never raises.
     """
     params: dict[str, Any] = {
-        "content": message,
         "level": level,
         "target": target,
         "context": _resolve_context(),
     }
+    if tool_name is not None:
+        params["block_type"] = "tool_call"
+        params["tool_name"] = tool_name
+        if tool_input is not None:
+            params["tool_input"] = tool_input
+        if tool_output is not None:
+            params["tool_output"] = tool_output
+        params["is_error"] = is_error
+    else:
+        params["block_type"] = "markdown"
+        params["content"] = message
     if title is not None:
         params["title"] = title
     if task_title is not None:
