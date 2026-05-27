@@ -24,6 +24,12 @@ class TestPublicApi:
         assert ExecutionMode.ASYNC.value == "ASYNC"
         assert ExecutionMode.INLINE.value == "INLINE"
 
+    def test_emit_log_importable(self):
+        from zamp_sdk import EmitLogResult, emit_log
+
+        assert callable(emit_log)
+        assert hasattr(EmitLogResult, "model_fields")
+
     def test_all_exports(self):
         assert "ActionExecutor" in zamp_sdk.__all__
         assert "RetryPolicy" in zamp_sdk.__all__
@@ -32,4 +38,6 @@ class TestPublicApi:
         assert "BaseActivity" in zamp_sdk.__all__
         assert "BaseWorkflow" in zamp_sdk.__all__
         assert "CodeWorkflowCoreParams" in zamp_sdk.__all__
-        assert len(zamp_sdk.__all__) == 7
+        assert "emit_log" in zamp_sdk.__all__
+        assert "EmitLogResult" in zamp_sdk.__all__
+        assert len(zamp_sdk.__all__) == 9
