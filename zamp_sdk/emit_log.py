@@ -171,9 +171,28 @@ async def emit_tool_use(
     return tool_id
 
 
+def _stringify_tool_result(value: Any) -> str:
+    """Mirror pantheon's ``ToolResult.to_content_string`` semantics.
+
+    Pretty-prints dicts / lists / Pydantic models as indented JSON so an
+    emitted ``tool_result`` log looks byte-for-byte identical to what the
+    harness would have produced for a direct LLM tool call. Strings pass
+    through unchanged. ``None`` becomes a friendly success marker.
+    """
+    if value is None:
+        return "Success (no output)"
+    if isinstance(value, str):
+        return value
+    if isinstance(value, BaseModel):
+        return json.dumps(value.model_dump(), indent=2, default=str)
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, indent=2, default=str)
+    return str(value)
+
+
 async def emit_tool_result(
     id: str,
-    content: str,
+    content: Any,
     *,
     name: Optional[str] = None,
 ) -> EmitLogResult:
@@ -182,11 +201,13 @@ async def emit_tool_result(
     Args:
         id: The id returned by :func:`emit_tool_use` (same string — that's what
             pairs the two blocks on the FE).
-        content: Result summary to show under the tool block. Short is better;
-            this is a log, not the full payload.
+        content: Result to show under the tool block. Pass the raw value you
+            got back from your action call — dicts and Pydantic models are
+            auto-pretty-printed as JSON to match how pantheon renders real
+            tool results. Strings pass through unchanged.
         name: Optional tool name (recommended for FE rendering parity with
             real tool results).
     """
     return await emit_log(
-        ToolResultContentBlock(id=id, name=name, content=content)
+        ToolResultContentBlock(id=id, name=name, content=_stringify_tool_result(content))
     )
