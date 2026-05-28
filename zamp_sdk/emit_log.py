@@ -1,39 +1,40 @@
-"""Stream content blocks from a sandboxed script back to the Zamp platform so
-they become visible in the agent's live message in real time.
+"""Stream a content block from a sandboxed script back to the Zamp platform so
+it becomes visible in the agent's live message in real time.
 
 ``emit_log`` accepts the same :data:`ContentBlock` shape the platform uses
-everywhere else — no special "log block" type.
+everywhere else — no special "log block" type. Emit one block per call; for a
+tool-call log emit the ``tool_use`` first (the FE will show it running), do
+the work, then emit the matching ``tool_result`` (sharing the same ``id``).
 
-Example — markdown progress::
+Example — text progress::
 
-    from zamp_sdk import emit_log, MarkdownContentBlock
+    from zamp_sdk import emit_log, TextContentBlock
 
-    await emit_log([MarkdownContentBlock(content="**Progress** — fetched 30/120")])
+    await emit_log(TextContentBlock(content="Fetched 30/120 events"))
 
-Example — a tool-call log (paired ``tool_use`` + ``tool_result`` sharing one id)::
+Example — a tool-call log (use first, work, result later)::
 
     import json, uuid
     from zamp_sdk import emit_log, ToolUseContentBlock, ToolResultContentBlock
 
     tcid = str(uuid.uuid4())
-    await emit_log([
-        ToolUseContentBlock(
-            id=tcid,
-            name="GOOGLE_CALENDAR_LIST_EVENTS",
-            display_title="Fetching calendar events (last 60 days)",
-            input_json=json.dumps({"time_min": ..., "time_max": ...}),
-        ),
-        ToolResultContentBlock(
-            id=tcid, name="GOOGLE_CALENDAR_LIST_EVENTS",
-            content="Fetched 87 events",
-        ),
-    ])
+    await emit_log(ToolUseContentBlock(
+        id=tcid,
+        name="GOOGLE_CALENDAR_LIST_EVENTS",
+        display_title="Fetching calendar events (last 60 days)",
+        input_json=json.dumps({"time_min": ..., "time_max": ...}),
+    ))
+    # ... do the actual work ...
+    await emit_log(ToolResultContentBlock(
+        id=tcid, name="GOOGLE_CALENDAR_LIST_EVENTS",
+        content="Fetched 87 events",
+    ))
 """
 
 from __future__ import annotations
 
 import os
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 import structlog
 from pydantic import BaseModel
@@ -73,22 +74,25 @@ def _resolve_context() -> dict[str, Any]:
     return {k: v for k, v in context.items() if v}
 
 
-async def emit_log(blocks: List[ContentBlock]) -> EmitLogResult:
-    """Emit one or more content blocks to the current agent context.
+async def emit_log(block: ContentBlock) -> EmitLogResult:
+    """Emit a content block to the current agent context.
 
     Args:
-        blocks: List of :data:`ContentBlock` to append in order. A paired
-            ``tool_use`` + ``tool_result`` must share an ``id`` and be passed
-            together so they land contiguously.
+        block: A :data:`ContentBlock` to append. For a tool-call log emit the
+            ``tool_use`` first, do the work, then emit the matching
+            ``tool_result`` sharing the same ``id``.
 
     Returns:
         :class:`EmitLogResult`. Never raises.
     """
-    if not blocks:
-        return EmitLogResult(ok=False, error="emit_log: blocks list is empty")
+    # Auto-stamp parent_block_id from the running tool's id so the FE attributes
+    # this block to the correct parent even when parallel tool calls interleave.
+    # Caller can override by setting it explicitly on the block.
+    if block.parent_block_id is None:
+        block.parent_block_id = os.environ.get(ENV_TOOL_CALL_ID)
 
     params: dict[str, Any] = {
-        "blocks": [b.model_dump(mode="json") for b in blocks],
+        "block": block.model_dump(mode="json"),
         "context": _resolve_context(),
     }
 

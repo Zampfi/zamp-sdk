@@ -8,10 +8,10 @@ the SDK, we replicate the relevant subset here and use the **same** shape
 end-to-end: a script emits ``ContentBlock`` instances and the platform appends
 them to the running agent's message as-is.
 
-The four block kinds replicated here are the ones a sandboxed script can
-meaningfully produce — text, markdown, tool_use, tool_result. The remaining
-platform-side members (thinking, task, agent, trigger, …) are server-generated
-and intentionally not exposed in the SDK.
+The three block kinds replicated here are the ones a sandboxed script can
+meaningfully produce — text, tool_use, tool_result. The remaining platform-side
+members (markdown, thinking, task, agent, trigger, …) are server-generated and
+intentionally not exposed in the SDK.
 
 If pantheon adds fields to these models, mirror them here.
 """
@@ -28,7 +28,6 @@ class ContentBlockType(str, Enum):
     """Subset of pantheon's ContentBlockType — the kinds emit_log accepts."""
 
     TEXT = "text"
-    MARKDOWN = "markdown"
     TOOL_USE = "tool_use"
     TOOL_RESULT = "tool_result"
 
@@ -46,20 +45,21 @@ class ContentBlockBase(BaseModel):
     is_complete: bool = Field(default=True, description="Whether block is complete")
     start_timestamp: Optional[str] = Field(default=None, description="Block start time")
     stop_timestamp: Optional[str] = Field(default=None, description="Block stop time")
+    parent_block_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "``id`` of the parent block this block belongs to (today, always a "
+            "tool_use block). emit_log auto-stamps the running sandbox tool's id, "
+            "so the FE groups emitted blocks under the correct tool even when "
+            "multiple parallel tool calls are active. Leave unset and emit_log will "
+            "fill it in from ZAMP_TOOL_CALL_ID."
+        ),
+    )
 
 
 class TextContentBlock(ContentBlockBase):
     type: Literal[ContentBlockType.TEXT] = ContentBlockType.TEXT
     content: Optional[str] = Field(default=None, description="Text content")
-
-
-class MarkdownContentBlock(ContentBlockBase):
-    """Markdown-rendered text. Same shape as TextContentBlock; the distinct
-    ``type`` lets the FE/consumers decide whether to apply markdown rendering
-    (currently identical to TEXT in the FE, but kept distinct semantically)."""
-
-    type: Literal[ContentBlockType.MARKDOWN] = ContentBlockType.MARKDOWN
-    content: Optional[str] = Field(default=None, description="Markdown content")
 
 
 class ToolUseContentBlock(ContentBlockBase):
@@ -103,7 +103,6 @@ class ToolResultContentBlock(ContentBlockBase):
 ContentBlock = Annotated[
     Union[
         TextContentBlock,
-        MarkdownContentBlock,
         ToolUseContentBlock,
         ToolResultContentBlock,
     ],
