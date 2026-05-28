@@ -33,14 +33,21 @@ Example — a tool-call log (use first, work, result later)::
 
 from __future__ import annotations
 
+import json
 import os
+import uuid
 from typing import Any, Optional
 
 import structlog
 from pydantic import BaseModel
 
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.content_blocks import ContentBlock
+from zamp_sdk.content_blocks import (
+    ContentBlock,
+    TextContentBlock,
+    ToolResultContentBlock,
+    ToolUseContentBlock,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -52,6 +59,14 @@ ENV_STREAMING_ID = "ZAMP_STREAMING_ID"
 ENV_MESSAGE_ID = "ZAMP_MESSAGE_ID"
 ENV_TOOL_CALL_ID = "ZAMP_TOOL_CALL_ID"
 ENV_RUN_ID = "ZAMP_RUN_ID"
+
+EMIT_ID_PREFIX = "emit_"
+
+
+def _new_emit_id() -> str:
+    """Mint a script-emitted block id, prefixed so it can't be mistaken for an
+    Anthropic-issued ``toolu_...`` id."""
+    return f"{EMIT_ID_PREFIX}{uuid.uuid4().hex}"
 
 
 class EmitLogResult(BaseModel):
@@ -106,3 +121,72 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
     except Exception as exc:  # noqa: BLE001
         logger.warning("emit_log failed", error=str(exc))
         return EmitLogResult(ok=False, error=str(exc))
+
+
+async def emit_text(content: str) -> EmitLogResult:
+    """Emit a progress/milestone text log into the running agent message.
+
+    Thin wrapper around :func:`emit_log` for the most common case. Returns the
+    same :class:`EmitLogResult`; never raises.
+    """
+    return await emit_log(TextContentBlock(content=content))
+
+
+async def emit_tool_use(
+    name: str,
+    *,
+    display_title: Optional[str] = None,
+    input: Optional[dict] = None,
+    id: Optional[str] = None,
+) -> str:
+    """Emit a ``tool_use`` log block (mirrors an action call as "running").
+
+    Pair with :func:`emit_tool_result` using the returned id. Use this whenever
+    your script is about to do work the user should see in the live message.
+
+    Args:
+        name: Tool/action name (e.g. ``"GOOGLE_CALENDAR_LIST_EVENTS"``).
+        display_title: Short human-readable summary the FE shows as the header
+            (e.g. ``"Fetching events Mon → Sun"``). Optional.
+        input: Tool input as a plain Python dict — the helper JSON-encodes it.
+            Optional.
+        id: Override the auto-minted id. Leave unset to get a fresh
+            ``emit_<hex>`` id back.
+
+    Returns:
+        The block ``id``. Pass it to :func:`emit_tool_result` to complete the
+        pair. Returned even on emit_log failure, so the caller can still pair
+        the result; the failure is logged but not raised.
+    """
+    tool_id = id or _new_emit_id()
+    input_json = json.dumps(input) if input is not None else None
+    await emit_log(
+        ToolUseContentBlock(
+            id=tool_id,
+            name=name,
+            display_title=display_title,
+            input_json=input_json,
+        )
+    )
+    return tool_id
+
+
+async def emit_tool_result(
+    id: str,
+    content: str,
+    *,
+    name: Optional[str] = None,
+) -> EmitLogResult:
+    """Emit a ``tool_result`` log block paired with a prior :func:`emit_tool_use`.
+
+    Args:
+        id: The id returned by :func:`emit_tool_use` (same string — that's what
+            pairs the two blocks on the FE).
+        content: Result summary to show under the tool block. Short is better;
+            this is a log, not the full payload.
+        name: Optional tool name (recommended for FE rendering parity with
+            real tool results).
+    """
+    return await emit_log(
+        ToolResultContentBlock(id=id, name=name, content=content)
+    )

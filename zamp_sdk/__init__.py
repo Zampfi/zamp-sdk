@@ -7,7 +7,13 @@ from zamp_sdk.content_blocks import (
     ToolResultContentBlock,
     ToolUseContentBlock,
 )
-from zamp_sdk.emit_log import EmitLogResult, emit_log
+from zamp_sdk.emit_log import (
+    EmitLogResult,
+    emit_log,
+    emit_text,
+    emit_tool_result,
+    emit_tool_use,
+)
 from zamp_sdk.workflows import (
     BaseActivity,
     BaseWorkflow,
@@ -29,4 +35,7 @@ __all__ = [
     "ToolResultContentBlock",
     "ToolUseContentBlock",
     "emit_log",
+    "emit_text",
+    "emit_tool_result",
+    "emit_tool_use",
 ]
