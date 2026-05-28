@@ -25,12 +25,19 @@ class TestPublicApi:
         assert ExecutionMode.INLINE.value == "INLINE"
 
     def test_emit_log_importable(self):
-        from zamp_sdk import EmitLogResult, MarkdownLog, ToolCallLog, emit_log
+        from zamp_sdk import (
+            EmitLogResult,
+            TextContentBlock,
+            ToolResultContentBlock,
+            ToolUseContentBlock,
+            emit_log,
+        )
 
         assert callable(emit_log)
         assert hasattr(EmitLogResult, "model_fields")
-        assert MarkdownLog(content="hi").type == "markdown"
-        assert ToolCallLog(tool_name="x").type == "tool_call"
+        assert TextContentBlock(content="hi").type.value == "text"
+        assert ToolUseContentBlock(name="x").type.value == "tool_use"
+        assert ToolResultContentBlock(content="ok").type.value == "tool_result"
 
     def test_all_exports(self):
         assert "ActionExecutor" in zamp_sdk.__all__
@@ -42,7 +49,10 @@ class TestPublicApi:
         assert "CodeWorkflowCoreParams" in zamp_sdk.__all__
         assert "emit_log" in zamp_sdk.__all__
         assert "EmitLogResult" in zamp_sdk.__all__
-        assert "MarkdownLog" in zamp_sdk.__all__
-        assert "ToolCallLog" in zamp_sdk.__all__
-        assert "LogBlock" in zamp_sdk.__all__
-        assert len(zamp_sdk.__all__) == 12
+        assert "TextContentBlock" in zamp_sdk.__all__
+        assert "MarkdownContentBlock" in zamp_sdk.__all__
+        assert "ToolUseContentBlock" in zamp_sdk.__all__
+        assert "ToolResultContentBlock" in zamp_sdk.__all__
+        assert "ContentBlock" in zamp_sdk.__all__
+        assert "ContentBlockType" in zamp_sdk.__all__
+        assert len(zamp_sdk.__all__) == 15
