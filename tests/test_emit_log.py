@@ -85,6 +85,7 @@ class TestEmitLogToolCall:
             result = await emit_log(
                 ToolCallLog(
                     tool_name="GMAIL_SEND",
+                    display_title="Sending daily report email",
                     tool_input={"to": "a@b.com"},
                     tool_output="sent",
                     is_error=False,
@@ -95,6 +96,7 @@ class TestEmitLogToolCall:
         block = execute.call_args.args[1]["block"]
         assert block["type"] == "tool_call"
         assert block["tool_name"] == "GMAIL_SEND"
+        assert block["display_title"] == "Sending daily report email"
         assert block["tool_input"] == {"to": "a@b.com"}
         assert block["tool_output"] == "sent"
         assert block["is_error"] is False

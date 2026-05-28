@@ -81,6 +81,14 @@ class ToolCallLog(BaseModel):
 
     type: Literal["tool_call"] = "tool_call"
     tool_name: str = Field(description="Tool name")
+    display_title: Optional[str] = Field(
+        default=None,
+        description=(
+            "Short human-readable summary of this call (e.g. 'Fetching invoice "
+            "INV-2024-001'). When set, the FE shows this as the tool-call header "
+            "instead of the bare tool name."
+        ),
+    )
     tool_input: Optional[dict[str, Any]] = Field(
         default=None, description="Tool input arguments"
     )
