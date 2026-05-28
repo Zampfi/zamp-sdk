@@ -1,6 +1,12 @@
 from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
-from zamp_sdk.emit_log import EmitLogResult, emit_log
+from zamp_sdk.emit_log import (
+    EmitLogResult,
+    LogBlock,
+    MarkdownLog,
+    ToolCallLog,
+    emit_log,
+)
 from zamp_sdk.workflows import (
     BaseActivity,
     BaseWorkflow,
@@ -14,7 +20,10 @@ __all__ = [
     "CodeWorkflowCoreParams",
     "EmitLogResult",
     "ExecutionMode",
+    "LogBlock",
+    "MarkdownLog",
     "RetryPolicy",
     "SdkConfig",
+    "ToolCallLog",
     "emit_log",
 ]

@@ -1,4 +1,4 @@
-"""``emit_log`` — stream a log line from inside a sandboxed script back to the
+"""``emit_log`` — stream a log entry from inside a sandboxed script back to the
 Zamp platform so it becomes visible to the user in real time.
 
 Anything a long-running ``sandbox_user_exec`` command does is otherwise opaque
@@ -6,6 +6,17 @@ until the command finishes. Calling :func:`emit_log` from inside the script
 pushes a log entry to the **current** agent context (the conversation or task
 the command is running under), or optionally to a **new task** created for the
 run.
+
+The entry is a single *log block*. Block kinds are modelled as a discriminated
+union (:data:`LogBlock`) — pass the one you want:
+
+- :class:`MarkdownLog` — a markdown line (optional ``title`` / ``level``).
+- :class:`ToolCallLog` — renders a proper tool-call block (name + input +
+  output), e.g. when a script invokes a tool via the SDK and wants it shown
+  like an agent tool call.
+
+Adding a new block kind means adding a union member — never new ``emit_log``
+arguments.
 
 Design notes
 ------------
@@ -15,7 +26,7 @@ Design notes
   mode can be added later if per-call latency becomes a problem in hot loops.
 - Context (which conversation/task to attach to) is resolved from environment
   variables the platform injects into the sandbox before each
-  ``sandbox_user_exec`` call, so callers normally pass only ``message``.
+  ``sandbox_user_exec`` call, so callers normally pass only the block.
 - The platform-side ``emit_log`` action owns the heavy lifting (building the
   content block, publishing it over SSE, and persisting it). This keeps the SDK
   thin and free of platform-specific content-block shapes.
@@ -24,10 +35,10 @@ Design notes
 from __future__ import annotations
 
 import os
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional, Union
 
 import structlog
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from zamp_sdk.action_executor import ActionExecutor
 
@@ -48,6 +59,40 @@ ENV_RUN_ID = "ZAMP_RUN_ID"
 
 LogLevel = Literal["debug", "info", "warning", "error"]
 LogTarget = Literal["current", "new_task"]
+
+
+class MarkdownLog(BaseModel):
+    """A markdown log line — the default block kind."""
+
+    type: Literal["markdown"] = "markdown"
+    content: str = Field(description="Markdown log content")
+    title: Optional[str] = Field(
+        default=None, description="Optional short heading to label this entry"
+    )
+    level: LogLevel = Field(default="info", description="Severity")
+
+
+class ToolCallLog(BaseModel):
+    """A tool-call log block — renders like an agent tool call.
+
+    Use when a script invokes a tool/action and wants it surfaced to the user
+    exactly as a direct tool call would appear (name + input + output).
+    """
+
+    type: Literal["tool_call"] = "tool_call"
+    tool_name: str = Field(description="Tool name")
+    tool_input: Optional[dict[str, Any]] = Field(
+        default=None, description="Tool input arguments"
+    )
+    tool_output: Optional[str] = Field(
+        default=None, description="Tool result/output content"
+    )
+    is_error: bool = Field(default=False, description="Mark the tool result as an error")
+
+
+# Discriminated union of log block kinds. Extend by adding a member, not by
+# adding arguments to ``emit_log``.
+LogBlock = Annotated[Union[MarkdownLog, ToolCallLog], Field(discriminator="type")]
 
 
 class EmitLogResult(BaseModel):
@@ -77,38 +122,21 @@ def _resolve_context() -> dict[str, Any]:
 
 
 async def emit_log(
-    message: Optional[str] = None,
+    block: LogBlock,
     *,
-    level: LogLevel = "info",
-    title: Optional[str] = None,
-    tool_name: Optional[str] = None,
-    tool_input: Optional[dict[str, Any]] = None,
-    tool_output: Optional[str] = None,
-    is_error: bool = False,
     target: LogTarget = "current",
     task_title: Optional[str] = None,
     metadata: Optional[dict[str, Any]] = None,
     base_url: Optional[str] = None,
     auth_token: Optional[str] = None,
 ) -> EmitLogResult:
-    """Emit a log entry to the current agent context (or a new task).
-
-    Two block kinds:
-    - **markdown** (default): pass ``message`` (+ optional ``level`` / ``title``).
-    - **tool_call**: pass ``tool_name`` (+ optional ``tool_input`` / ``tool_output`` /
-      ``is_error``) to render a proper tool-call block — e.g. when a script
-      invokes a tool via the SDK and wants it shown like an agent tool call.
+    """Emit a single log block to the current agent context (or a new task).
 
     Blocking: waits for the platform action to complete before returning.
 
     Args:
-        message: Markdown log content (for the markdown block kind).
-        level: Severity — ``debug`` | ``info`` | ``warning`` | ``error``.
-        title: Optional short heading to group/label this entry.
-        tool_name: Tool name — when set, emits a tool-call block instead of markdown.
-        tool_input: Tool input arguments (dict) for the tool-call block.
-        tool_output: Tool result/output content for the tool-call block.
-        is_error: Mark the tool result as an error.
+        block: The log block to emit — a :class:`MarkdownLog` or
+            :class:`ToolCallLog` (the :data:`LogBlock` union).
         target: ``"current"`` attaches the log to the conversation/task the
             command is running under; ``"new_task"`` creates a dedicated task
             (subtask of the current context) and routes the log there.
@@ -121,23 +149,10 @@ async def emit_log(
         :class:`EmitLogResult`. ``ok=False`` on any failure — never raises.
     """
     params: dict[str, Any] = {
-        "level": level,
+        "block": block.model_dump(mode="json"),
         "target": target,
         "context": _resolve_context(),
     }
-    if tool_name is not None:
-        params["block_type"] = "tool_call"
-        params["tool_name"] = tool_name
-        if tool_input is not None:
-            params["tool_input"] = tool_input
-        if tool_output is not None:
-            params["tool_output"] = tool_output
-        params["is_error"] = is_error
-    else:
-        params["block_type"] = "markdown"
-        params["content"] = message
-    if title is not None:
-        params["title"] = title
     if task_title is not None:
         params["task_title"] = task_title
     if metadata:
