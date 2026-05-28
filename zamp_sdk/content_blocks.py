@@ -79,7 +79,11 @@ class ToolUseContentBlock(ContentBlockBase):
             "(e.g. 'Fetching invoice INV-2024-001')."
         ),
     )
-    icon: Optional[str] = Field(default=None, description="Tool integration icon URL")
+    # NOTE: icon is intentionally NOT exposed here. The server enriches
+    # emitted tool_use blocks with the integration icon (via the
+    # DisplayConfigService) before publishing to SSE — keeping icons
+    # platform-controlled, immune to drift, and identical to direct LLM
+    # tool calls.
     input_json: Optional[str] = Field(
         default=None, description="Tool input as JSON string"
     )
