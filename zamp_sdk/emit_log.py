@@ -1,10 +1,8 @@
-"""Stream a content block from a sandboxed script back to the Zamp platform so
-it becomes visible in the agent's live message in real time.
+"""Stream a content block back to the Zamp platform so it becomes visible in
+the agent's live message in real time.
 
-``emit_log`` accepts the same :data:`ContentBlock` shape the platform uses
-everywhere else — no special "log block" type. Emit one block per call; for a
-tool-call log emit the ``tool_use`` first (the FE will show it running), do
-the work, then emit the matching ``tool_result`` (sharing the same ``id``).
+Emit one block per call. For a tool-call log emit the ``tool_use`` first,
+do the work, then emit the matching ``tool_result`` sharing the same ``id``.
 
 Example — text progress::
 
@@ -64,8 +62,7 @@ EMIT_ID_PREFIX = "emit_"
 
 
 def _new_emit_id() -> str:
-    """Mint a script-emitted block id, prefixed so it can't be mistaken for an
-    Anthropic-issued ``toolu_...`` id."""
+    """Mint a fresh prefixed block id for a script-emitted tool call."""
     return f"{EMIT_ID_PREFIX}{uuid.uuid4().hex}"
 
 
@@ -100,9 +97,8 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
     Returns:
         :class:`EmitLogResult`. Never raises.
     """
-    # Auto-stamp parent_block_id from the running tool's id so the FE attributes
-    # this block to the correct parent even when parallel tool calls interleave.
-    # Caller can override by setting it explicitly on the block.
+    # Auto-stamp parent_block_id from the running tool's id so emitted blocks
+    # group under the correct parent when parallel tool calls interleave.
     if block.parent_block_id is None:
         block.parent_block_id = os.environ.get(ENV_TOOL_CALL_ID)
 
@@ -146,7 +142,7 @@ async def emit_tool_use(
 
     Args:
         name: Tool/action name (e.g. ``"GOOGLE_CALENDAR_LIST_EVENTS"``).
-        display_title: Short human-readable summary the FE shows as the header
+        display_title: Short human-readable summary shown as the block header
             (e.g. ``"Fetching events Mon → Sun"``). Optional.
         input: Tool input as a plain Python dict — the helper JSON-encodes it.
             Optional.
@@ -155,8 +151,8 @@ async def emit_tool_use(
 
     Returns:
         The block ``id``. Pass it to :func:`emit_tool_result` to complete the
-        pair. Returned even on emit_log failure, so the caller can still pair
-        the result; the failure is logged but not raised.
+        pair. Returned even on emit failure, so the caller can still pair the
+        result; the failure is logged but not raised.
     """
     tool_id = id or _new_emit_id()
     input_json = json.dumps(input) if input is not None else None
@@ -172,12 +168,10 @@ async def emit_tool_use(
 
 
 def _stringify_tool_result(value: Any) -> str:
-    """Mirror pantheon's ``ToolResult.to_content_string`` semantics.
+    """Normalize a tool result to the string form the platform expects.
 
-    Pretty-prints dicts / lists / Pydantic models as indented JSON so an
-    emitted ``tool_result`` log looks byte-for-byte identical to what the
-    harness would have produced for a direct LLM tool call. Strings pass
-    through unchanged. ``None`` becomes a friendly success marker.
+    Pretty-prints dicts, lists, and Pydantic models as indented JSON. Strings
+    pass through unchanged. ``None`` becomes a friendly success marker.
     """
     if value is None:
         return "Success (no output)"
@@ -199,14 +193,12 @@ async def emit_tool_result(
     """Emit a ``tool_result`` log block paired with a prior :func:`emit_tool_use`.
 
     Args:
-        id: The id returned by :func:`emit_tool_use` (same string — that's what
-            pairs the two blocks on the FE).
+        id: The id returned by :func:`emit_tool_use` — same string pairs the
+            two blocks.
         content: Result to show under the tool block. Pass the raw value you
             got back from your action call — dicts and Pydantic models are
-            auto-pretty-printed as JSON to match how pantheon renders real
-            tool results. Strings pass through unchanged.
-        name: Optional tool name (recommended for FE rendering parity with
-            real tool results).
+            auto-pretty-printed as JSON; strings pass through unchanged.
+        name: Optional tool name (recommended for consistent rendering).
     """
     return await emit_log(
         ToolResultContentBlock(id=id, name=name, content=_stringify_tool_result(content))

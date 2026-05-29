@@ -1,19 +1,8 @@
-"""Content block models — mirrored from
-``pantheon_v2/platform/utils/common/models.py``.
+"""Content block models accepted by :func:`zamp_sdk.emit_log`.
 
-The platform represents every renderable piece of agent output (text,
-thinking, tool use, tool result, …) as members of one discriminated union:
-``ContentBlock``. To avoid having a *parallel* set of "log block" models in
-the SDK, we replicate the relevant subset here and use the **same** shape
-end-to-end: a script emits ``ContentBlock`` instances and the platform appends
-them to the running agent's message as-is.
-
-The three block kinds replicated here are the ones a sandboxed script can
-meaningfully produce — text, tool_use, tool_result. The remaining platform-side
-members (markdown, thinking, task, agent, trigger, …) are server-generated and
-intentionally not exposed in the SDK.
-
-If pantheon adds fields to these models, mirror them here.
+Each block represents one piece of agent output: a text update, a tool call,
+or a tool result. They are appended to the running agent's live message in
+the order they're emitted.
 """
 
 from __future__ import annotations
@@ -25,7 +14,7 @@ from pydantic import BaseModel, Field
 
 
 class ContentBlockType(str, Enum):
-    """Subset of pantheon's ContentBlockType — the kinds emit_log accepts."""
+    """Kinds of content block emit_log accepts."""
 
     TEXT = "text"
     TOOL_USE = "tool_use"
@@ -37,10 +26,7 @@ class ContentBlockBase(BaseModel):
 
     index: int = Field(
         default=0,
-        description=(
-            "Placeholder index — the platform's ContentBlockManager reassigns "
-            "the real index when appending to the live agent message."
-        ),
+        description="Server-assigned position in the message. Leave at the default.",
     )
     is_complete: bool = Field(default=True, description="Whether block is complete")
     start_timestamp: Optional[str] = Field(default=None, description="Block start time")
@@ -48,11 +34,8 @@ class ContentBlockBase(BaseModel):
     parent_block_id: Optional[str] = Field(
         default=None,
         description=(
-            "``id`` of the parent block this block belongs to (today, always a "
-            "tool_use block). emit_log auto-stamps the running sandbox tool's id, "
-            "so the FE groups emitted blocks under the correct tool even when "
-            "multiple parallel tool calls are active. Leave unset and emit_log will "
-            "fill it in from ZAMP_TOOL_CALL_ID."
+            "``id`` of the parent block this block belongs to. Leave unset and "
+            "emit_log will fill it in from the running tool's id."
         ),
     )
 
@@ -75,15 +58,10 @@ class ToolUseContentBlock(ContentBlockBase):
     display_title: Optional[str] = Field(
         default=None,
         description=(
-            "Short summary the FE prefers over name/display_name as the header "
-            "(e.g. 'Fetching invoice INV-2024-001')."
+            "Short summary shown as the block header "
+            "(e.g. 'Fetching invoice INV-2024-001'). Preferred over name."
         ),
     )
-    # NOTE: icon is intentionally NOT exposed here. The server enriches
-    # emitted tool_use blocks with the integration icon (via the
-    # DisplayConfigService) before publishing to SSE — keeping icons
-    # platform-controlled, immune to drift, and identical to direct LLM
-    # tool calls.
     input_json: Optional[str] = Field(
         default=None, description="Tool input as JSON string"
     )
@@ -103,7 +81,6 @@ class ToolResultContentBlock(ContentBlockBase):
     content: Optional[str] = Field(default=None, description="Tool result content")
 
 
-# Discriminated union — emit_log accepts a list of these.
 ContentBlock = Annotated[
     Union[
         TextContentBlock,
