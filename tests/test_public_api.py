@@ -31,28 +31,38 @@ class TestPublicApi:
             ToolResultContentBlock,
             ToolUseContentBlock,
             emit_log,
+            emit_text,
+            emit_tool_result,
+            emit_tool_use,
         )
 
         assert callable(emit_log)
+        assert callable(emit_text)
+        assert callable(emit_tool_use)
+        assert callable(emit_tool_result)
         assert hasattr(EmitLogResult, "model_fields")
         assert TextContentBlock(content="hi").type.value == "text"
         assert ToolUseContentBlock(name="x").type.value == "tool_use"
         assert ToolResultContentBlock(content="ok").type.value == "tool_result"
 
     def test_all_exports(self):
-        assert "ActionExecutor" in zamp_sdk.__all__
-        assert "RetryPolicy" in zamp_sdk.__all__
-        assert "SdkConfig" in zamp_sdk.__all__
-        assert "ExecutionMode" in zamp_sdk.__all__
-        assert "BaseActivity" in zamp_sdk.__all__
-        assert "BaseWorkflow" in zamp_sdk.__all__
-        assert "CodeWorkflowCoreParams" in zamp_sdk.__all__
-        assert "emit_log" in zamp_sdk.__all__
-        assert "EmitLogResult" in zamp_sdk.__all__
-        assert "TextContentBlock" in zamp_sdk.__all__
-        assert "MarkdownContentBlock" in zamp_sdk.__all__
-        assert "ToolUseContentBlock" in zamp_sdk.__all__
-        assert "ToolResultContentBlock" in zamp_sdk.__all__
-        assert "ContentBlock" in zamp_sdk.__all__
-        assert "ContentBlockType" in zamp_sdk.__all__
-        assert len(zamp_sdk.__all__) == 15
+        expected = {
+            "ActionExecutor",
+            "BaseActivity",
+            "BaseWorkflow",
+            "CodeWorkflowCoreParams",
+            "ContentBlock",
+            "ContentBlockType",
+            "EmitLogResult",
+            "ExecutionMode",
+            "RetryPolicy",
+            "SdkConfig",
+            "TextContentBlock",
+            "ToolResultContentBlock",
+            "ToolUseContentBlock",
+            "emit_log",
+            "emit_text",
+            "emit_tool_result",
+            "emit_tool_use",
+        }
+        assert set(zamp_sdk.__all__) == expected
