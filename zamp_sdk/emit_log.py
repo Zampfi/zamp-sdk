@@ -200,6 +200,4 @@ async def emit_tool_result(
             auto-pretty-printed as JSON; strings pass through unchanged.
         name: Optional tool name (recommended for consistent rendering).
     """
-    return await emit_log(
-        ToolResultContentBlock(id=id, name=name, content=_stringify_tool_result(content))
-    )
+    return await emit_log(ToolResultContentBlock(id=id, name=name, content=_stringify_tool_result(content)))

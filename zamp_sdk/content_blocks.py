@@ -52,31 +52,22 @@ class ToolUseContentBlock(ContentBlockBase):
     type: Literal[ContentBlockType.TOOL_USE] = ContentBlockType.TOOL_USE
     id: Optional[str] = Field(default=None, description="Tool call id (pairing key)")
     name: Optional[str] = Field(default=None, description="Tool name")
-    display_name: Optional[str] = Field(
-        default=None, description="Static human-readable display name"
-    )
+    display_name: Optional[str] = Field(default=None, description="Static human-readable display name")
     display_title: Optional[str] = Field(
         default=None,
         description=(
-            "Short summary shown as the block header "
-            "(e.g. 'Fetching invoice INV-2024-001'). Preferred over name."
+            "Short summary shown as the block header (e.g. 'Fetching invoice INV-2024-001'). Preferred over name."
         ),
     )
-    input_json: Optional[str] = Field(
-        default=None, description="Tool input as JSON string"
-    )
-    tool_call: Optional[Any] = Field(
-        default=None, description="Full tool call object (deprecated)"
-    )
+    input_json: Optional[str] = Field(default=None, description="Tool input as JSON string")
+    tool_call: Optional[Any] = Field(default=None, description="Full tool call object (deprecated)")
 
 
 class ToolResultContentBlock(ContentBlockBase):
     """Half two of a tool call — share ``id`` with the matching tool_use."""
 
     type: Literal[ContentBlockType.TOOL_RESULT] = ContentBlockType.TOOL_RESULT
-    id: Optional[str] = Field(
-        default=None, description="Tool call id (matches the paired tool_use)"
-    )
+    id: Optional[str] = Field(default=None, description="Tool call id (matches the paired tool_use)")
     name: Optional[str] = Field(default=None, description="Tool name")
     content: Optional[str] = Field(default=None, description="Tool result content")
 

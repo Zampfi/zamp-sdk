@@ -116,9 +116,7 @@ class TestEmitLogText:
 
         execute = AsyncMock(return_value={"success": True})
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
-            result = await emit_log(
-                TextContentBlock(content="• **Progress** — building...")
-            )
+            result = await emit_log(TextContentBlock(content="• **Progress** — building..."))
 
         assert isinstance(result, EmitLogResult)
         assert result.ok is True
@@ -157,9 +155,7 @@ class TestEmitLogText:
             await emit_log(block)
 
         assert block.parent_block_id == "caller_supplied"
-        assert (
-            execute.call_args.args[1]["block"]["parent_block_id"] == "caller_supplied"
-        )
+        assert execute.call_args.args[1]["block"]["parent_block_id"] == "caller_supplied"
 
 
 class TestEmitLogErrors:
@@ -239,9 +235,7 @@ class TestEmitToolResult:
     async def test_pairs_id_and_stringifies_dict(self):
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
-            result = await emit_tool_result(
-                "emit_xyz", {"sent": True, "count": 3}, name="GMAIL_SEND"
-            )
+            result = await emit_tool_result("emit_xyz", {"sent": True, "count": 3}, name="GMAIL_SEND")
 
         assert result.ok is True
         block = execute.call_args.args[1]["block"]
@@ -256,9 +250,7 @@ class TestEmitToolResult:
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             await emit_tool_result("emit_xyz", None)
 
-        assert (
-            execute.call_args.args[1]["block"]["content"] == "Success (no output)"
-        )
+        assert execute.call_args.args[1]["block"]["content"] == "Success (no output)"
 
     @pytest.mark.asyncio
     async def test_string_content_passes_through(self):
