@@ -125,6 +125,7 @@ async def emit_text(content: str) -> EmitLogResult:
     Thin wrapper around :func:`emit_log` for the most common case. Returns the
     same :class:`EmitLogResult`; never raises.
     """
+    logger.info("emit_text", content=content)
     return await emit_log(TextContentBlock(content=content))
 
 
@@ -156,6 +157,13 @@ async def emit_tool_use(
     """
     tool_id = id or _new_emit_id()
     input_json = json.dumps(input) if input is not None else None
+    logger.info(
+        "emit_tool_use",
+        id=tool_id,
+        name=name,
+        display_title=display_title,
+        input_json=input_json,
+    )
     await emit_log(
         ToolUseContentBlock(
             id=tool_id,
@@ -200,4 +208,6 @@ async def emit_tool_result(
             auto-pretty-printed as JSON; strings pass through unchanged.
         name: Optional tool name (recommended for consistent rendering).
     """
-    return await emit_log(ToolResultContentBlock(id=id, name=name, content=_stringify_tool_result(content)))
+    stringified = _stringify_tool_result(content)
+    logger.info("emit_tool_result", id=id, name=name, content=stringified)
+    return await emit_log(ToolResultContentBlock(id=id, name=name, content=stringified))
