@@ -3,7 +3,9 @@ from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.content_blocks import (
     ContentBlock,
     ContentBlockType,
+    InnerContentBlock,
     TextContentBlock,
+    ToolEmitLogBlock,
     ToolResultContentBlock,
     ToolUseContentBlock,
 )
@@ -29,9 +31,11 @@ __all__ = [
     "ContentBlockType",
     "EmitLogResult",
     "ExecutionMode",
+    "InnerContentBlock",
     "RetryPolicy",
     "SdkConfig",
     "TextContentBlock",
+    "ToolEmitLogBlock",
     "ToolResultContentBlock",
     "ToolUseContentBlock",
     "emit_log",

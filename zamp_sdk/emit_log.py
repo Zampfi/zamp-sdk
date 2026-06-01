@@ -3,6 +3,8 @@ the agent's live message in real time.
 
 Emit one block per call. For a tool-call log emit the ``tool_use`` first,
 do the work, then emit the matching ``tool_result`` sharing the same ``id``.
+Every block you emit is wrapped automatically in a :class:`ToolEmitLogBlock`
+tied to the running tool, so the platform groups them under the right parent.
 
 Example — text progress::
 
@@ -41,8 +43,9 @@ from pydantic import BaseModel
 
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.content_blocks import (
-    ContentBlock,
+    InnerContentBlock,
     TextContentBlock,
+    ToolEmitLogBlock,
     ToolResultContentBlock,
     ToolUseContentBlock,
 )
@@ -86,24 +89,34 @@ def _resolve_context() -> dict[str, Any]:
     return {k: v for k, v in context.items() if v}
 
 
-async def emit_log(block: ContentBlock) -> EmitLogResult:
+async def emit_log(block: InnerContentBlock) -> EmitLogResult:
     """Emit a content block to the current agent context.
 
+    The block is wrapped in a :class:`ToolEmitLogBlock` tagged with the running
+    tool's id (``ZAMP_TOOL_CALL_ID``) before being sent, so the platform can
+    place it under the right parent on the agent's live message.
+
     Args:
-        block: A :data:`ContentBlock` to append. For a tool-call log emit the
+        block: One of :class:`TextContentBlock`, :class:`ToolUseContentBlock`,
+            or :class:`ToolResultContentBlock`. For a tool-call log emit the
             ``tool_use`` first, do the work, then emit the matching
             ``tool_result`` sharing the same ``id``.
 
     Returns:
         :class:`EmitLogResult`. Never raises.
     """
-    # Auto-stamp parent_block_id from the running tool's id so emitted blocks
-    # group under the correct parent when parallel tool calls interleave.
-    if block.parent_block_id is None:
-        block.parent_block_id = os.environ.get(ENV_TOOL_CALL_ID)
+    tool_id = os.environ.get(ENV_TOOL_CALL_ID)
+    if not tool_id:
+        logger.warning(
+            "emit_log skipped: ZAMP_TOOL_CALL_ID not set in env "
+            "(emit_log only works from inside a sandbox_user_exec call)"
+        )
+        return EmitLogResult(ok=False, error="ZAMP_TOOL_CALL_ID not set")
+
+    wrapper = ToolEmitLogBlock(tool_id=tool_id, content=block)
 
     params: dict[str, Any] = {
-        "block": block.model_dump(mode="json"),
+        "block": wrapper.model_dump(mode="json"),
         "context": _resolve_context(),
     }
 

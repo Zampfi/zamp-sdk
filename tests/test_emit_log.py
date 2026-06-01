@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from zamp_sdk import (
     EmitLogResult,
     TextContentBlock,
+    ToolEmitLogBlock,
     ToolResultContentBlock,
     ToolUseContentBlock,
     emit_log,
@@ -108,59 +109,104 @@ class TestStringifyToolResult:
         assert _stringify_tool_result(42) == "42"
 
 
-class TestEmitLogText:
+class TestEmitLogWrapping:
+    """emit_log wraps every inner block in a ToolEmitLogBlock tagged with the
+    running tool's id, so the platform groups it under the right parent."""
+
     @pytest.mark.asyncio
-    async def test_text_block_calls_action_executor(self, monkeypatch):
+    async def test_wraps_text_block_with_tool_id_from_env(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_abc")
         monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
         monkeypatch.setenv("ZAMP_CHANNEL_ID", "conv-1")
 
         execute = AsyncMock(return_value={"success": True})
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
-            result = await emit_log(TextContentBlock(content="• **Progress** — building..."))
+            result = await emit_log(TextContentBlock(content="• Progress..."))
 
         assert isinstance(result, EmitLogResult)
         assert result.ok is True
-        assert result.result == {"success": True}
         execute.assert_awaited_once()
         action_name, params = execute.call_args.args
         assert action_name == "emit_log"
-        assert params["block"]["type"] == "text"
-        assert params["block"]["content"] == "• **Progress** — building..."
+
+        block = params["block"]
+        # The serialized payload is a wrapper, NOT a raw text block.
+        assert block["type"] == "tool_emit_log"
+        assert block["tool_id"] == "toolu_abc"
+        # Inner content carries the actual emit_log payload.
+        assert block["content"]["type"] == "text"
+        assert block["content"]["content"] == "• Progress..."
+
+        # Context still flows through alongside.
         assert params["context"]["channel_id"] == "conv-1"
-        assert params["context"]["channel_type"] == "conversation"
-        # summary kwarg is forwarded so server-side logs read nicely
         assert execute.call_args.kwargs.get("summary")
 
     @pytest.mark.asyncio
-    async def test_auto_stamps_parent_block_id_from_env(self, monkeypatch):
-        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_abc")
+    async def test_wraps_tool_use_block(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(return_value=None)
-        block = TextContentBlock(content="hello")
 
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
-            await emit_log(block)
+            await emit_log(
+                ToolUseContentBlock(
+                    id="emit_tc1",
+                    name="GMAIL_SEND",
+                    display_title="Sending mail",
+                    input_json='{"to":"a@b.com"}',
+                )
+            )
 
-        # Auto-stamped on the block itself...
-        assert block.parent_block_id == "toolu_abc"
-        # ...and present in the serialized payload.
-        assert execute.call_args.args[1]["block"]["parent_block_id"] == "toolu_abc"
+        block = execute.call_args.args[1]["block"]
+        assert block["type"] == "tool_emit_log"
+        assert block["tool_id"] == "toolu_parent"
+        inner = block["content"]
+        assert inner["type"] == "tool_use"
+        assert inner["id"] == "emit_tc1"
+        assert inner["name"] == "GMAIL_SEND"
+        assert inner["display_title"] == "Sending mail"
 
     @pytest.mark.asyncio
-    async def test_explicit_parent_block_id_not_overwritten(self, monkeypatch):
-        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_abc")
+    async def test_wraps_tool_result_block(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(return_value=None)
-        block = TextContentBlock(content="hi", parent_block_id="caller_supplied")
 
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
-            await emit_log(block)
+            await emit_log(
+                ToolResultContentBlock(id="emit_tc1", content="done")
+            )
 
-        assert block.parent_block_id == "caller_supplied"
-        assert execute.call_args.args[1]["block"]["parent_block_id"] == "caller_supplied"
+        block = execute.call_args.args[1]["block"]
+        assert block["type"] == "tool_emit_log"
+        assert block["tool_id"] == "toolu_parent"
+        assert block["content"]["type"] == "tool_result"
+        assert block["content"]["content"] == "done"
+
+    @pytest.mark.asyncio
+    async def test_skipped_when_tool_call_id_unset(self):
+        """Without ZAMP_TOOL_CALL_ID we can't route the log to a parent —
+        the SDK refuses to emit and returns ok=False rather than guessing."""
+        execute = AsyncMock(return_value=None)
+        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+            result = await emit_log(TextContentBlock(content="hi"))
+
+        assert result.ok is False
+        assert "ZAMP_TOOL_CALL_ID" in (result.error or "")
+        execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_inner_block_has_no_parent_block_id_field(self, monkeypatch):
+        """parent_block_id is gone from the inner block model — the relationship
+        lives only on the wrapper. Catches accidental re-introduction."""
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_abc")
+        block = TextContentBlock(content="hello")
+        # Field doesn't exist on the model at all
+        assert "parent_block_id" not in block.model_dump()
 
 
 class TestEmitLogErrors:
     @pytest.mark.asyncio
-    async def test_error_never_raises(self):
+    async def test_error_never_raises(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_abc")
         execute = AsyncMock(side_effect=RuntimeError("boom"))
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             result = await emit_log(TextContentBlock(content="hello"))
@@ -172,20 +218,24 @@ class TestEmitLogErrors:
 
 class TestEmitText:
     @pytest.mark.asyncio
-    async def test_wraps_string_as_text_block(self):
+    async def test_wraps_string_as_text_block(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_abc")
         execute = AsyncMock(return_value={"ok": 1})
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             result = await emit_text("step done")
 
         assert result.ok is True
         block = execute.call_args.args[1]["block"]
-        assert block["type"] == "text"
-        assert block["content"] == "step done"
+        assert block["type"] == "tool_emit_log"
+        assert block["tool_id"] == "toolu_abc"
+        assert block["content"]["type"] == "text"
+        assert block["content"]["content"] == "step done"
 
 
 class TestEmitToolUse:
     @pytest.mark.asyncio
-    async def test_returns_minted_id_with_prefix(self):
+    async def test_returns_minted_id_with_prefix(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             returned = await emit_tool_use(
@@ -196,31 +246,37 @@ class TestEmitToolUse:
 
         assert returned.startswith(EMIT_ID_PREFIX)
         block = execute.call_args.args[1]["block"]
-        assert block["type"] == "tool_use"
-        assert block["id"] == returned
-        assert block["name"] == "GMAIL_SEND"
-        assert block["display_title"] == "Sending daily report"
-        assert json.loads(block["input_json"]) == {"to": "a@b.com"}
+        assert block["type"] == "tool_emit_log"
+        assert block["tool_id"] == "toolu_parent"
+        inner = block["content"]
+        assert inner["type"] == "tool_use"
+        assert inner["id"] == returned
+        assert inner["name"] == "GMAIL_SEND"
+        assert inner["display_title"] == "Sending daily report"
+        assert json.loads(inner["input_json"]) == {"to": "a@b.com"}
 
     @pytest.mark.asyncio
-    async def test_respects_caller_supplied_id(self):
+    async def test_respects_caller_supplied_id(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             returned = await emit_tool_use("X", id="my-custom-id")
 
         assert returned == "my-custom-id"
-        assert execute.call_args.args[1]["block"]["id"] == "my-custom-id"
+        assert execute.call_args.args[1]["block"]["content"]["id"] == "my-custom-id"
 
     @pytest.mark.asyncio
-    async def test_no_input_means_no_input_json(self):
+    async def test_no_input_means_no_input_json(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             await emit_tool_use("X")
 
-        assert execute.call_args.args[1]["block"]["input_json"] is None
+        assert execute.call_args.args[1]["block"]["content"]["input_json"] is None
 
     @pytest.mark.asyncio
-    async def test_id_returned_even_when_emit_fails(self):
+    async def test_id_returned_even_when_emit_fails(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(side_effect=RuntimeError("network down"))
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             # Caller must still be able to pair the eventual tool_result, so
@@ -232,49 +288,60 @@ class TestEmitToolUse:
 
 class TestEmitToolResult:
     @pytest.mark.asyncio
-    async def test_pairs_id_and_stringifies_dict(self):
+    async def test_pairs_id_and_stringifies_dict(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             result = await emit_tool_result("emit_xyz", {"sent": True, "count": 3}, name="GMAIL_SEND")
 
         assert result.ok is True
         block = execute.call_args.args[1]["block"]
-        assert block["type"] == "tool_result"
-        assert block["id"] == "emit_xyz"
-        assert block["name"] == "GMAIL_SEND"
-        assert json.loads(block["content"]) == {"sent": True, "count": 3}
+        assert block["type"] == "tool_emit_log"
+        assert block["tool_id"] == "toolu_parent"
+        inner = block["content"]
+        assert inner["type"] == "tool_result"
+        assert inner["id"] == "emit_xyz"
+        assert inner["name"] == "GMAIL_SEND"
+        assert json.loads(inner["content"]) == {"sent": True, "count": 3}
 
     @pytest.mark.asyncio
-    async def test_none_content_becomes_success_marker(self):
+    async def test_none_content_becomes_success_marker(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             await emit_tool_result("emit_xyz", None)
 
-        assert execute.call_args.args[1]["block"]["content"] == "Success (no output)"
+        assert execute.call_args.args[1]["block"]["content"]["content"] == "Success (no output)"
 
     @pytest.mark.asyncio
-    async def test_string_content_passes_through(self):
+    async def test_string_content_passes_through(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             await emit_tool_result("emit_xyz", "raw text payload")
 
-        assert execute.call_args.args[1]["block"]["content"] == "raw text payload"
+        assert execute.call_args.args[1]["block"]["content"]["content"] == "raw text payload"
 
 
 class TestEmitToolUseResultPairing:
     @pytest.mark.asyncio
-    async def test_full_pair_share_id(self):
+    async def test_full_pair_share_id_and_tool_id(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_parent")
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
             tool_id = await emit_tool_use("GMAIL_SEND", input={"to": "a@b.com"})
             res = await emit_tool_result(tool_id, "sent", name="GMAIL_SEND")
 
         assert res.ok is True
-        use_block = execute.call_args_list[0].args[1]["block"]
-        result_block = execute.call_args_list[1].args[1]["block"]
-        assert use_block["type"] == "tool_use"
-        assert result_block["type"] == "tool_result"
-        assert use_block["id"] == result_block["id"] == tool_id
+        use_wrapper = execute.call_args_list[0].args[1]["block"]
+        result_wrapper = execute.call_args_list[1].args[1]["block"]
+
+        # Both share the same outer tool_id (the parent sandbox_user_exec)…
+        assert use_wrapper["tool_id"] == result_wrapper["tool_id"] == "toolu_parent"
+        # …and the inner blocks pair via their own shared id.
+        assert use_wrapper["content"]["type"] == "tool_use"
+        assert result_wrapper["content"]["type"] == "tool_result"
+        assert use_wrapper["content"]["id"] == result_wrapper["content"]["id"] == tool_id
 
 
 class TestBlockShapes:
@@ -288,3 +355,39 @@ class TestBlockShapes:
 
     def test_tool_result_block_type_value(self):
         assert ToolResultContentBlock(content="r").type.value == "tool_result"
+
+    def test_tool_emit_log_block_wraps_inner(self):
+        wrapper = ToolEmitLogBlock(
+            tool_id="toolu_X",
+            content=TextContentBlock(content="hi"),
+        )
+        assert wrapper.type.value == "tool_emit_log"
+        assert wrapper.tool_id == "toolu_X"
+        assert wrapper.content.type.value == "text"
+
+    def test_tool_emit_log_block_accepts_tool_use_inner(self):
+        wrapper = ToolEmitLogBlock(
+            tool_id="toolu_X",
+            content=ToolUseContentBlock(id="emit_1", name="X"),
+        )
+        assert wrapper.content.type.value == "tool_use"
+
+    def test_tool_emit_log_block_accepts_tool_result_inner(self):
+        wrapper = ToolEmitLogBlock(
+            tool_id="toolu_X",
+            content=ToolResultContentBlock(id="emit_1", content="r"),
+        )
+        assert wrapper.content.type.value == "tool_result"
+
+    def test_tool_emit_log_block_rejects_nested_wrapper(self):
+        """Wrapper can only hold inner block types — no wrapper-of-wrapper."""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ToolEmitLogBlock(
+                tool_id="toolu_X",
+                content=ToolEmitLogBlock(
+                    tool_id="toolu_Y",
+                    content=TextContentBlock(content="nope"),
+                ),
+            )

@@ -1,8 +1,9 @@
 """Content block models accepted by :func:`zamp_sdk.emit_log`.
 
-Each block represents one piece of agent output: a text update, a tool call,
-or a tool result. They are appended to the running agent's live message in
-the order they're emitted.
+A script emits one of three inner block types — text, tool_use, tool_result —
+and :func:`emit_log` wraps each one in a :class:`ToolEmitLogBlock` that carries
+the running tool's id, so the platform can group the emitted blocks under the
+parent ``sandbox_user_exec`` call on the agent's live message.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ class ContentBlockType(str, Enum):
     TEXT = "text"
     TOOL_USE = "tool_use"
     TOOL_RESULT = "tool_result"
+    TOOL_EMIT_LOG = "tool_emit_log"
 
 
 class ContentBlockBase(BaseModel):
@@ -31,13 +33,6 @@ class ContentBlockBase(BaseModel):
     is_complete: bool = Field(default=True, description="Whether block is complete")
     start_timestamp: Optional[str] = Field(default=None, description="Block start time")
     stop_timestamp: Optional[str] = Field(default=None, description="Block stop time")
-    parent_block_id: Optional[str] = Field(
-        default=None,
-        description=(
-            "``id`` of the parent block this block belongs to. Leave unset and "
-            "emit_log will fill it in from the running tool's id."
-        ),
-    )
 
 
 class TextContentBlock(ContentBlockBase):
@@ -72,11 +67,33 @@ class ToolResultContentBlock(ContentBlockBase):
     content: Optional[str] = Field(default=None, description="Tool result content")
 
 
+InnerContentBlock = Annotated[
+    Union[TextContentBlock, ToolUseContentBlock, ToolResultContentBlock],
+    Field(discriminator="type"),
+]
+
+
+class ToolEmitLogBlock(ContentBlockBase):
+    """Wrapper that ties an emitted log block to its parent ``sandbox_user_exec``
+    tool call. Streamed flat in the agent's message; the FE groups all wrappers
+    sharing the same ``tool_id`` under that tool's Activity section.
+    """
+
+    type: Literal[ContentBlockType.TOOL_EMIT_LOG] = ContentBlockType.TOOL_EMIT_LOG
+    tool_id: str = Field(
+        description="``id`` of the parent sandbox tool call this log belongs to."
+    )
+    content: InnerContentBlock = Field(
+        description="The actual log payload — text, tool_use, or tool_result."
+    )
+
+
 ContentBlock = Annotated[
     Union[
         TextContentBlock,
         ToolUseContentBlock,
         ToolResultContentBlock,
+        ToolEmitLogBlock,
     ],
     Field(discriminator="type"),
 ]
