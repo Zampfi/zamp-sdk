@@ -64,5 +64,12 @@ class TestPublicApi:
             "emit_text",
             "emit_tool_result",
             "emit_tool_use",
+            "UserInputResponse",
+            "InputOption",
+            "multiple_choice",
+            "read_user_input",
+            "request_user_input",
+            "select_one",
+            "text_input",
         }
         assert set(zamp_sdk.__all__) == expected
