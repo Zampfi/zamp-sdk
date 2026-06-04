@@ -1,14 +1,12 @@
 from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
-from zamp_sdk.content_blocks import (
+from zamp_sdk.logging import (
     ContentBlock,
     ContentBlockType,
+    EmitLogResult,
     TextContentBlock,
     ToolResultContentBlock,
     ToolUseContentBlock,
-)
-from zamp_sdk.emit_log import (
-    EmitLogResult,
     emit_log,
     emit_text,
     emit_tool_result,

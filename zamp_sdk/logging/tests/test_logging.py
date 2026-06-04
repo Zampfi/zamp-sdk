@@ -14,12 +14,8 @@ from zamp_sdk import (
     emit_tool_result,
     emit_tool_use,
 )
-from zamp_sdk.emit_log import (
-    EMIT_ID_PREFIX,
-    _new_emit_id,
-    _resolve_context,
-    _stringify_tool_result,
-)
+from zamp_sdk.logging.constants import EMIT_ID_PREFIX
+from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 
 
 @pytest.fixture(autouse=True)
@@ -36,63 +32,33 @@ def _clear_zamp_env(monkeypatch):
         monkeypatch.delenv(var, raising=False)
 
 
-class TestResolveContext:
-    def test_reads_injected_env_vars(self, monkeypatch):
-        monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "task")
-        monkeypatch.setenv("ZAMP_CHANNEL_ID", "task-123")
-        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "tc-9")
-        monkeypatch.setenv("ZAMP_STREAMING_ID", "stream-1")
-        monkeypatch.setenv("ZAMP_MESSAGE_ID", "msg-1")
-        monkeypatch.setenv("ZAMP_RUN_ID", "run-1")
-
-        ctx = _resolve_context()
-
-        assert ctx == {
-            "channel_type": "task",
-            "channel_id": "task-123",
-            "streaming_id": "stream-1",
-            "message_id": "msg-1",
-            "tool_call_id": "tc-9",
-            "run_id": "run-1",
-        }
-
-    def test_drops_unset_keys(self):
-        # autouse fixture cleared everything
-        assert _resolve_context() == {}
-
-    def test_partial_context(self, monkeypatch):
-        monkeypatch.setenv("ZAMP_CHANNEL_ID", "conv-7")
-        ctx = _resolve_context()
-        assert ctx == {"channel_id": "conv-7"}
-
-
 class TestNewEmitId:
     def test_has_expected_prefix(self):
-        new_id = _new_emit_id()
+        new_id = new_emit_id()
         assert new_id.startswith(EMIT_ID_PREFIX)
         # uuid4().hex is 32 chars
         assert len(new_id) == len(EMIT_ID_PREFIX) + 32
 
     def test_ids_are_unique(self):
-        ids = {_new_emit_id() for _ in range(50)}
+        ids = {new_emit_id() for _ in range(50)}
         assert len(ids) == 50
 
 
 class TestStringifyToolResult:
     def test_none_becomes_success_marker(self):
-        assert _stringify_tool_result(None) == "Success (no output)"
+        assert stringify_tool_result(None) == "Success (no output)"
 
     def test_string_passthrough(self):
-        assert _stringify_tool_result("already a string") == "already a string"
+        assert stringify_tool_result("already a string") == "already a string"
 
     def test_dict_pretty_printed(self):
-        out = _stringify_tool_result({"a": 1, "b": "two"})
+        out = stringify_tool_result({"a": 1, "b": "two"})
         assert json.loads(out) == {"a": 1, "b": "two"}
         # indent=2 ⇒ multi-line
         assert "\n" in out
 
     def test_list_pretty_printed(self):
-        out = _stringify_tool_result([1, 2, 3])
+        out = stringify_tool_result([1, 2, 3])
         assert json.loads(out) == [1, 2, 3]
         assert "\n" in out
 
@@ -101,11 +67,11 @@ class TestStringifyToolResult:
             name: str
             count: int
 
-        out = _stringify_tool_result(_M(name="x", count=2))
+        out = stringify_tool_result(_M(name="x", count=2))
         assert json.loads(out) == {"name": "x", "count": 2}
 
     def test_other_falls_back_to_str(self):
-        assert _stringify_tool_result(42) == "42"
+        assert stringify_tool_result(42) == "42"
 
 
 class TestEmitLogText:
@@ -115,7 +81,7 @@ class TestEmitLogText:
         monkeypatch.setenv("ZAMP_CHANNEL_ID", "conv-1")
 
         execute = AsyncMock(return_value={"success": True})
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             result = await emit_log(TextContentBlock(content="• **Progress** — building..."))
 
         assert isinstance(result, EmitLogResult)
@@ -137,7 +103,7 @@ class TestEmitLogText:
         execute = AsyncMock(return_value=None)
         block = TextContentBlock(content="hello")
 
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             await emit_log(block)
 
         # Auto-stamped on the block itself...
@@ -151,7 +117,7 @@ class TestEmitLogText:
         execute = AsyncMock(return_value=None)
         block = TextContentBlock(content="hi", parent_block_id="caller_supplied")
 
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             await emit_log(block)
 
         assert block.parent_block_id == "caller_supplied"
@@ -162,7 +128,7 @@ class TestEmitLogErrors:
     @pytest.mark.asyncio
     async def test_error_never_raises(self):
         execute = AsyncMock(side_effect=RuntimeError("boom"))
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             result = await emit_log(TextContentBlock(content="hello"))
 
         assert result.ok is False
@@ -174,7 +140,7 @@ class TestEmitText:
     @pytest.mark.asyncio
     async def test_wraps_string_as_text_block(self):
         execute = AsyncMock(return_value={"ok": 1})
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             result = await emit_text("step done")
 
         assert result.ok is True
@@ -187,7 +153,7 @@ class TestEmitToolUse:
     @pytest.mark.asyncio
     async def test_returns_minted_id_with_prefix(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             returned = await emit_tool_use(
                 "GMAIL_SEND",
                 display_title="Sending daily report",
@@ -205,7 +171,7 @@ class TestEmitToolUse:
     @pytest.mark.asyncio
     async def test_respects_caller_supplied_id(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             returned = await emit_tool_use("X", id="my-custom-id")
 
         assert returned == "my-custom-id"
@@ -214,7 +180,7 @@ class TestEmitToolUse:
     @pytest.mark.asyncio
     async def test_no_input_means_no_input_json(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             await emit_tool_use("X")
 
         assert execute.call_args.args[1]["block"]["input_json"] is None
@@ -222,7 +188,7 @@ class TestEmitToolUse:
     @pytest.mark.asyncio
     async def test_id_returned_even_when_emit_fails(self):
         execute = AsyncMock(side_effect=RuntimeError("network down"))
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             # Caller must still be able to pair the eventual tool_result, so
             # the helper swallows the failure and returns the id anyway.
             returned = await emit_tool_use("X")
@@ -234,7 +200,7 @@ class TestEmitToolResult:
     @pytest.mark.asyncio
     async def test_pairs_id_and_stringifies_dict(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             result = await emit_tool_result("emit_xyz", {"sent": True, "count": 3}, name="GMAIL_SEND")
 
         assert result.ok is True
@@ -247,7 +213,7 @@ class TestEmitToolResult:
     @pytest.mark.asyncio
     async def test_none_content_becomes_success_marker(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             await emit_tool_result("emit_xyz", None)
 
         assert execute.call_args.args[1]["block"]["content"] == "Success (no output)"
@@ -255,7 +221,7 @@ class TestEmitToolResult:
     @pytest.mark.asyncio
     async def test_string_content_passes_through(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             await emit_tool_result("emit_xyz", "raw text payload")
 
         assert execute.call_args.args[1]["block"]["content"] == "raw text payload"
@@ -265,7 +231,7 @@ class TestEmitToolUseResultPairing:
     @pytest.mark.asyncio
     async def test_full_pair_share_id(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.emit_log.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             tool_id = await emit_tool_use("GMAIL_SEND", input={"to": "a@b.com"})
             res = await emit_tool_result(tool_id, "sent", name="GMAIL_SEND")
 
@@ -278,7 +244,7 @@ class TestEmitToolUseResultPairing:
 
 
 class TestBlockShapes:
-    """Quick guard against silent schema drift from pantheon mirror."""
+    """Quick guard against silent schema drift in the content-block definitions."""
 
     def test_text_block_type_value(self):
         assert TextContentBlock(content="hi").type.value == "text"
