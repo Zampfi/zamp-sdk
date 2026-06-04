@@ -67,8 +67,9 @@ class TestPublicApi:
             "UserInputResponse",
             "InputOption",
             "multiple_choice",
-            "read_user_input",
+            "parse_user_input",
             "request_user_input",
+            "resume_command_with",
             "select_one",
             "text_input",
         }

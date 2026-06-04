@@ -11,6 +11,3 @@ SDK_USER_INPUT_MARKER = "__ZAMP_SDK_USER_INPUT__"
 # marker line above is authoritative regardless of how the host interprets the
 # exit code.
 SDK_USER_INPUT_EXIT_CODE = 42
-
-# CLI flag the orchestrator appends when re-running the script with the answer.
-HITL_RESPONSE_FLAG = "--hitl"

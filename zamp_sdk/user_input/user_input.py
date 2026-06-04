@@ -1,37 +1,38 @@
-"""Human-in-the-loop from inside a sandboxed script.
+"""Ask the user a question from a running script, then resume with the answer.
 
-A script running in the sandbox can pause mid-execution to ask the user a
-structured question (text / single-select / multi-select), halt, and — once the
-user answers — be **re-run** with the response so it can branch on the answer.
+:func:`request_user_input` presents one or more structured questions (text,
+single-select, multi-select, or file upload) to the user and halts the script —
+it does **not** block waiting for the human. When the user answers, the script is
+**re-run** with the answer supplied on the command line; recover it with
+:func:`parse_user_input`.
 
-This is the *only* sanctioned way for generated code to raise a HITL. It does
-**not** block the script waiting on the human (the platform action poll caps at
-10 min and the sandbox itself caps at ~60 min, far short of a real human's
-latency). Instead it:
-
-1. Registers the question against the running task via the ``request_user_input``
-   platform action (surfaces it to the user, marks the task as awaiting input).
-2. Emits a sentinel marker line and exits the process, so the run halts.
-
-When the user answers, the orchestrator re-runs the script with
-``--hitl <response.json>`` (the ``resume_command`` captured below). Read that
-file on startup to recover the answer and continue.
+Because the script is re-run rather than resumed in place, keep any state you need
+across the pause on disk, or carry it through your own CLI flags (see
+:func:`resume_command_with`). A ``request_user_input`` call does not return.
 
 Example::
 
-    import json, sys
-    from zamp_sdk import request_user_input, text_input, select_one, read_user_input
+    import argparse, asyncio
+    from zamp_sdk import (
+        request_user_input, select_one, parse_user_input, resume_command_with,
+    )
 
-    # Recover a prior answer if we were re-run after a HITL pause.
-    answer = read_user_input()
-    if answer is None:
-        # First run — ask, then halt. Does not return.
-        await request_user_input([
-            select_one("Proceed with deletion?", [("yes", "Yes"), ("no", "No")]),
-        ])
-    else:
-        choice = answer.selected_option_for(0)
-        print(f"User chose: {choice}")
+    async def main():
+        p = argparse.ArgumentParser()
+        p.add_argument("--country")          # filled by the platform on resume
+        args = p.parse_args()
+
+        answer = parse_user_input(args.country)   # None on the first run
+        if answer is None:
+            # First run — ask, then halt. Does not return.
+            await request_user_input(
+                [select_one("Pick a country", [("us", "US"), ("eu", "EU")])],
+                resume_command=resume_command_with("--country"),
+            )
+        else:
+            print(f"User chose: {answer.selected_option_for(0)}")
+
+    asyncio.run(main())
 """
 
 from __future__ import annotations
@@ -47,7 +48,6 @@ import structlog
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.context import resolve_context
 from zamp_sdk.user_input.constants import (
-    HITL_RESPONSE_FLAG,
     REQUEST_USER_INPUT_ACTION,
     SDK_USER_INPUT_EXIT_CODE,
     SDK_USER_INPUT_MARKER,
@@ -87,28 +87,25 @@ def multiple_choice(question: str, options: list) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def read_user_input(argv: Optional[list[str]] = None) -> Optional[UserInputResponse]:
-    """Return the HITL answer if this run was resumed with ``--hitl <file>``, else None.
+def parse_user_input(value: Optional[str]) -> Optional[UserInputResponse]:
+    """Parse the HITL answer the platform appended to the resume command.
 
-    Parses ``argv`` (defaults to ``sys.argv``) for ``--hitl <path>`` and loads the
-    JSON the orchestrator wrote there. The file shape is
-    ``{"responses": [{"response": {...}}, ...]}`` — one entry per question asked.
+    Pass the value of the flag you resumed on (e.g. ``args.country``):
+
+    - On the **first** run that flag is unset, so ``None`` in → ``None`` out — a
+      convenient "have we been answered yet?" check.
+    - On a **resume** it's the JSON the platform appended
+      (``{"responses": [{"response": {...}}, ...]}``); returns a
+      :class:`UserInputResponse`. Read answers by index with
+      ``.selected_option_for(i)`` / ``.text_for(i)`` /
+      ``.selected_options_for(i)`` / ``.files_for(i)``.
     """
-    args = argv if argv is not None else sys.argv
-    path: Optional[str] = None
-    # Read the LAST --hitl occurrence so a stale earlier flag never wins.
-    for i, tok in enumerate(args):
-        if tok == HITL_RESPONSE_FLAG and i + 1 < len(args):
-            path = args[i + 1]
-        elif tok.startswith(HITL_RESPONSE_FLAG + "="):
-            path = tok.split("=", 1)[1]
-    if not path or not os.path.exists(path):
+    if not value:
         return None
     try:
-        with open(path) as f:
-            data = json.load(f)
-    except (OSError, ValueError) as exc:
-        logger.warning("read_user_input: failed to read response file", path=path, error=str(exc))
+        data = json.loads(value)
+    except (TypeError, ValueError) as exc:
+        logger.warning("parse_user_input: value is not valid JSON", error=str(exc))
         return None
     if isinstance(data, dict) and "responses" in data:
         return UserInputResponse(responses=data.get("responses") or [])
@@ -134,12 +131,15 @@ async def request_user_input(
             :func:`select_one`, :func:`multiple_choice` (or raw dicts matching
             the platform's expected request shape).
         resume_command: The argv the orchestrator should re-run when the user
-            answers. Defaults to the current ``sys.argv``; ``--hitl <response>``
-            is appended automatically. Override to pin a specific entrypoint.
+            answers. The platform appends the answer JSON as the final argument,
+            so end this with the flag you want it to land on — use
+            :func:`resume_command_with` (e.g. ``resume_command_with("--country")``).
+            Defaults to the current invocation, in which case the answer JSON
+            arrives as a trailing positional argument.
 
     Does not return — emits the sentinel marker and exits the process so the
-    run halts. The orchestrator re-runs the script with ``--hitl`` once the
-    user responds; recover the answer with :func:`read_user_input`.
+    run halts. The orchestrator re-runs the script once the user responds;
+    recover the answer with :func:`parse_user_input`.
     """
     normalized = [r if isinstance(r, dict) else dict(r) for r in requests]
     context = resolve_context()
