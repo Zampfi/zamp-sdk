@@ -68,11 +68,7 @@ class UserInputResponse(BaseModel):
         (``"<user>/uploads/.../f.pdf"``) to absolute ones
         (``"/home/<user>/uploads/.../f.pdf"``). Entries without a path are skipped.
         """
-        return [
-            _resolve_sandbox_path(p)
-            for f in self.files_for(index)
-            if (p := (f or {}).get("path"))
-        ]
+        return [_resolve_sandbox_path(p) for f in self.files_for(index) if (p := (f or {}).get("path"))]
 
     def _response(self, index: int) -> Optional[dict]:
         if index >= len(self.responses):
