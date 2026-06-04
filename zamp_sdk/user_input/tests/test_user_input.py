@@ -14,13 +14,13 @@ from zamp_sdk import (
     select_one,
     text_input,
 )
-# resume_command_with is an internal helper (behind resume_script), not public API.
-from zamp_sdk.user_input.utils import resume_command_with
 from zamp_sdk.user_input.constants import (
     SDK_USER_INPUT_EXIT_CODE,
     SDK_USER_INPUT_MARKER,
 )
-from zamp_sdk.user_input.utils import build_options, default_resume_command
+
+# resume_command_with is an internal helper (behind resume_script), not public API.
+from zamp_sdk.user_input.utils import build_options, default_resume_command, resume_command_with
 
 
 @pytest.fixture(autouse=True)
