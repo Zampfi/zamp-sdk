@@ -33,57 +33,23 @@ from __future__ import annotations
 
 import json
 import os
-import uuid
 from typing import Any, Optional
 
 import structlog
-from pydantic import BaseModel
 
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.content_blocks import (
+from zamp_sdk.context import ENV_TOOL_CALL_ID, resolve_context
+from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
+from zamp_sdk.logging.models import (
     ContentBlock,
+    EmitLogResult,
     TextContentBlock,
     ToolResultContentBlock,
     ToolUseContentBlock,
 )
+from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 
 logger = structlog.get_logger(__name__)
-
-EMIT_LOG_ACTION_NAME = "emit_log"
-
-ENV_CHANNEL_TYPE = "ZAMP_CHANNEL_TYPE"
-ENV_CHANNEL_ID = "ZAMP_CHANNEL_ID"
-ENV_STREAMING_ID = "ZAMP_STREAMING_ID"
-ENV_MESSAGE_ID = "ZAMP_MESSAGE_ID"
-ENV_TOOL_CALL_ID = "ZAMP_TOOL_CALL_ID"
-ENV_RUN_ID = "ZAMP_RUN_ID"
-
-EMIT_ID_PREFIX = "emit_"
-
-
-def _new_emit_id() -> str:
-    """Mint a fresh prefixed block id for a script-emitted tool call."""
-    return f"{EMIT_ID_PREFIX}{uuid.uuid4().hex}"
-
-
-class EmitLogResult(BaseModel):
-    """Outcome of an :func:`emit_log` call. ``ok=False`` on failure; never raises."""
-
-    ok: bool
-    result: Optional[Any] = None
-    error: Optional[str] = None
-
-
-def _resolve_context() -> dict[str, Any]:
-    context = {
-        "channel_type": os.environ.get(ENV_CHANNEL_TYPE),
-        "channel_id": os.environ.get(ENV_CHANNEL_ID),
-        "streaming_id": os.environ.get(ENV_STREAMING_ID),
-        "message_id": os.environ.get(ENV_MESSAGE_ID),
-        "tool_call_id": os.environ.get(ENV_TOOL_CALL_ID),
-        "run_id": os.environ.get(ENV_RUN_ID),
-    }
-    return {k: v for k, v in context.items() if v}
 
 
 async def emit_log(block: ContentBlock) -> EmitLogResult:
@@ -104,7 +70,7 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
 
     params: dict[str, Any] = {
         "block": block.model_dump(mode="json"),
-        "context": _resolve_context(),
+        "context": resolve_context(),
     }
 
     try:
@@ -155,7 +121,7 @@ async def emit_tool_use(
         pair. Returned even on emit failure, so the caller can still pair the
         result; the failure is logged but not raised.
     """
-    tool_id = id or _new_emit_id()
+    tool_id = id or new_emit_id()
     input_json = json.dumps(input) if input is not None else None
     logger.info(
         "emit_tool_use",
@@ -175,23 +141,6 @@ async def emit_tool_use(
     return tool_id
 
 
-def _stringify_tool_result(value: Any) -> str:
-    """Normalize a tool result to the string form the platform expects.
-
-    Pretty-prints dicts, lists, and Pydantic models as indented JSON. Strings
-    pass through unchanged. ``None`` becomes a friendly success marker.
-    """
-    if value is None:
-        return "Success (no output)"
-    if isinstance(value, str):
-        return value
-    if isinstance(value, BaseModel):
-        return json.dumps(value.model_dump(), indent=2, default=str)
-    if isinstance(value, (dict, list)):
-        return json.dumps(value, indent=2, default=str)
-    return str(value)
-
-
 async def emit_tool_result(
     id: str,
     content: Any,
@@ -208,6 +157,6 @@ async def emit_tool_result(
             auto-pretty-printed as JSON; strings pass through unchanged.
         name: Optional tool name (recommended for consistent rendering).
     """
-    stringified = _stringify_tool_result(content)
+    stringified = stringify_tool_result(content)
     logger.info("emit_tool_result", id=id, name=name, content=stringified)
     return await emit_log(ToolResultContentBlock(id=id, name=name, content=stringified))

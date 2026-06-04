@@ -12,13 +12,14 @@ from zamp_sdk import (
     select_one,
     text_input,
 )
-from zamp_sdk.user_input import (
+from zamp_sdk.user_input.constants import (
     SDK_USER_INPUT_EXIT_CODE,
     SDK_USER_INPUT_MARKER,
-    _default_resume_command,
-    _options,
-    _resolve_context,
-    _strip_hitl_flag,
+)
+from zamp_sdk.user_input.utils import (
+    build_options,
+    default_resume_command,
+    strip_hitl_flag,
 )
 
 
@@ -33,18 +34,6 @@ def _clear_zamp_env(monkeypatch):
         "ZAMP_RUN_ID",
     ):
         monkeypatch.delenv(var, raising=False)
-
-
-class TestResolveContext:
-    def test_reads_injected_env_vars(self, monkeypatch):
-        monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "task")
-        monkeypatch.setenv("ZAMP_CHANNEL_ID", "task-123")
-        monkeypatch.setenv("ZAMP_RUN_ID", "run-1")
-        ctx = _resolve_context()
-        assert ctx == {"channel_type": "task", "channel_id": "task-123", "run_id": "run-1"}
-
-    def test_drops_unset_keys(self):
-        assert _resolve_context() == {}
 
 
 class TestQuestionBuilders:
@@ -63,12 +52,12 @@ class TestQuestionBuilders:
         assert q["options"] == [{"id": "a", "label": "A"}]
 
     def test_options_accepts_input_option_and_dict(self):
-        opts = _options([InputOption(id="x", label="X"), {"id": "y", "label": "Y"}])
+        opts = build_options([InputOption(id="x", label="X"), {"id": "y", "label": "Y"}])
         assert opts == [{"id": "x", "label": "X"}, {"id": "y", "label": "Y"}]
 
     def test_options_rejects_bad_shape(self):
         with pytest.raises(ValueError):
-            _options(["not-an-option"])
+            build_options(["not-an-option"])
 
 
 class TestUserInputResponse:
@@ -94,20 +83,20 @@ class TestUserInputResponse:
 
 class TestStripHitlFlag:
     def test_strips_space_form(self):
-        assert _strip_hitl_flag(["main.py", "--hitl", "r.json", "--keep"]) == ["main.py", "--keep"]
+        assert strip_hitl_flag(["main.py", "--hitl", "r.json", "--keep"]) == ["main.py", "--keep"]
 
     def test_strips_equals_form(self):
-        assert _strip_hitl_flag(["main.py", "--hitl=r.json"]) == ["main.py"]
+        assert strip_hitl_flag(["main.py", "--hitl=r.json"]) == ["main.py"]
 
     def test_noop_when_absent(self):
-        assert _strip_hitl_flag(["main.py", "input.json"]) == ["main.py", "input.json"]
+        assert strip_hitl_flag(["main.py", "input.json"]) == ["main.py", "input.json"]
 
 
 class TestDefaultResumeCommand:
     def test_prepends_interpreter_and_strips_hitl(self, monkeypatch):
         monkeypatch.setattr("sys.argv", ["main.py", "--hitl", "old.json"])
         monkeypatch.setattr("sys.executable", "/usr/local/bin/python")
-        assert _default_resume_command() == ["/usr/local/bin/python", "main.py"]
+        assert default_resume_command() == ["/usr/local/bin/python", "main.py"]
 
 
 class TestReadUserInputResponse:
@@ -154,7 +143,7 @@ class TestRequestInput:
         monkeypatch.setattr("os.getcwd", lambda: "/work")
 
         execute = AsyncMock(return_value={"success": True})
-        with patch("zamp_sdk.user_input.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
             with pytest.raises(SystemExit) as exc:
                 await request_user_input([select_one("Proceed?", [("y", "Yes"), ("n", "No")])])
 
@@ -174,7 +163,7 @@ class TestRequestInput:
     async def test_explicit_resume_command_override(self, monkeypatch):
         monkeypatch.setattr("os.getcwd", lambda: "/work")
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.user_input.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
             with pytest.raises(SystemExit):
                 await request_user_input([text_input("q?")], resume_command=["python", "run.py", "--step", "2"])
         assert execute.call_args.args[1]["resume"]["command"] == ["python", "run.py", "--step", "2"]
@@ -182,7 +171,7 @@ class TestRequestInput:
     @pytest.mark.asyncio
     async def test_exits_nonzero_if_registration_fails(self, monkeypatch):
         execute = AsyncMock(side_effect=RuntimeError("boom"))
-        with patch("zamp_sdk.user_input.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
             with pytest.raises(SystemExit) as exc:
                 await request_user_input([text_input("q?")])
         # registration failure must NOT silently continue downstream steps
