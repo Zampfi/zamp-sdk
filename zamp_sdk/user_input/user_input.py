@@ -8,13 +8,13 @@ it does **not** block waiting for the human. When the user answers, the script i
 
 Because the script is re-run rather than resumed in place, keep any state you need
 across the pause on disk, or carry it through your own CLI flags (see
-:func:`resume_command_with`). A ``request_user_input`` call does not return.
+:func:`resume_script`). A ``request_user_input`` call does not return.
 
 Example::
 
     import argparse, asyncio
     from zamp_sdk import (
-        request_user_input, select_one, parse_user_input, resume_command_with,
+        request_user_input, select_one, parse_user_input, resume_script,
     )
 
     async def main():
@@ -27,7 +27,7 @@ Example::
             # First run — ask, then halt. Does not return.
             await request_user_input(
                 [select_one("Pick a country", [("us", "US"), ("eu", "EU")])],
-                resume_command=resume_command_with("--country"),
+                post_action=resume_script("--country"),
             )
         else:
             print(f"User chose: {answer.selected_option_for(0)}")
@@ -38,7 +38,6 @@ Example::
 from __future__ import annotations
 
 import json
-import os
 import sys
 import uuid
 from typing import Any, NoReturn, Optional
@@ -53,7 +52,7 @@ from zamp_sdk.user_input.constants import (
     SDK_USER_INPUT_MARKER,
 )
 from zamp_sdk.user_input.models import UserInputResponse
-from zamp_sdk.user_input.utils import build_options, default_resume_command
+from zamp_sdk.user_input.utils import build_options, resume_script
 
 logger = structlog.get_logger(__name__)
 
@@ -122,7 +121,7 @@ def parse_user_input(value: Optional[str]) -> Optional[UserInputResponse]:
 async def request_user_input(
     requests: list,
     *,
-    resume_command: Optional[list[str]] = None,
+    post_action: Optional[dict] = None,
 ) -> NoReturn:
     """Ask the user one or more questions, then halt the script for HITL.
 
@@ -130,29 +129,27 @@ async def request_user_input(
         requests: A list of question dicts built via :func:`text_input`,
             :func:`select_one`, :func:`multiple_choice` (or raw dicts matching
             the platform's expected request shape).
-        resume_command: The argv the orchestrator should re-run when the user
-            answers. The platform appends the answer JSON as the final argument,
-            so end this with the flag you want it to land on — use
-            :func:`resume_command_with` (e.g. ``resume_command_with("--country")``).
-            Defaults to the current invocation, in which case the answer JSON
-            arrives as a trailing positional argument.
+        post_action: What to do once the user answers. Build it with
+            :func:`resume_script` (the only post-action today) — pass the flag the
+            answer should land on, e.g. ``resume_script("--country")``. If omitted,
+            defaults to ``resume_script()`` (re-run the current invocation; the
+            answer arrives as a trailing positional argument).
 
     Does not return — emits the sentinel marker and exits the process so the
-    run halts. The orchestrator re-runs the script once the user responds;
-    recover the answer with :func:`parse_user_input`.
+    run halts. The post-action runs once the user responds (resume_script re-runs
+    the script); recover the answer with :func:`parse_user_input`.
     """
     normalized = [r if isinstance(r, dict) else dict(r) for r in requests]
     context = resolve_context()
-    resume = {
-        "command": list(resume_command) if resume_command else default_resume_command(),
-        "cwd": os.getcwd(),
-        "run_id": context.get("run_id"),
-    }
+    if post_action is None:
+        post_action = resume_script()
+    # Carry the run_id from context so the platform can correlate the re-run.
+    post_action.setdefault("run_id", context.get("run_id"))
 
     params: dict[str, Any] = {
         "requests": normalized,
         "context": context,
-        "resume": resume,
+        "post_action": post_action,
     }
 
     try:

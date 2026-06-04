@@ -6,7 +6,7 @@ from zamp_sdk.user_input.user_input import (
     select_one,
     text_input,
 )
-from zamp_sdk.user_input.utils import resume_command_with
+from zamp_sdk.user_input.utils import resume_script
 
 __all__ = [
     "InputOption",
@@ -14,7 +14,7 @@ __all__ = [
     "multiple_choice",
     "parse_user_input",
     "request_user_input",
-    "resume_command_with",
+    "resume_script",
     "select_one",
     "text_input",
 ]

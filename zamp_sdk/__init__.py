@@ -18,7 +18,7 @@ from zamp_sdk.user_input import (
     multiple_choice,
     parse_user_input,
     request_user_input,
-    resume_command_with,
+    resume_script,
     select_one,
     text_input,
 )
@@ -51,7 +51,7 @@ __all__ = [
     "multiple_choice",
     "parse_user_input",
     "request_user_input",
-    "resume_command_with",
+    "resume_script",
     "select_one",
     "text_input",
 ]

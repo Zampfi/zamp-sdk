@@ -10,10 +10,12 @@ from zamp_sdk import (
     multiple_choice,
     parse_user_input,
     request_user_input,
-    resume_command_with,
+    resume_script,
     select_one,
     text_input,
 )
+# resume_command_with is an internal helper (behind resume_script), not public API.
+from zamp_sdk.user_input.utils import resume_command_with
 from zamp_sdk.user_input.constants import (
     SDK_USER_INPUT_EXIT_CODE,
     SDK_USER_INPUT_MARKER,
@@ -185,7 +187,7 @@ class TestRequestInput:
             with pytest.raises(SystemExit) as exc:
                 await request_user_input(
                     [select_one("Proceed?", [("y", "Yes"), ("n", "No")])],
-                    resume_command=resume_command_with("--proceed"),
+                    post_action=resume_script("--proceed"),
                 )
 
         assert exc.value.code == SDK_USER_INPUT_EXIT_CODE
@@ -193,10 +195,12 @@ class TestRequestInput:
         assert action_name == "request_user_input"
         assert params["requests"][0]["input_type"] == "select_one"
         assert params["context"] == {"channel_type": "task", "channel_id": "task-9", "run_id": "run-9"}
-        # resume command ends with the flag the answer JSON will land on
-        assert params["resume"]["command"] == ["/py", "main.py", "--proceed"]
-        assert params["resume"]["cwd"] == "/work"
-        assert params["resume"]["run_id"] == "run-9"
+        # default post-action is resume_script; command ends with the answer flag
+        pa = params["post_action"]
+        assert pa["type"] == "resume_script"
+        assert pa["command"] == ["/py", "main.py", "--proceed"]
+        assert pa["cwd"] == "/work"
+        assert pa["run_id"] == "run-9"
         # the sentinel marker is printed for the plugin to detect
         assert SDK_USER_INPUT_MARKER in capsys.readouterr().out
 
@@ -209,7 +213,7 @@ class TestRequestInput:
         with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
             with pytest.raises(SystemExit):
                 await request_user_input([text_input("q?")])
-        assert execute.call_args.args[1]["resume"]["command"] == ["/py", "main.py"]
+        assert execute.call_args.args[1]["post_action"]["command"] == ["/py", "main.py"]
 
     @pytest.mark.asyncio
     async def test_explicit_resume_command_override(self, monkeypatch):
@@ -217,8 +221,29 @@ class TestRequestInput:
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
             with pytest.raises(SystemExit):
-                await request_user_input([text_input("q?")], resume_command=["python", "run.py", "--step"])
-        assert execute.call_args.args[1]["resume"]["command"] == ["python", "run.py", "--step"]
+                await request_user_input(
+                    [text_input("q?")],
+                    post_action=resume_script(command=["python", "run.py", "--step"]),
+                )
+        assert execute.call_args.args[1]["post_action"]["command"] == ["python", "run.py", "--step"]
+
+    @pytest.mark.asyncio
+    async def test_explicit_post_action_passthrough(self, monkeypatch):
+        # An explicit post_action is sent as-is (run_id backfilled from context).
+        monkeypatch.setenv("ZAMP_RUN_ID", "run-7")
+        monkeypatch.setattr("os.getcwd", lambda: "/work")
+        execute = AsyncMock(return_value=None)
+        action = resume_script(command=["python", "main.py", "--x"], cwd="/custom")
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
+            with pytest.raises(SystemExit):
+                await request_user_input([text_input("q?")], post_action=action)
+        pa = execute.call_args.args[1]["post_action"]
+        assert pa == {
+            "type": "resume_script",
+            "command": ["python", "main.py", "--x"],
+            "cwd": "/custom",
+            "run_id": "run-7",
+        }
 
     @pytest.mark.asyncio
     async def test_exits_nonzero_if_registration_fails(self, monkeypatch):

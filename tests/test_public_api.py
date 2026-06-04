@@ -69,7 +69,7 @@ class TestPublicApi:
             "multiple_choice",
             "parse_user_input",
             "request_user_input",
-            "resume_command_with",
+            "resume_script",
             "select_one",
             "text_input",
         }
