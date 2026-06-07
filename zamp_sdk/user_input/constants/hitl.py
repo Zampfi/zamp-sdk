@@ -11,3 +11,9 @@ SDK_USER_INPUT_MARKER = "__ZAMP_SDK_USER_INPUT__"
 # marker line above is authoritative regardless of how the host interprets the
 # exit code.
 SDK_USER_INPUT_EXIT_CODE = 42
+
+# Post-action type sent with the request: what should happen once the user
+# answers. Only "resume_script" (re-run the script with the answer) exists today;
+# the platform models this as a discriminated structure so other post-actions can
+# be added later.
+POST_ACTION_RESUME_SCRIPT = "resume_script"
