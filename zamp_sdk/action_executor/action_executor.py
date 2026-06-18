@@ -164,10 +164,6 @@ class ActionExecutor:
 
         response = await client.post("/actions", data=body)
         action_id = response["id"]
-        # Poll at least as long as the action may run server-side, so a long
-        # action (e.g. document/LLM extraction) is not abandoned at the default
-        # client poll timeout. Falls back to POLL_TIMEOUT_SECONDS when no
-        # start-to-close timeout was specified by the caller.
         poll_timeout = POLL_TIMEOUT_SECONDS
         if action_start_to_close_timeout is not None:
             poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
