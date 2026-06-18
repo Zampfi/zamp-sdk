@@ -170,12 +170,8 @@ class ActionExecutor:
         # start-to-close timeout was specified by the caller.
         poll_timeout = POLL_TIMEOUT_SECONDS
         if action_start_to_close_timeout is not None:
-            poll_timeout = max(
-                POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds()
-            )
-        result = await cls._poll_action_result(
-            client, action_id, poll_timeout=poll_timeout
-        )
+            poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
+        result = await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
 
         if return_type and hasattr(return_type, "model_validate"):
             return return_type.model_validate(result)

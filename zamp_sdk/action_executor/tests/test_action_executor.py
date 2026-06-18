@@ -364,9 +364,7 @@ class TestExecuteAction:
 
         with (
             patch(f"{_MODULE}.HttpClient", return_value=mock_client),
-            patch.object(
-                ActionExecutor, "_poll_action_result", new_callable=AsyncMock
-            ) as mock_poll,
+            patch.object(ActionExecutor, "_poll_action_result", new_callable=AsyncMock) as mock_poll,
         ):
             mock_poll.return_value = {"ok": True}
             await self._executor()._execute_action(
@@ -385,9 +383,7 @@ class TestExecuteAction:
         with (
             patch(f"{_MODULE}.HttpClient", return_value=mock_client),
             patch(f"{_MODULE}.POLL_TIMEOUT_SECONDS", 600.0),
-            patch.object(
-                ActionExecutor, "_poll_action_result", new_callable=AsyncMock
-            ) as mock_poll,
+            patch.object(ActionExecutor, "_poll_action_result", new_callable=AsyncMock) as mock_poll,
         ):
             mock_poll.return_value = None
             await self._executor()._execute_action(
@@ -406,9 +402,7 @@ class TestExecuteAction:
         with (
             patch(f"{_MODULE}.HttpClient", return_value=mock_client),
             patch(f"{_MODULE}.POLL_TIMEOUT_SECONDS", 600.0),
-            patch.object(
-                ActionExecutor, "_poll_action_result", new_callable=AsyncMock
-            ) as mock_poll,
+            patch.object(ActionExecutor, "_poll_action_result", new_callable=AsyncMock) as mock_poll,
         ):
             mock_poll.return_value = None
             await self._executor()._execute_action(
@@ -528,9 +522,7 @@ class TestPollActionResult:
             patch(f"{_MODULE}.POLL_INITIAL_INTERVAL_SECONDS", 1.0),
             pytest.raises(TimeoutError, match="did not complete within 2.0s"),
         ):
-            await self._executor()._poll_action_result(
-                client, "action-pt", poll_timeout=2.0
-            )
+            await self._executor()._poll_action_result(client, "action-pt", poll_timeout=2.0)
 
     async def test_polls_until_completed(self):
         client = AsyncMock()
