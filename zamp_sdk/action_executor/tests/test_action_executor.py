@@ -356,6 +356,64 @@ class TestExecuteAction:
             mock_client.get.assert_awaited()
             assert result == {"val": 1}
 
+    async def test_poll_timeout_extends_with_start_to_close(self):
+        # A long start-to-close timeout extends the client poll timeout so a
+        # long-running action is not abandoned at the default 600s.
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-long"}
+
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=mock_client),
+            patch.object(ActionExecutor, "_poll_action_result", new_callable=AsyncMock) as mock_poll,
+        ):
+            mock_poll.return_value = {"ok": True}
+            await self._executor()._execute_action(
+                action_name="extract",
+                params={},
+                config=self._make_config(),
+                action_start_to_close_timeout=timedelta(hours=1),
+            )
+
+            assert mock_poll.await_args.kwargs["poll_timeout"] == 3600.0
+
+    async def test_poll_timeout_defaults_when_no_start_to_close(self):
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-def"}
+
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=mock_client),
+            patch(f"{_MODULE}.POLL_TIMEOUT_SECONDS", 600.0),
+            patch.object(ActionExecutor, "_poll_action_result", new_callable=AsyncMock) as mock_poll,
+        ):
+            mock_poll.return_value = None
+            await self._executor()._execute_action(
+                action_name="x",
+                params={},
+                config=self._make_config(),
+            )
+
+            assert mock_poll.await_args.kwargs["poll_timeout"] == 600.0
+
+    async def test_poll_timeout_not_reduced_below_default(self):
+        # A short start-to-close timeout must NOT shrink the poll below the default.
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-short"}
+
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=mock_client),
+            patch(f"{_MODULE}.POLL_TIMEOUT_SECONDS", 600.0),
+            patch.object(ActionExecutor, "_poll_action_result", new_callable=AsyncMock) as mock_poll,
+        ):
+            mock_poll.return_value = None
+            await self._executor()._execute_action(
+                action_name="y",
+                params={},
+                config=self._make_config(),
+                action_start_to_close_timeout=timedelta(seconds=30),
+            )
+
+            assert mock_poll.await_args.kwargs["poll_timeout"] == 600.0
+
     async def test_uses_return_type_model_validate(self):
         mock_client = AsyncMock()
         mock_client.post.return_value = {"id": "action-abc"}
@@ -452,6 +510,19 @@ class TestPollActionResult:
             pytest.raises(TimeoutError, match="did not complete"),
         ):
             await self._executor()._poll_action_result(client, "action-5")
+
+    async def test_respects_poll_timeout_param(self):
+        # The explicit poll_timeout arg bounds the loop, independent of the
+        # module-level POLL_TIMEOUT_SECONDS default.
+        client = AsyncMock()
+        client.get.return_value = {"status": "RUNNING"}
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+            patch(f"{_MODULE}.POLL_INITIAL_INTERVAL_SECONDS", 1.0),
+            pytest.raises(TimeoutError, match="did not complete within 2.0s"),
+        ):
+            await self._executor()._poll_action_result(client, "action-pt", poll_timeout=2.0)
 
     async def test_polls_until_completed(self):
         client = AsyncMock()

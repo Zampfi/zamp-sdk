@@ -164,19 +164,31 @@ class ActionExecutor:
 
         response = await client.post("/actions", data=body)
         action_id = response["id"]
-        result = await cls._poll_action_result(client, action_id)
+        poll_timeout = POLL_TIMEOUT_SECONDS
+        if action_start_to_close_timeout is not None:
+            poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
+        result = await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
 
         if return_type and hasattr(return_type, "model_validate"):
             return return_type.model_validate(result)
         return result
 
     @staticmethod
-    async def _poll_action_result(client: HttpClient, action_id: str) -> Any:
-        """Poll ``GET /actions/{id}`` with exponential backoff until a terminal state."""
+    async def _poll_action_result(
+        client: HttpClient,
+        action_id: str,
+        poll_timeout: float = POLL_TIMEOUT_SECONDS,
+    ) -> Any:
+        """Poll ``GET /actions/{id}`` with exponential backoff until a terminal state.
+
+        Polls for up to ``poll_timeout`` seconds (default ``POLL_TIMEOUT_SECONDS``);
+        callers pass a larger value for long-running actions via
+        ``action_start_to_close_timeout``.
+        """
         interval = POLL_INITIAL_INTERVAL_SECONDS
         elapsed = 0.0
 
-        while elapsed < POLL_TIMEOUT_SECONDS:
+        while elapsed < poll_timeout:
             await asyncio.sleep(interval)
             elapsed += interval
 
@@ -191,4 +203,4 @@ class ActionExecutor:
                 raise RuntimeError(f"Action {action_id} unexpected status: {action_status}")
             interval = min(interval * 2, POLL_MAX_INTERVAL_SECONDS)
 
-        raise TimeoutError(f"Action {action_id} did not complete within {POLL_TIMEOUT_SECONDS}s")
+        raise TimeoutError(f"Action {action_id} did not complete within {poll_timeout}s")
