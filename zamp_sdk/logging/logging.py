@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import json
 import os
+from contextvars import ContextVar
 from typing import Any, Optional
 
 import structlog
@@ -55,6 +56,29 @@ from zamp_sdk.logging.models import (
 from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 
 logger = structlog.get_logger(__name__)
+
+_log_buffer: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar(
+    "zamp_emit_log_buffer", default=None
+)
+
+
+def start_log_capture() -> None:
+    """Begin accumulating emitted blocks for the current execution.
+
+    Used by a runtime (e.g. the ``CodeExecutorWorkflow``) that wants to return
+    everything ``emit_log`` streamed as part of its result. Blocks keep
+    streaming live regardless; this only turns on the second, accumulating sink.
+    """
+    _log_buffer.set([])
+
+
+def drain_log_capture() -> list[dict[str, Any]]:
+    """Return the blocks accumulated since :func:`start_log_capture`.
+
+    Empty list if capture was never started. Safe to call in a ``finally`` to
+    collect logs on both success and failure.
+    """
+    return list(_log_buffer.get() or [])
 
 
 def _inside_sandbox() -> bool:
@@ -99,8 +123,14 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
     if block.parent_block_id is None:
         block.parent_block_id = _current_tool_call_id()
 
+    block_payload = block.model_dump(mode="json")
+
+    buffer = _log_buffer.get()
+    if buffer is not None:
+        buffer.append(block_payload)
+
     params: dict[str, Any] = {
-        "block": block.model_dump(mode="json"),
+        "block": block_payload,
         "context": _emit_context(),
     }
 
