@@ -25,16 +25,12 @@ class ChannelContext(BaseModel):
     ``emit_log`` action payload stays wire-compatible.
     """
 
-    channel_type: Optional[str] = Field(
-        default=None, description="'conversation' | 'task' — current channel type"
-    )
-    channel_id: Optional[str] = Field(
-        default=None, description="Conversation or task id of the current context"
-    )
-    streaming_id: Optional[str] = Field(default=None)
-    message_id: Optional[str] = Field(default=None)
-    tool_call_id: Optional[str] = Field(default=None)
-    run_id: Optional[str] = Field(default=None)
+    channel_type: str = Field(description="'conversation' | 'task' — current channel type")
+    channel_id: str = Field(description="Conversation or task id of the current context")
+    streaming_id: str
+    message_id: str
+    tool_call_id: str
+    run_id: str
 
 
 _bound_context: ContextVar[Optional[ChannelContext]] = ContextVar(
