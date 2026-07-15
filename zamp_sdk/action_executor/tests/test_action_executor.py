@@ -5,7 +5,7 @@ import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
-from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.models import Http5xxRetryPolicy, RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClientError
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
@@ -459,8 +459,8 @@ class TestExecuteAction:
             )
 
 
-class TestPostActionWith5xxRetries:
-    """Tests for the private ActionExecutor._post_action_with_5xx_retries() method."""
+class TestPostAction:
+    """Tests for the private ActionExecutor._post_action() method."""
 
     def _executor(self) -> ActionExecutor:
         return ActionExecutor()
@@ -469,7 +469,7 @@ class TestPostActionWith5xxRetries:
         client = AsyncMock()
         client.post.return_value = {"id": "action-1"}
 
-        result = await self._executor()._post_action_with_5xx_retries(client, "/actions", {"a": 1})
+        result = await self._executor()._post_action(client, "/actions", {"a": 1})
 
         assert result == {"id": "action-1"}
         assert client.post.await_count == 1
@@ -479,7 +479,7 @@ class TestPostActionWith5xxRetries:
         client.post.side_effect = [_http_error(500), _http_error(503), {"id": "action-ok"}]
 
         with patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-            result = await self._executor()._post_action_with_5xx_retries(client, "/actions", {})
+            result = await self._executor()._post_action(client, "/actions", {})
 
         assert result == {"id": "action-ok"}
         assert client.post.await_count == 3
@@ -495,34 +495,43 @@ class TestPostActionWith5xxRetries:
             patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
             pytest.raises(HttpClientError, match="HTTP 404"),
         ):
-            await self._executor()._post_action_with_5xx_retries(client, "/actions", {})
+            await self._executor()._post_action(client, "/actions", {})
 
         assert client.post.await_count == 1
 
     async def test_raises_after_exhausting_retries(self):
         client = AsyncMock()
         client.post.side_effect = _http_error(500)
+        policy = Http5xxRetryPolicy(
+            max_attempts=3,
+            initial_interval_seconds=1.0,
+            max_interval_seconds=30.0,
+            backoff_coefficient=2.0,
+        )
 
         with (
             patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
-            patch(f"{_MODULE}.RETRY_5XX_MAX_ATTEMPTS", 3),
             pytest.raises(HttpClientError, match="HTTP 500"),
         ):
-            await self._executor()._post_action_with_5xx_retries(client, "/actions", {})
+            await self._executor()._post_action(client, "/actions", {}, policy=policy)
 
         assert client.post.await_count == 3
 
     async def test_backoff_is_capped_at_max_interval(self):
         client = AsyncMock()
         client.post.side_effect = _http_error(502)
+        policy = Http5xxRetryPolicy(
+            max_attempts=8,
+            initial_interval_seconds=1.0,
+            max_interval_seconds=30.0,
+            backoff_coefficient=2.0,
+        )
 
         with (
             patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
-            patch(f"{_MODULE}.RETRY_5XX_MAX_ATTEMPTS", 8),
-            patch(f"{_MODULE}.RETRY_5XX_MAX_INTERVAL_SECONDS", 30.0),
             pytest.raises(HttpClientError),
         ):
-            await self._executor()._post_action_with_5xx_retries(client, "/actions", {})
+            await self._executor()._post_action(client, "/actions", {}, policy=policy)
 
         waits = [c.args[0] for c in mock_sleep.await_args_list]
         assert waits == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0]

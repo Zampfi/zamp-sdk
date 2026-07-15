@@ -10,23 +10,19 @@ from zamp_sdk.action_executor.constants import (
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
     POLL_TIMEOUT_SECONDS,
-    RETRY_5XX_BACKOFF_COEFFICIENT,
-    RETRY_5XX_INITIAL_INTERVAL_SECONDS,
-    RETRY_5XX_MAX_ATTEMPTS,
-    RETRY_5XX_MAX_INTERVAL_SECONDS,
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
-from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.models import Http5xxRetryPolicy, RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 
 logger = structlog.get_logger(__name__)
 
 
 def _is_retryable_5xx(exc: HttpClientError) -> bool:
-    """A 5xx response is a transient server error worth retrying."""
-    return exc.status_code is not None and 500 <= exc.status_code < 600
+    """A 5xx (server-error) response is transient and worth retrying."""
+    return exc.status_code is not None and exc.status_code >= 500
 
 
 class ActionExecutor:
@@ -175,7 +171,7 @@ class ActionExecutor:
         if action_start_to_close_timeout is not None:
             body["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
 
-        response = await cls._post_action_with_5xx_retries(client, "/actions", body)
+        response = await cls._post_action(client, "/actions", body)
         action_id = response["id"]
         poll_timeout = POLL_TIMEOUT_SECONDS
         if action_start_to_close_timeout is not None:
@@ -187,37 +183,40 @@ class ActionExecutor:
         return result
 
     @classmethod
-    async def _post_action_with_5xx_retries(
+    async def _post_action(
         cls,
         client: HttpClient,
         endpoint: str,
         body: dict,
+        *,
+        policy: Http5xxRetryPolicy | None = None,
     ) -> dict:
         """POST ``body`` to ``endpoint``, retrying on 5xx with exponential backoff.
 
-        Retries up to ``RETRY_5XX_MAX_ATTEMPTS`` times on a transient server
-        error so a momentary 5xx doesn't fail the action before it is even
-        created. Non-5xx errors (e.g. 4xx, network) propagate immediately.
+        Retries up to ``policy.max_attempts`` times on a transient server error
+        so a momentary 5xx doesn't fail the action before it is even created.
+        Non-5xx errors (e.g. 4xx, network) propagate immediately.
         """
-        interval = RETRY_5XX_INITIAL_INTERVAL_SECONDS
+        policy = policy or Http5xxRetryPolicy.default()
+        interval = policy.initial_interval_seconds
 
-        for attempt in range(1, RETRY_5XX_MAX_ATTEMPTS + 1):
+        for attempt in range(1, policy.max_attempts + 1):
             try:
                 return await client.post(endpoint, data=body)
             except HttpClientError as exc:
                 # Exhausted or non-transient: surface the original error.
-                if not _is_retryable_5xx(exc) or attempt == RETRY_5XX_MAX_ATTEMPTS:
+                if not _is_retryable_5xx(exc) or attempt == policy.max_attempts:
                     raise
                 logger.warning(
                     "action POST returned 5xx, retrying",
                     endpoint=endpoint,
                     status_code=exc.status_code,
                     attempt=attempt,
-                    max_attempts=RETRY_5XX_MAX_ATTEMPTS,
+                    max_attempts=policy.max_attempts,
                     retry_in_seconds=interval,
                 )
                 await asyncio.sleep(interval)
-                interval = min(interval * RETRY_5XX_BACKOFF_COEFFICIENT, RETRY_5XX_MAX_INTERVAL_SECONDS)
+                interval = policy.next_interval(interval)
 
         # Unreachable: the final attempt either returns or re-raises above.
         raise RuntimeError(f"action POST to {endpoint} exhausted retries without a result")

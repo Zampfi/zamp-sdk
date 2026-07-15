@@ -1,3 +1,4 @@
+from zamp_sdk.action_executor.models.http_retry_policy import Http5xxRetryPolicy
 from zamp_sdk.action_executor.models.retry_policy import (
     DEFAULT_RETRY_BACKOFF_COEFFICIENT,
     DEFAULT_RETRY_INITIAL_INTERVAL,
@@ -12,6 +13,7 @@ __all__ = [
     "DEFAULT_RETRY_INITIAL_INTERVAL",
     "DEFAULT_RETRY_MAXIMUM_ATTEMPTS",
     "DEFAULT_RETRY_MAXIMUM_INTERVAL",
+    "Http5xxRetryPolicy",
     "RetryPolicy",
     "SdkConfig",
 ]
