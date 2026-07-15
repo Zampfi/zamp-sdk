@@ -4,7 +4,10 @@ from datetime import timedelta
 from typing import Any
 
 from zamp_sdk.action_executor.constants import (
+    EXECUTION_TOKEN_KEY,
     IN_PROGRESS_STATUSES,
+    NEXUS_GATEWAY_OPERATION,
+    NEXUS_GATEWAY_SERVICE,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
     POLL_TIMEOUT_SECONDS,
@@ -14,6 +17,7 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient
+from zamp_sdk.context.env import ENV_NEXUS_ENDPOINT, ENV_NEXUS_GATEWAY_ENABLED
 
 
 class ActionExecutor:
@@ -60,6 +64,15 @@ class ActionExecutor:
                 params=params,
                 base_url=base_url,
                 auth_token=auth_token,
+                summary=summary,
+                return_type=return_type,
+                action_retry_policy=action_retry_policy,
+                action_start_to_close_timeout=action_start_to_close_timeout,
+            )
+        if cls._nexus_gateway_enabled() and not await cls._is_registered_locally(action_name):
+            return await cls._execute_via_nexus(
+                action_name=action_name,
+                params=params,
                 summary=summary,
                 return_type=return_type,
                 action_retry_policy=action_retry_policy,
@@ -128,6 +141,90 @@ class ActionExecutor:
             action_retry_policy=ah_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
         )
+
+    @staticmethod
+    def _nexus_gateway_enabled() -> bool:
+        return os.environ.get(ENV_NEXUS_GATEWAY_ENABLED) == "true"
+
+    @classmethod
+    async def _is_registered_locally(cls, action_name: str) -> bool:
+        """Whether the action resolves to an action registered in this environment."""
+        from zamp_public_workflow_sdk.actions_hub import ActionsHub
+        from zamp_public_workflow_sdk.actions_hub.models.core_models import ActionFilter
+
+        actions = await ActionsHub.get_available_actions(ActionFilter(name=action_name))
+        return len(actions) > 0
+
+    @staticmethod
+    def _read_execution_token() -> str | None:
+        from zamp_public_workflow_sdk.actions_hub.utils.context_utils import (
+            get_variable_from_context,
+        )
+
+        return get_variable_from_context(EXECUTION_TOKEN_KEY)
+
+    @classmethod
+    def _build_gateway_input(
+        cls,
+        action_name: str,
+        params: dict[str, Any],
+        summary: str | None,
+        action_retry_policy: RetryPolicy | None,
+        action_start_to_close_timeout: timedelta | None,
+    ) -> dict:
+        """Wrap the call as the external-action executor's input.
+
+        Mirrors the HTTP ``/actions`` body so the Nexus and HTTP paths carry the
+        same shape, and adds the execution token (read from bound context) so the
+        handler can validate the caller on the other side.
+        """
+        effective_retry_policy = action_retry_policy if action_retry_policy is not None else RetryPolicy.default()
+        gateway_input: dict = {
+            "action_name": action_name,
+            "params": params,
+            "retry_policy": effective_retry_policy.model_dump(mode="json"),
+        }
+        token = cls._read_execution_token()
+        if token is not None:
+            gateway_input[EXECUTION_TOKEN_KEY] = token
+        if summary is not None:
+            gateway_input["summary"] = summary
+        if action_start_to_close_timeout is not None:
+            gateway_input["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
+        return gateway_input
+
+    @classmethod
+    async def _execute_via_nexus(
+        cls,
+        action_name: str,
+        params: dict[str, Any],
+        *,
+        summary: str | None,
+        return_type: type | None,
+        action_retry_policy: RetryPolicy | None,
+        action_start_to_close_timeout: timedelta | None,
+    ) -> Any:
+        """Forward an action not registered locally to the Nexus gateway.
+
+        Runs inside workflow context (the executor's code-executor workflow); the
+        Nexus call itself goes through ``ActionsHub.execute_nexus_operation``.
+        """
+        from zamp_public_workflow_sdk.actions_hub import ActionsHub
+
+        gateway_input = cls._build_gateway_input(
+            action_name, params, summary, action_retry_policy, action_start_to_close_timeout
+        )
+        result = await ActionsHub.execute_nexus_operation(
+            endpoint=os.environ[ENV_NEXUS_ENDPOINT],
+            service=NEXUS_GATEWAY_SERVICE,
+            operation=NEXUS_GATEWAY_OPERATION,
+            input=gateway_input,
+            output_type=None,
+            schedule_to_close_timeout=action_start_to_close_timeout,
+        )
+        if return_type and hasattr(return_type, "model_validate"):
+            return return_type.model_validate(result)
+        return result
 
     @classmethod
     async def _execute_action(
