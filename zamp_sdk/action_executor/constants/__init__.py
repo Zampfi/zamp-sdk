@@ -1,13 +1,8 @@
 from zamp_sdk.action_executor.constants.polling import (
+    POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
     POLL_TIMEOUT_SECONDS,
-)
-from zamp_sdk.action_executor.constants.retries import (
-    DEFAULT_5XX_BACKOFF_COEFFICIENT,
-    DEFAULT_5XX_INITIAL_INTERVAL_SECONDS,
-    DEFAULT_5XX_MAX_ATTEMPTS,
-    DEFAULT_5XX_MAX_INTERVAL_SECONDS,
 )
 from zamp_sdk.action_executor.constants.statuses import (
     IN_PROGRESS_STATUSES,
@@ -18,11 +13,8 @@ from zamp_sdk.action_executor.constants.statuses import (
 
 __all__ = [
     "ActionStatus",
-    "DEFAULT_5XX_BACKOFF_COEFFICIENT",
-    "DEFAULT_5XX_INITIAL_INTERVAL_SECONDS",
-    "DEFAULT_5XX_MAX_ATTEMPTS",
-    "DEFAULT_5XX_MAX_INTERVAL_SECONDS",
     "IN_PROGRESS_STATUSES",
+    "POLL_BACKOFF_COEFFICIENT",
     "POLL_INITIAL_INTERVAL_SECONDS",
     "POLL_MAX_INTERVAL_SECONDS",
     "POLL_TIMEOUT_SECONDS",

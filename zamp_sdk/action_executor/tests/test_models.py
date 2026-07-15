@@ -1,17 +1,10 @@
 from datetime import timedelta
 
-from zamp_sdk.action_executor.constants import (
-    DEFAULT_5XX_BACKOFF_COEFFICIENT,
-    DEFAULT_5XX_INITIAL_INTERVAL_SECONDS,
-    DEFAULT_5XX_MAX_ATTEMPTS,
-    DEFAULT_5XX_MAX_INTERVAL_SECONDS,
-)
 from zamp_sdk.action_executor.models import (
     DEFAULT_RETRY_BACKOFF_COEFFICIENT,
     DEFAULT_RETRY_INITIAL_INTERVAL,
     DEFAULT_RETRY_MAXIMUM_ATTEMPTS,
     DEFAULT_RETRY_MAXIMUM_INTERVAL,
-    Http5xxRetryPolicy,
     RetryPolicy,
 )
 
@@ -46,22 +39,3 @@ class TestRetryPolicy:
         assert "backoff_coefficient" in data
         assert data["maximum_attempts"] == DEFAULT_RETRY_MAXIMUM_ATTEMPTS
         assert data["backoff_coefficient"] == DEFAULT_RETRY_BACKOFF_COEFFICIENT
-
-
-class TestHttp5xxRetryPolicy:
-    def test_default_values(self):
-        p = Http5xxRetryPolicy.default()
-        assert p.max_attempts == DEFAULT_5XX_MAX_ATTEMPTS
-        assert p.initial_interval_seconds == DEFAULT_5XX_INITIAL_INTERVAL_SECONDS
-        assert p.max_interval_seconds == DEFAULT_5XX_MAX_INTERVAL_SECONDS
-        assert p.backoff_coefficient == DEFAULT_5XX_BACKOFF_COEFFICIENT
-
-    def test_next_interval_doubles_then_caps(self):
-        p = Http5xxRetryPolicy(
-            max_attempts=10,
-            initial_interval_seconds=1.0,
-            max_interval_seconds=30.0,
-            backoff_coefficient=2.0,
-        )
-        assert p.next_interval(1.0) == 2.0
-        assert p.next_interval(20.0) == 30.0  # capped at max_interval_seconds

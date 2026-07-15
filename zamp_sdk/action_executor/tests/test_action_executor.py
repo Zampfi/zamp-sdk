@@ -5,7 +5,7 @@ import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
-from zamp_sdk.action_executor.models import Http5xxRetryPolicy, RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClientError
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
@@ -499,39 +499,30 @@ class TestPostAction:
 
         assert client.post.await_count == 1
 
-    async def test_raises_after_exhausting_retries(self):
+    async def test_raises_when_retry_timeout_budget_exhausted(self):
+        # Bounded by a time budget (like the poll loop), not an attempt count.
+        # sleep is patched, so elapsed advances by the backoff intervals: after
+        # 1.0 + 2.0 = 3.0s the next 5xx exceeds retry_timeout=1.5 and re-raises.
         client = AsyncMock()
         client.post.side_effect = _http_error(500)
-        policy = Http5xxRetryPolicy(
-            max_attempts=3,
-            initial_interval_seconds=1.0,
-            max_interval_seconds=30.0,
-            backoff_coefficient=2.0,
-        )
 
         with (
             patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
             pytest.raises(HttpClientError, match="HTTP 500"),
         ):
-            await self._executor()._post_action(client, "/actions", {}, policy=policy)
+            await self._executor()._post_action(client, "/actions", {}, retry_timeout=1.5)
 
         assert client.post.await_count == 3
 
     async def test_backoff_is_capped_at_max_interval(self):
         client = AsyncMock()
         client.post.side_effect = _http_error(502)
-        policy = Http5xxRetryPolicy(
-            max_attempts=8,
-            initial_interval_seconds=1.0,
-            max_interval_seconds=30.0,
-            backoff_coefficient=2.0,
-        )
 
         with (
             patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
             pytest.raises(HttpClientError),
         ):
-            await self._executor()._post_action(client, "/actions", {}, policy=policy)
+            await self._executor()._post_action(client, "/actions", {}, retry_timeout=90.0)
 
         waits = [c.args[0] for c in mock_sleep.await_args_list]
         assert waits == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0]

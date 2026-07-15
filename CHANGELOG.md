@@ -6,7 +6,7 @@
 
 ## 0.0.13
 
-- Retry the action-create `POST /actions` on 5xx with exponential backoff (up to 10 attempts)
+- Retry the action-create `POST /actions` on transient 5xx with exponential backoff, bounded by a time budget (the same approach as the poll loop)
 - Keep polling `GET /actions/{id}` through transient 5xx responses instead of failing the action, bounded by the overall poll timeout
 
 ## 0.0.12
