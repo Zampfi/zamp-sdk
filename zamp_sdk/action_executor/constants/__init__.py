@@ -1,4 +1,5 @@
 from zamp_sdk.action_executor.constants.polling import (
+    POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
     POLL_TIMEOUT_SECONDS,
@@ -13,6 +14,7 @@ from zamp_sdk.action_executor.constants.statuses import (
 __all__ = [
     "ActionStatus",
     "IN_PROGRESS_STATUSES",
+    "POLL_BACKOFF_COEFFICIENT",
     "POLL_INITIAL_INTERVAL_SECONDS",
     "POLL_MAX_INTERVAL_SECONDS",
     "POLL_TIMEOUT_SECONDS",
