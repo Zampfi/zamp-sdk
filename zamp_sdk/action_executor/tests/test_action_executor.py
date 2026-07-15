@@ -362,8 +362,8 @@ class TestExecuteAction:
             assert result == {"val": 1}
 
     async def test_poll_timeout_extends_with_start_to_close(self):
-        # A long start-to-close timeout extends the client poll timeout so a
-        # long-running action is not abandoned at the default 600s.
+        # A start-to-close timeout above the default extends the client poll
+        # timeout so a long-running action is not abandoned at the default.
         mock_client = AsyncMock()
         mock_client.post.return_value = {"id": "action-long"}
 
@@ -376,18 +376,18 @@ class TestExecuteAction:
                 action_name="extract",
                 params={},
                 config=self._make_config(),
-                action_start_to_close_timeout=timedelta(hours=1),
+                action_start_to_close_timeout=timedelta(hours=2),
             )
 
-            assert mock_poll.await_args.kwargs["poll_timeout"] == 3600.0
+            assert mock_poll.await_args.kwargs["poll_timeout"] == 7200.0
 
-    async def test_poll_timeout_defaults_when_no_start_to_close(self):
+    async def test_poll_timeout_defaults_to_one_hour_when_no_start_to_close(self):
+        # With no explicit budget the client polls for the 3600s default ceiling.
         mock_client = AsyncMock()
         mock_client.post.return_value = {"id": "action-def"}
 
         with (
             patch(f"{_MODULE}.HttpClient", return_value=mock_client),
-            patch(f"{_MODULE}.POLL_TIMEOUT_SECONDS", 600.0),
             patch.object(ActionExecutor, "_poll_action_result", new_callable=AsyncMock) as mock_poll,
         ):
             mock_poll.return_value = None
@@ -397,7 +397,7 @@ class TestExecuteAction:
                 config=self._make_config(),
             )
 
-            assert mock_poll.await_args.kwargs["poll_timeout"] == 600.0
+            assert mock_poll.await_args.kwargs["poll_timeout"] == 3600.0
 
     async def test_poll_timeout_not_reduced_below_default(self):
         # A short start-to-close timeout must NOT shrink the poll below the default.

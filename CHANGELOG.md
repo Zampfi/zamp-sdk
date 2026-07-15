@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.14
+
+- Raise the default client poll ceiling from 600s to 3600s (1 hour), so actions with no explicit `action_start_to_close_timeout` are polled for up to an hour before timing out
+
 ## 0.0.13
 
 - Retry the action-create `POST /actions` on 5xx with exponential backoff (up to 10 attempts)
