@@ -21,11 +21,6 @@ from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 logger = structlog.get_logger(__name__)
 
 
-def _is_retryable_5xx(exc: HttpClientError) -> bool:
-    """A 5xx (server-error) response is transient and worth retrying."""
-    return exc.status_code is not None and exc.status_code >= 500
-
-
 class ActionExecutor:
     """Entry point for executing actions on the Zamp platform.
 
@@ -207,7 +202,7 @@ class ActionExecutor:
                 return await client.post(endpoint, data=body)
             except HttpClientError as exc:
                 # Budget exhausted or non-transient: surface the original error.
-                if not _is_retryable_5xx(exc) or elapsed >= retry_timeout:
+                if not cls._is_retryable_5xx(exc) or elapsed >= retry_timeout:
                     raise
                 logger.warning(
                     "action POST returned 5xx, retrying",
@@ -220,6 +215,11 @@ class ActionExecutor:
                 await asyncio.sleep(interval)
                 elapsed += interval
                 interval = cls._next_poll_interval(interval)
+
+    @staticmethod
+    def _is_retryable_5xx(exc: HttpClientError) -> bool:
+        """A 5xx (server-error) response is transient and worth retrying."""
+        return exc.status_code is not None and exc.status_code >= 500
 
     @staticmethod
     def _next_poll_interval(interval: float) -> float:
@@ -252,7 +252,7 @@ class ActionExecutor:
                 # A transient 5xx while polling shouldn't fail the action: keep
                 # polling (with backoff) until the action completes or the
                 # overall poll_timeout is hit. Non-5xx errors still propagate.
-                if not _is_retryable_5xx(exc):
+                if not cls._is_retryable_5xx(exc):
                     raise
                 logger.warning(
                     "action poll returned 5xx, continuing to poll",
