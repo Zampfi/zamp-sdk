@@ -6,9 +6,14 @@ import pytest
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.utils import HttpClientError
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
 _SANDBOX_ENV = {"INSIDE_SANDBOX": "true"}
+
+
+def _http_error(status_code: int) -> HttpClientError:
+    return HttpClientError(f"HTTP {status_code}", status_code=status_code, response_body="boom")
 
 
 class TestExecute:
@@ -454,6 +459,94 @@ class TestExecuteAction:
             )
 
 
+class TestPostActionWith5xxRetries:
+    """Tests for the private ActionExecutor._post_action_with_5xx_retries() method."""
+
+    def _executor(self) -> ActionExecutor:
+        return ActionExecutor()
+
+    async def test_returns_response_on_first_success(self):
+        client = AsyncMock()
+        client.post.return_value = {"id": "action-1"}
+
+        result = await self._executor()._post_action_with_5xx_retries(client, "/actions", {"a": 1})
+
+        assert result == {"id": "action-1"}
+        assert client.post.await_count == 1
+
+    async def test_retries_on_5xx_then_succeeds(self):
+        client = AsyncMock()
+        client.post.side_effect = [_http_error(500), _http_error(503), {"id": "action-ok"}]
+
+        with patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await self._executor()._post_action_with_5xx_retries(client, "/actions", {})
+
+        assert result == {"id": "action-ok"}
+        assert client.post.await_count == 3
+        # Backoff grows between retries: first wait is the initial interval, then it doubles.
+        waits = [c.args[0] for c in mock_sleep.await_args_list]
+        assert waits == [1.0, 2.0]
+
+    async def test_does_not_retry_on_4xx(self):
+        client = AsyncMock()
+        client.post.side_effect = _http_error(404)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(HttpClientError, match="HTTP 404"),
+        ):
+            await self._executor()._post_action_with_5xx_retries(client, "/actions", {})
+
+        assert client.post.await_count == 1
+
+    async def test_raises_after_exhausting_retries(self):
+        client = AsyncMock()
+        client.post.side_effect = _http_error(500)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+            patch(f"{_MODULE}.RETRY_5XX_MAX_ATTEMPTS", 3),
+            pytest.raises(HttpClientError, match="HTTP 500"),
+        ):
+            await self._executor()._post_action_with_5xx_retries(client, "/actions", {})
+
+        assert client.post.await_count == 3
+
+    async def test_backoff_is_capped_at_max_interval(self):
+        client = AsyncMock()
+        client.post.side_effect = _http_error(502)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch(f"{_MODULE}.RETRY_5XX_MAX_ATTEMPTS", 8),
+            patch(f"{_MODULE}.RETRY_5XX_MAX_INTERVAL_SECONDS", 30.0),
+            pytest.raises(HttpClientError),
+        ):
+            await self._executor()._post_action_with_5xx_retries(client, "/actions", {})
+
+        waits = [c.args[0] for c in mock_sleep.await_args_list]
+        assert waits == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0]
+
+    async def test_execute_action_retries_post_on_5xx(self):
+        # End-to-end through _execute_action: a transient 5xx on create is retried.
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [_http_error(500), {"id": "action-retry"}]
+        mock_client.get.return_value = {"status": "COMPLETED", "result": {"ok": True}}
+
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=mock_client),
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await self._executor()._execute_action(
+                action_name="retryable",
+                params={},
+                config=SdkConfig(base_url="https://api.zamp.test", auth_token="tok"),
+            )
+
+        assert result == {"ok": True}
+        assert mock_client.post.await_count == 2
+
+
 class TestPollActionResult:
     """Tests for the private ActionExecutor._poll_action_result() method."""
 
@@ -547,3 +640,44 @@ class TestPollActionResult:
             pytest.raises(RuntimeError, match="unexpected status"),
         ):
             await self._executor()._poll_action_result(client, "action-7")
+
+    async def test_keeps_polling_through_5xx(self):
+        # A transient 5xx while polling must not fail the action; polling
+        # resumes and picks up the terminal status once the server recovers.
+        client = AsyncMock()
+        client.get.side_effect = [
+            {"status": "RUNNING"},
+            _http_error(500),
+            _http_error(503),
+            {"status": "COMPLETED", "result": {"done": True}},
+        ]
+
+        with patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock):
+            result = await self._executor()._poll_action_result(client, "action-5xx")
+
+        assert result == {"done": True}
+        assert client.get.await_count == 4
+
+    async def test_persistent_5xx_times_out_within_poll_budget(self):
+        # If the server never recovers, polling is still bounded by poll_timeout
+        # and surfaces a TimeoutError rather than looping forever.
+        client = AsyncMock()
+        client.get.side_effect = _http_error(502)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+            patch(f"{_MODULE}.POLL_INITIAL_INTERVAL_SECONDS", 1.0),
+            pytest.raises(TimeoutError, match="did not complete within 2.0s"),
+        ):
+            await self._executor()._poll_action_result(client, "action-5xx-forever", poll_timeout=2.0)
+
+    async def test_non_5xx_during_poll_propagates(self):
+        # A 4xx (non-transient) while polling should surface, not be swallowed.
+        client = AsyncMock()
+        client.get.side_effect = _http_error(404)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(HttpClientError, match="HTTP 404"),
+        ):
+            await self._executor()._poll_action_result(client, "action-4xx")

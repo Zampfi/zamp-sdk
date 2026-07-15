@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.13
+
+- Retry the action-create `POST /actions` on 5xx with exponential backoff (up to 10 attempts)
+- Keep polling `GET /actions/{id}` through transient 5xx responses instead of failing the action, bounded by the overall poll timeout
+
+## 0.0.12
+
+- Poll for the full `action_start_to_close_timeout` instead of a fixed 600s, so long-running actions are no longer abandoned client-side
+
 ## 0.0.1
 
 - Initial release
