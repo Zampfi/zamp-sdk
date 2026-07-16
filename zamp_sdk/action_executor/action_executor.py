@@ -3,8 +3,6 @@ import os
 from datetime import timedelta
 from typing import Any
 
-import structlog
-
 from zamp_sdk.action_executor.constants import (
     IN_PROGRESS_STATUSES,
     POLL_BACKOFF_COEFFICIENT,
@@ -17,8 +15,9 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
+from zamp_sdk.logger import get_logger
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class ActionExecutor:

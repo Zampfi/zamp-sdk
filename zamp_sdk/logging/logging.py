@@ -35,10 +35,9 @@ import json
 import os
 from typing import Any, Optional
 
-import structlog
-
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.context import ENV_TOOL_CALL_ID, resolve_context
+from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
 from zamp_sdk.logging.models import (
     ContentBlock,
@@ -49,7 +48,7 @@ from zamp_sdk.logging.models import (
 )
 from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 async def emit_log(block: ContentBlock) -> EmitLogResult:
