@@ -45,13 +45,24 @@ jobs:
       - name: Install poetry
         uses: snok/install-poetry@v1
 
-      - name: Bump patch version
+      - name: Resolve release version
         id: bump
         run: |
-          poetry version patch
-          NEW_VERSION=$(poetry version -s)
+          CURRENT=$(poetry version -s)
+          if git rev-parse -q --verify "refs/tags/$CURRENT" >/dev/null; then
+            # Current version is already released — auto patch-bump to the next one.
+            poetry version patch
+            NEW_VERSION=$(poetry version -s)
+            echo "bumped=true" >> $GITHUB_OUTPUT
+            echo "Patch-bumped $CURRENT -> $NEW_VERSION"
+          else
+            # pyproject holds an as-yet-unreleased version (e.g. a manual bump in the
+            # merged PR) — release it verbatim instead of bumping past it.
+            NEW_VERSION=$CURRENT
+            echo "bumped=false" >> $GITHUB_OUTPUT
+            echo "Releasing pyproject version as-is: $NEW_VERSION"
+          fi
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "Bumped version to $NEW_VERSION"
 
       - name: Configure git
         run: |
@@ -59,6 +70,7 @@ jobs:
           git config user.email "224820880+zampactionbot[bot]@users.noreply.github.com"
 
       - name: Commit version bump
+        if: steps.bump.outputs.bumped == 'true'
         run: |
           git add pyproject.toml
           git commit -m "Bump version to ${{ steps.bump.outputs.new_version }}"
