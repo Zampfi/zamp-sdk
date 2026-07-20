@@ -30,6 +30,7 @@ from zamp_sdk.user_input import (
     select_one,
     text_input,
 )
+from zamp_sdk.version import __version__ as __version__
 from zamp_sdk.workflows import (
     BaseActivity,
     BaseWorkflow,

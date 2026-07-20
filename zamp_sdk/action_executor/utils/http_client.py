@@ -3,10 +3,11 @@ import json
 from typing import Any, Dict, NoReturn, Optional, Union
 
 import aiohttp
-import structlog
 from pydantic import BaseModel
 
-logger = structlog.get_logger(__name__)
+from zamp_sdk.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class HttpClientError(Exception):

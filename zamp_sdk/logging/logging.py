@@ -36,8 +36,6 @@ import os
 from contextvars import ContextVar
 from typing import Any, Optional
 
-import structlog
-
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.context import (
     ENV_INSIDE_SANDBOX,
@@ -45,6 +43,7 @@ from zamp_sdk.context import (
     current_channel_context,
     resolve_context,
 )
+from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
 from zamp_sdk.logging.models import (
     ContentBlock,
@@ -55,7 +54,7 @@ from zamp_sdk.logging.models import (
 )
 from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 _log_buffer: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar(
     "zamp_emit_log_buffer", default=None

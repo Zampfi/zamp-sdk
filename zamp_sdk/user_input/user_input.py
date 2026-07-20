@@ -42,10 +42,9 @@ import sys
 import uuid
 from typing import Any, NoReturn, Optional
 
-import structlog
-
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.context import resolve_context
+from zamp_sdk.logger import get_logger
 from zamp_sdk.user_input.constants import (
     REQUEST_USER_INPUT_ACTION,
     SDK_USER_INPUT_EXIT_CODE,
@@ -54,7 +53,7 @@ from zamp_sdk.user_input.constants import (
 from zamp_sdk.user_input.models import UserInputResponse
 from zamp_sdk.user_input.utils import build_options, resume_script
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------

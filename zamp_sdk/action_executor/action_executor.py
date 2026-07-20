@@ -8,6 +8,7 @@ from zamp_sdk.action_executor.constants import (
     IN_PROGRESS_STATUSES,
     NEXUS_GATEWAY_OPERATION,
     NEXUS_GATEWAY_SERVICE,
+    POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
     POLL_TIMEOUT_SECONDS,
@@ -16,8 +17,11 @@ from zamp_sdk.action_executor.constants import (
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
-from zamp_sdk.action_executor.utils import HttpClient
+from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 from zamp_sdk.context.env import ENV_NEXUS_ENDPOINT, ENV_NEXUS_GATEWAY_ENABLED
+from zamp_sdk.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ActionExecutor:
@@ -259,7 +263,7 @@ class ActionExecutor:
         if action_start_to_close_timeout is not None:
             body["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
 
-        response = await client.post("/actions", data=body)
+        response = await cls._post_action(client, "/actions", body)
         action_id = response["id"]
         poll_timeout = POLL_TIMEOUT_SECONDS
         if action_start_to_close_timeout is not None:
@@ -270,8 +274,57 @@ class ActionExecutor:
             return return_type.model_validate(result)
         return result
 
+    @classmethod
+    async def _post_action(
+        cls,
+        client: HttpClient,
+        endpoint: str,
+        body: dict,
+        *,
+        retry_timeout: float = POLL_TIMEOUT_SECONDS,
+    ) -> dict:
+        """POST ``body`` to ``endpoint``, retrying transient 5xx with backoff.
+
+        Uses the same time-budget + backoff approach as the poll loop: on a 5xx,
+        keep retrying (backing off) until ``retry_timeout`` seconds elapse, so a
+        momentary server error doesn't fail the action before it is even
+        created. Non-5xx errors (e.g. 4xx, network) propagate immediately.
+        """
+        interval = POLL_INITIAL_INTERVAL_SECONDS
+        elapsed = 0.0
+
+        while True:
+            try:
+                return await client.post(endpoint, data=body)
+            except HttpClientError as exc:
+                # Budget exhausted or non-transient: surface the original error.
+                if not cls._is_retryable_5xx(exc) or elapsed >= retry_timeout:
+                    raise
+                logger.warning(
+                    "action POST returned 5xx, retrying",
+                    endpoint=endpoint,
+                    status_code=exc.status_code,
+                    elapsed=elapsed,
+                    retry_timeout=retry_timeout,
+                    retry_in_seconds=interval,
+                )
+                await asyncio.sleep(interval)
+                elapsed += interval
+                interval = cls._next_poll_interval(interval)
+
     @staticmethod
+    def _is_retryable_5xx(exc: HttpClientError) -> bool:
+        """A 5xx (server-error) response is transient and worth retrying."""
+        return exc.status_code is not None and exc.status_code >= 500
+
+    @staticmethod
+    def _next_poll_interval(interval: float) -> float:
+        """Next poll backoff interval, capped at ``POLL_MAX_INTERVAL_SECONDS``."""
+        return min(interval * POLL_BACKOFF_COEFFICIENT, POLL_MAX_INTERVAL_SECONDS)
+
+    @classmethod
     async def _poll_action_result(
+        cls,
         client: HttpClient,
         action_id: str,
         poll_timeout: float = POLL_TIMEOUT_SECONDS,
@@ -289,7 +342,24 @@ class ActionExecutor:
             await asyncio.sleep(interval)
             elapsed += interval
 
-            data = await client.get(f"/actions/{action_id}")
+            try:
+                data = await client.get(f"/actions/{action_id}")
+            except HttpClientError as exc:
+                # A transient 5xx while polling shouldn't fail the action: keep
+                # polling (with backoff) until the action completes or the
+                # overall poll_timeout is hit. Non-5xx errors still propagate.
+                if not cls._is_retryable_5xx(exc):
+                    raise
+                logger.warning(
+                    "action poll returned 5xx, continuing to poll",
+                    action_id=action_id,
+                    status_code=exc.status_code,
+                    elapsed=elapsed,
+                    poll_timeout=poll_timeout,
+                )
+                interval = cls._next_poll_interval(interval)
+                continue
+
             action_status = data["status"]
 
             if action_status in SUCCESS_STATUSES:
@@ -298,6 +368,6 @@ class ActionExecutor:
                 raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
             if action_status not in IN_PROGRESS_STATUSES:
                 raise RuntimeError(f"Action {action_id} unexpected status: {action_status}")
-            interval = min(interval * 2, POLL_MAX_INTERVAL_SECONDS)
+            interval = cls._next_poll_interval(interval)
 
         raise TimeoutError(f"Action {action_id} did not complete within {poll_timeout}s")

@@ -4,6 +4,7 @@ from zamp_sdk.action_executor.constants.nexus_gateway import (
     NEXUS_GATEWAY_SERVICE,
 )
 from zamp_sdk.action_executor.constants.polling import (
+    POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
     POLL_TIMEOUT_SECONDS,
@@ -21,6 +22,7 @@ __all__ = [
     "IN_PROGRESS_STATUSES",
     "NEXUS_GATEWAY_OPERATION",
     "NEXUS_GATEWAY_SERVICE",
+    "POLL_BACKOFF_COEFFICIENT",
     "POLL_INITIAL_INTERVAL_SECONDS",
     "POLL_MAX_INTERVAL_SECONDS",
     "POLL_TIMEOUT_SECONDS",
