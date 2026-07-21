@@ -1,8 +1,3 @@
-from zamp_sdk.action_executor.constants.nexus_gateway import (
-    EXECUTION_TOKEN_KEY,
-    NEXUS_GATEWAY_OPERATION,
-    NEXUS_GATEWAY_SERVICE,
-)
 from zamp_sdk.action_executor.constants.polling import (
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
@@ -18,10 +13,7 @@ from zamp_sdk.action_executor.constants.statuses import (
 
 __all__ = [
     "ActionStatus",
-    "EXECUTION_TOKEN_KEY",
     "IN_PROGRESS_STATUSES",
-    "NEXUS_GATEWAY_OPERATION",
-    "NEXUS_GATEWAY_SERVICE",
     "POLL_BACKOFF_COEFFICIENT",
     "POLL_INITIAL_INTERVAL_SECONDS",
     "POLL_MAX_INTERVAL_SECONDS",
