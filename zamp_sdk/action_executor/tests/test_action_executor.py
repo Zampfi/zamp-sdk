@@ -136,6 +136,7 @@ class TestExecuteDispatch:
     async def test_non_sandbox_uses_actions_hub_path(self, base_url, auth_token):
         with (
             patch.dict("os.environ", {}, clear=True),
+            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
@@ -156,6 +157,7 @@ class TestExecuteDispatch:
     async def test_sandbox_value_other_than_true_uses_actions_hub(self):
         with (
             patch.dict("os.environ", {"INSIDE_SANDBOX": "false"}, clear=True),
+            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):

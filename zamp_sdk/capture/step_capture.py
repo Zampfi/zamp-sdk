@@ -1,8 +1,8 @@
 """In-execution step buffer, shared by ``emit_*`` and ``ActionExecutor``.
 
-A runtime (e.g. the ``CodeExecutorWorkflow``) calls :func:`start_log_capture` and
-then :func:`drain_log_capture` to return every step the script ran — emitted log
-blocks and action calls alike — as part of its result.
+A host runtime calls :func:`start_log_capture` and then :func:`drain_log_capture`
+to return every step the script ran — emitted log blocks and action calls alike —
+as part of its result.
 
 This package imports nothing from ``logging`` or ``action_executor``, so both can
 import it at module top without an import cycle.

@@ -2,12 +2,11 @@
 
 The context reaches the SDK two different ways depending on where the code runs:
 
-* **Inside a Pantheon sandbox** the runtime injects it as ``ZAMP_*`` environment
+* **Inside a sandbox** the runtime injects it as ``ZAMP_*`` environment
   variables, read by :func:`zamp_sdk.context.resolve_context`.
-* **Inside the code executor** (a Temporal worker, *not* a sandbox) there are no
-  such env vars. The ``CodeExecutorWorkflow`` receives the context from Pantheon
-  on the Nexus trigger and binds it here via :func:`bind_channel_context`, so
-  ``emit_log`` / ``emit_text`` / … pick it up automatically.
+* **Outside a sandbox** there are no such env vars — the host runtime binds it
+  here via :func:`bind_channel_context`, so ``emit_log`` / ``emit_text`` / … pick
+  it up automatically.
 """
 
 from __future__ import annotations
@@ -49,9 +48,9 @@ _bound_context: ContextVar[Optional[ChannelContext]] = ContextVar("zamp_channel_
 def bind_channel_context(context: ChannelContext) -> None:
     """Bind the channel context for the current execution.
 
-    Used outside the sandbox (e.g. the ``CodeExecutorWorkflow``), where the
-    context arrives on the workflow input rather than as environment variables.
-    Once bound, ``emit_log`` and its helpers attach output to this context.
+    Used outside a sandbox, where the context arrives on the execution input
+    rather than as environment variables. Once bound, ``emit_log`` and its
+    helpers attach output to this context.
     """
     _bound_context.set(context)
 
