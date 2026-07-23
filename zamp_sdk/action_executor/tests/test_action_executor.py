@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,6 +9,7 @@ from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClientError
+from zamp_sdk.capture import drain_log_capture, start_log_capture
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
 _SANDBOX_ENV = {"INSIDE_SANDBOX": "true"}
@@ -767,3 +769,34 @@ class TestChannelContextOnApiCall:
         ):
             await ActionExecutor.execute("some_action", {"p": 1})
         assert "channel_context" not in mock_client.post.call_args.kwargs["data"]
+
+
+class _Weird:
+    def __str__(self) -> str:
+        return "<weird>"
+
+
+def test_capture_action_step_serializable_result_stored_asis():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, {"ok": True})
+    steps = drain_log_capture()
+    assert steps[0]["output"] == {"ok": True}
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_non_serializable_result_degrades_to_string():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, _Weird())
+    steps = drain_log_capture()
+    assert steps[0]["output"] == "<weird>"
+    json.dumps(steps[0])  # the whole step is JSON-safe
+
+
+def test_capture_action_step_cyclic_result_does_not_hang_and_is_json_safe():
+    start_log_capture()
+    cyc: dict = {}
+    cyc["self"] = cyc
+    ActionExecutor._capture_action_step("act", {"a": 1}, cyc)
+    steps = drain_log_capture()
+    assert isinstance(steps[0]["output"], str)  # stringified, not the live cycle
+    json.dumps(steps[0])

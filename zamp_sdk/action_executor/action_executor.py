@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 from datetime import timedelta
 from typing import Any, Callable
@@ -100,15 +101,36 @@ class ActionExecutor:
         """Append this action call (name + input + output) to the in-execution step
         buffer so a runtime (the code executor) can surface every step it ran. A no-op
         unless capture is active (e.g. never inside a sandbox); emit_log suppresses this
-        for its own call."""
+        for its own call.
+
+        The buffer is drained into ``CodeExecutorOutput.logs`` and serialized across the
+        Temporal boundary. The action result is normally JSON-serializable, so it's
+        captured as-is; only if it isn't do we fall back to a stringified ``output`` so a
+        non-serializable result degrades gracefully instead of sinking the whole output
+        on the return path. We check with a cheap ``json.dumps`` (no recursive walk —
+        that risks latency on the Temporal path)."""
         if not capture_active():
             return
+        output: Any = result
+        try:
+            json.dumps(result)
+        except Exception as exc:
+            logger.warning(
+                "action result is not JSON-serializable; capturing a stringified output",
+                action_name=action_name,
+                result_type=type(result).__name__,
+                error=repr(exc),
+            )
+            try:
+                output = str(result)
+            except Exception:
+                output = f"<unserializable {type(result).__name__}>"
         capture_step(
             {
                 "event": "action",
                 "name": action_name,
                 "input": params,
-                "output": result,
+                "output": output,
             }
         )
 

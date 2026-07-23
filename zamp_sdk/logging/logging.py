@@ -95,7 +95,7 @@ def _emit_context() -> dict[str, Any]:
     if _inside_sandbox():
         return resolve_context()
     ctx = current_channel_context()
-    return ctx.model_dump(exclude_none=True) if ctx else {}
+    return ctx.model_dump(mode="json", exclude_none=True) if ctx else {}
 
 
 def _current_tool_call_id() -> Optional[str]:
