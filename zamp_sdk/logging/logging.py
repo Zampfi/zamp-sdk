@@ -33,12 +33,12 @@ from __future__ import annotations
 
 import json
 import os
-from contextvars import ContextVar
 from typing import Any, Optional
 
 from pydantic import ValidationError
 
 from zamp_sdk.action_executor import ActionExecutor
+from zamp_sdk.capture import capture_step, suppress_step_capture
 from zamp_sdk.context import (
     ENV_INSIDE_SANDBOX,
     ENV_TOOL_CALL_ID,
@@ -59,28 +59,28 @@ from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 
 logger = get_logger(__name__)
 
-_log_buffer: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar(
-    "zamp_emit_log_buffer", default=None
-)
 
-
-def start_log_capture() -> None:
-    """Begin accumulating emitted blocks for the current execution.
-
-    Used by a runtime (e.g. the ``CodeExecutorWorkflow``) that wants to return
-    everything ``emit_log`` streamed as part of its result. Blocks keep
-    streaming live regardless; this only turns on the second, accumulating sink.
-    """
-    _log_buffer.set([])
-
-
-def drain_log_capture() -> list[dict[str, Any]]:
-    """Return the blocks accumulated since :func:`start_log_capture`.
-
-    Empty list if capture was never started. Safe to call in a ``finally`` to
-    collect logs on both success and failure.
-    """
-    return list(_log_buffer.get() or [])
+def _clean_block_entry(block: ContentBlock) -> dict[str, Any]:
+    """A compact, logger-style capture entry for an emitted block — the same shape
+    as the ``emit_*`` structured logs, not the full serialized block."""
+    if isinstance(block, TextContentBlock):
+        return {"event": "emit_text", "content": block.content}
+    if isinstance(block, ToolUseContentBlock):
+        return {
+            "event": "emit_tool_use",
+            "id": block.id,
+            "name": block.name,
+            "display_title": block.display_title,
+            "input_json": block.input_json,
+        }
+    if isinstance(block, ToolResultContentBlock):
+        return {
+            "event": "emit_tool_result",
+            "id": block.id,
+            "name": block.name,
+            "content": block.content,
+        }
+    return {"event": "emit_log", **block.model_dump(mode="json")}
 
 
 def _inside_sandbox() -> bool:
@@ -143,9 +143,7 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
 
     block_payload = block.model_dump(mode="json")
 
-    buffer = _log_buffer.get()
-    if buffer is not None:
-        buffer.append(block_payload)
+    capture_step(_clean_block_entry(block))
 
     params: dict[str, Any] = {
         "block": block_payload,
@@ -158,11 +156,14 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
         params["channel_context"] = channel_context
 
     try:
-        result = await ActionExecutor.execute(
-            EMIT_LOG_ACTION_NAME,
-            params,
-            summary="Emit log to current agent context",
-        )
+        # The block is already captured above; suppress capture of this action call so
+        # emit_log isn't recorded twice.
+        with suppress_step_capture():
+            result = await ActionExecutor.execute(
+                EMIT_LOG_ACTION_NAME,
+                params,
+                summary="Emit log to current agent context",
+            )
         return EmitLogResult(ok=True, result=result)
     except Exception as exc:  # noqa: BLE001
         logger.warning("emit_log failed", error=str(exc))
