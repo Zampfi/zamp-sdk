@@ -14,9 +14,7 @@ from typing import Any, Iterator, Optional
 
 from zamp_sdk.version import __version__
 
-_log_buffer: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar(
-    "zamp_step_buffer", default=None
-)
+_log_buffer: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar("zamp_step_buffer", default=None)
 _suppress: ContextVar[bool] = ContextVar("zamp_step_suppress", default=False)
 
 

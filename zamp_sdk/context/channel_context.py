@@ -43,9 +43,7 @@ class ChannelContext(BaseModel):
     run_id: str
 
 
-_bound_context: ContextVar[Optional[ChannelContext]] = ContextVar(
-    "zamp_channel_context", default=None
-)
+_bound_context: ContextVar[Optional[ChannelContext]] = ContextVar("zamp_channel_context", default=None)
 
 
 def bind_channel_context(context: ChannelContext) -> None:

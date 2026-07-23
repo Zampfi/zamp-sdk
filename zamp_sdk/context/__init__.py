@@ -14,7 +14,7 @@ from zamp_sdk.context.env import (
     ENV_STREAMING_ID,
     ENV_TOOL_CALL_ID,
 )
-from zamp_sdk.context.resolve import resolve_context
+from zamp_sdk.context.resolve import resolve_channel_context, resolve_context
 
 __all__ = [
     "ChannelContext",
@@ -29,5 +29,6 @@ __all__ = [
     "bind_channel_context",
     "clear_channel_context",
     "current_channel_context",
+    "resolve_channel_context",
     "resolve_context",
 ]

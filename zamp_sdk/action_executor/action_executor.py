@@ -16,6 +16,7 @@ from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_ex
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 from zamp_sdk.capture import capture_active, capture_step
+from zamp_sdk.context import resolve_channel_context
 from zamp_sdk.logger import get_logger
 
 logger = get_logger(__name__)
@@ -95,9 +96,7 @@ class ActionExecutor:
         return result
 
     @staticmethod
-    def _capture_action_step(
-        action_name: str, params: dict[str, Any], result: Any
-    ) -> None:
+    def _capture_action_step(action_name: str, params: dict[str, Any], result: Any) -> None:
         """Append this action call (name + input + output) to the in-execution step
         buffer so a runtime (the code executor) can surface every step it ran. A no-op
         unless capture is active (e.g. never inside a sandbox); emit_log suppresses this
@@ -127,10 +126,14 @@ class ActionExecutor:
         action_start_to_close_timeout: timedelta | None,
     ) -> Any:
         config = cls._resolve_config(base_url, auth_token)
+        # Attach the caller's channel context once here so the platform can inject it
+        # into the action's params — individual actions don't each have to send it.
+        channel_context = resolve_channel_context()
         return await cls._execute_action(
             action_name=action_name,
             params=params,
             config=config,
+            channel_context=channel_context.model_dump(mode="json") if channel_context is not None else None,
             return_type=return_type,
             summary=summary,
             action_retry_policy=action_retry_policy,
@@ -190,6 +193,7 @@ class ActionExecutor:
         params: dict[str, Any],
         *,
         config: SdkConfig,
+        channel_context: dict[str, Any] | None = None,
         return_type: type | None = None,
         summary: str | None = None,
         action_retry_policy: RetryPolicy | None = None,
@@ -211,6 +215,8 @@ class ActionExecutor:
             "is_external_action": True,
             "retry_policy": effective_retry_policy.model_dump(mode="json"),
         }
+        if channel_context is not None:
+            body["channel_context"] = channel_context
         if summary is not None:
             body["summary"] = summary
         if action_start_to_close_timeout is not None:

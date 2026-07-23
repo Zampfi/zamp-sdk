@@ -1,18 +1,14 @@
 import json
-import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import BaseModel
 
 from zamp_sdk import (
-    ChannelContext,
     EmitLogResult,
     TextContentBlock,
     ToolResultContentBlock,
     ToolUseContentBlock,
-    bind_channel_context,
-    clear_channel_context,
     drain_log_capture,
     emit_log,
     emit_text,
@@ -266,81 +262,6 @@ class TestBlockShapes:
 
     def test_tool_result_block_type_value(self):
         assert ToolResultContentBlock(content="r").type.value == "tool_result"
-
-
-class TestEmitChannelContext:
-    """emit_log also sends `channel_context` (the field consumers are migrating to),
-    but only when a complete, valid one is available; otherwise it is omitted and the
-    existing `context` is used unchanged (backward compatibility)."""
-
-    def _full_sandbox_env(self, monkeypatch, channel_id: str) -> None:
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
-        monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
-        monkeypatch.setenv("ZAMP_CHANNEL_ID", channel_id)
-        monkeypatch.setenv("ZAMP_STREAMING_ID", "s")
-        monkeypatch.setenv("ZAMP_MESSAGE_ID", "m")
-        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "t")
-        monkeypatch.setenv("ZAMP_RUN_ID", "r")
-
-    @pytest.mark.asyncio
-    async def test_sends_channel_context_when_full_and_valid(self, monkeypatch):
-        cid = str(uuid.uuid4())
-        self._full_sandbox_env(monkeypatch, cid)
-        execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
-            await emit_log(TextContentBlock(content="hi"))
-        params = execute.call_args.args[1]
-        assert params["channel_context"]["channel_id"] == cid
-        assert params["channel_context"]["channel_type"] == "conversation"
-        # existing context is still sent unchanged
-        assert params["context"]["channel_id"] == cid
-
-    @pytest.mark.asyncio
-    async def test_omits_channel_context_when_channel_id_not_uuid(self, monkeypatch):
-        # Previous case: a non-UUID channel id -> channel_context omitted, context intact.
-        self._full_sandbox_env(monkeypatch, "conv-1")
-        execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
-            await emit_log(TextContentBlock(content="hi"))
-        params = execute.call_args.args[1]
-        assert "channel_context" not in params
-        assert params["context"]["channel_id"] == "conv-1"
-
-    @pytest.mark.asyncio
-    async def test_omits_channel_context_when_partial(self, monkeypatch):
-        # Only channel_type/id set (missing streaming/message/tool/run) -> incomplete -> omit.
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
-        monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
-        monkeypatch.setenv("ZAMP_CHANNEL_ID", str(uuid.uuid4()))
-        execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
-            await emit_log(TextContentBlock(content="hi"))
-        params = execute.call_args.args[1]
-        assert "channel_context" not in params
-
-    @pytest.mark.asyncio
-    async def test_sends_bound_channel_context_outside_sandbox(self, monkeypatch):
-        # Code-executor path (not a sandbox): the bound ChannelContext is sent.
-        cid = uuid.uuid4()
-        bind_channel_context(
-            ChannelContext(
-                channel_type="task",
-                channel_id=str(cid),
-                streaming_id="s",
-                message_id="m",
-                tool_call_id="t",
-                run_id="r",
-            )
-        )
-        try:
-            execute = AsyncMock(return_value=None)
-            with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
-                await emit_log(TextContentBlock(content="hi"))
-            params = execute.call_args.args[1]
-            assert params["channel_context"]["channel_type"] == "task"
-            assert params["channel_context"]["channel_id"] == str(cid)
-        finally:
-            clear_channel_context()
 
 
 class TestLogCapture:

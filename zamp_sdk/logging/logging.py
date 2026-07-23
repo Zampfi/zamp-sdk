@@ -35,14 +35,11 @@ import json
 import os
 from typing import Any, Optional
 
-from pydantic import ValidationError
-
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.capture import capture_active, capture_step, suppress_step_capture
 from zamp_sdk.context import (
     ENV_INSIDE_SANDBOX,
     ENV_TOOL_CALL_ID,
-    ChannelContext,
     current_channel_context,
     resolve_context,
 )
@@ -101,22 +98,6 @@ def _emit_context() -> dict[str, Any]:
     return ctx.model_dump(exclude_none=True) if ctx else {}
 
 
-def _emit_channel_context() -> Optional[dict[str, Any]]:
-    """The full channel context to also send as ``channel_context`` — the field platform
-    actions are migrating to. Returns a validated ``ChannelContext`` (as a dict) when a
-    complete, valid one is available (UUID channel_id, conversation/task channel_type),
-    else None so the receiver falls back to ``context``."""
-    ctx: Optional[ChannelContext]
-    if _inside_sandbox():
-        try:
-            ctx = ChannelContext(**resolve_context())
-        except ValidationError:
-            return None
-    else:
-        ctx = current_channel_context()
-    return ctx.model_dump(mode="json") if ctx is not None else None
-
-
 def _current_tool_call_id() -> Optional[str]:
     """The running tool's id, from env in a sandbox or the bound context."""
     if _inside_sandbox():
@@ -150,11 +131,6 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
         "block": block_payload,
         "context": _emit_context(),
     }
-    # Also send the full context as `channel_context` (the field consumers are migrating
-    # to). Only when a complete, valid one is available; otherwise consumers use `context`.
-    channel_context = _emit_channel_context()
-    if channel_context is not None:
-        params["channel_context"] = channel_context
 
     try:
         # The block is already captured above; suppress capture of this action call so
