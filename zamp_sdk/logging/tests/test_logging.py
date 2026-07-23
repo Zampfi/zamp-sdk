@@ -82,11 +82,7 @@ class TestStringifyToolResult:
 
 class TestEmitLogText:
     @pytest.mark.asyncio
-    async def test_text_block_calls_action_executor(self, monkeypatch):
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
-        monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
-        monkeypatch.setenv("ZAMP_CHANNEL_ID", "conv-1")
-
+    async def test_text_block_calls_action_executor(self):
         execute = AsyncMock(return_value={"success": True})
         with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
             result = await emit_log(TextContentBlock(content="• **Progress** — building..."))
@@ -99,8 +95,8 @@ class TestEmitLogText:
         assert action_name == "emit_log"
         assert params["block"]["type"] == "text"
         assert params["block"]["content"] == "• **Progress** — building..."
-        assert params["context"]["channel_id"] == "conv-1"
-        assert params["context"]["channel_type"] == "conversation"
+        # emit_log sends only the block; routing rides on the injected channel_context
+        assert "context" not in params
         # summary kwarg is forwarded so server-side logs read nicely
         assert execute.call_args.kwargs.get("summary")
 
