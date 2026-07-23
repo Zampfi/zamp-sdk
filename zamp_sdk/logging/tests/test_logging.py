@@ -21,7 +21,7 @@ from zamp_sdk import (
     start_log_capture,
 )
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.capture import capture_step, suppress_step_capture
+from zamp_sdk.capture import capture_active, capture_step, suppress_step_capture
 from zamp_sdk.logging.constants import EMIT_ID_PREFIX
 from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 from zamp_sdk.version import __version__
@@ -430,3 +430,12 @@ class TestLogCapture:
         # No start_log_capture() -> capture is a no-op (blocks still stream live elsewhere).
         ActionExecutor._capture_action_step("do_thing", {"a": 1}, {"ok": True})
         assert drain_log_capture() == []
+
+    def test_capture_active_reflects_state(self):
+        # Guard used to skip building entries when they would be discarded (e.g. sandbox).
+        assert capture_active() is False  # nothing started
+        start_log_capture()
+        assert capture_active() is True
+        with suppress_step_capture():
+            assert capture_active() is False  # suppressed
+        assert capture_active() is True

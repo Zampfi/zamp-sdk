@@ -39,6 +39,13 @@ def drain_log_capture() -> list[dict[str, Any]]:
     return list(_log_buffer.get() or [])
 
 
+def capture_active() -> bool:
+    """True when steps are being captured — a buffer is set and capture is not
+    suppressed. Callers check this to skip building an entry that would be discarded
+    (e.g. inside a sandbox, where capture is never started)."""
+    return not _suppress.get() and _log_buffer.get() is not None
+
+
 def capture_step(entry: dict[str, Any]) -> None:
     """Append one step to the capture buffer, if capture is active and not suppressed.
 

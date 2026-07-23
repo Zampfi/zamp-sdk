@@ -15,7 +15,7 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
-from zamp_sdk.capture import capture_step
+from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.logger import get_logger
 
 logger = get_logger(__name__)
@@ -100,7 +100,10 @@ class ActionExecutor:
     ) -> None:
         """Append this action call (name + input + output) to the in-execution step
         buffer so a runtime (the code executor) can surface every step it ran. A no-op
-        unless capture is active; emit_log suppresses this for its own call."""
+        unless capture is active (e.g. never inside a sandbox); emit_log suppresses this
+        for its own call."""
+        if not capture_active():
+            return
         capture_step(
             {
                 "event": "action",

@@ -38,7 +38,7 @@ from typing import Any, Optional
 from pydantic import ValidationError
 
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.capture import capture_step, suppress_step_capture
+from zamp_sdk.capture import capture_active, capture_step, suppress_step_capture
 from zamp_sdk.context import (
     ENV_INSIDE_SANDBOX,
     ENV_TOOL_CALL_ID,
@@ -143,7 +143,8 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
 
     block_payload = block.model_dump(mode="json")
 
-    capture_step(_clean_block_entry(block))
+    if capture_active():
+        capture_step(_clean_block_entry(block))
 
     params: dict[str, Any] = {
         "block": block_payload,
