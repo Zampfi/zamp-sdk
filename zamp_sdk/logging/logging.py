@@ -36,7 +36,13 @@ import os
 from typing import Any, Optional
 
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.context import ENV_TOOL_CALL_ID, resolve_context
+from zamp_sdk.capture import capture_active, capture_step, suppress_step_capture
+from zamp_sdk.context import (
+    ENV_INSIDE_SANDBOX,
+    ENV_TOOL_CALL_ID,
+    current_channel_context,
+    resolve_context,
+)
 from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
 from zamp_sdk.logging.models import (
@@ -49,6 +55,55 @@ from zamp_sdk.logging.models import (
 from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 
 logger = get_logger(__name__)
+
+
+def _clean_block_entry(block: ContentBlock) -> dict[str, Any]:
+    """A compact, logger-style capture entry for an emitted block — the same shape
+    as the ``emit_*`` structured logs, not the full serialized block."""
+    if isinstance(block, TextContentBlock):
+        return {"event": "emit_text", "content": block.content}
+    if isinstance(block, ToolUseContentBlock):
+        return {
+            "event": "emit_tool_use",
+            "id": block.id,
+            "name": block.name,
+            "display_title": block.display_title,
+            "input_json": block.input_json,
+        }
+    if isinstance(block, ToolResultContentBlock):
+        return {
+            "event": "emit_tool_result",
+            "id": block.id,
+            "name": block.name,
+            "content": block.content,
+        }
+    return {"event": "emit_log", **block.model_dump(mode="json")}
+
+
+def _inside_sandbox() -> bool:
+    return os.environ.get(ENV_INSIDE_SANDBOX) == "true"
+
+
+def _emit_context() -> dict[str, Any]:
+    """Resolve the agent context to attach to an emitted block.
+
+    Inside a sandbox the runtime injects the context as ``ZAMP_*`` env vars.
+    Otherwise (the code-executor case) it comes from the context the running
+    workflow bound via :func:`zamp_sdk.bind_channel_context`. Returns a flat dict
+    that is wire-compatible with the platform's ``EmitLogContext`` either way.
+    """
+    if _inside_sandbox():
+        return resolve_context()
+    ctx = current_channel_context()
+    return ctx.model_dump(mode="json", exclude_none=True) if ctx else {}
+
+
+def _current_tool_call_id() -> Optional[str]:
+    """The running tool's id, from env in a sandbox or the bound context."""
+    if _inside_sandbox():
+        return os.environ.get(ENV_TOOL_CALL_ID)
+    ctx = current_channel_context()
+    return ctx.tool_call_id if ctx else None
 
 
 async def emit_log(block: ContentBlock) -> EmitLogResult:
@@ -65,19 +120,27 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
     # Auto-stamp parent_block_id from the running tool's id so emitted blocks
     # group under the correct parent when parallel tool calls interleave.
     if block.parent_block_id is None:
-        block.parent_block_id = os.environ.get(ENV_TOOL_CALL_ID)
+        block.parent_block_id = _current_tool_call_id()
+
+    block_payload = block.model_dump(mode="json")
+
+    if capture_active():
+        capture_step(_clean_block_entry(block))
 
     params: dict[str, Any] = {
-        "block": block.model_dump(mode="json"),
-        "context": resolve_context(),
+        "block": block_payload,
+        "context": _emit_context(),
     }
 
     try:
-        result = await ActionExecutor.execute(
-            EMIT_LOG_ACTION_NAME,
-            params,
-            summary="Emit log to current agent context",
-        )
+        # The block is already captured above; suppress capture of this action call so
+        # emit_log isn't recorded twice.
+        with suppress_step_capture():
+            result = await ActionExecutor.execute(
+                EMIT_LOG_ACTION_NAME,
+                params,
+                summary="Emit log to current agent context",
+            )
         return EmitLogResult(ok=True, result=result)
     except Exception as exc:  # noqa: BLE001
         logger.warning("emit_log failed", error=str(exc))

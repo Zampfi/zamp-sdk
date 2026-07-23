@@ -9,19 +9,25 @@ from zamp_sdk import (
     TextContentBlock,
     ToolResultContentBlock,
     ToolUseContentBlock,
+    drain_log_capture,
     emit_log,
     emit_text,
     emit_tool_result,
     emit_tool_use,
+    start_log_capture,
 )
+from zamp_sdk.action_executor import ActionExecutor
+from zamp_sdk.capture import capture_active, capture_step, suppress_step_capture
 from zamp_sdk.logging.constants import EMIT_ID_PREFIX
 from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
+from zamp_sdk.version import __version__
 
 
 @pytest.fixture(autouse=True)
 def _clear_zamp_env(monkeypatch):
     """Every test starts with a clean slate — context-resolving env vars off."""
     for var in (
+        "INSIDE_SANDBOX",
         "ZAMP_CHANNEL_TYPE",
         "ZAMP_CHANNEL_ID",
         "ZAMP_STREAMING_ID",
@@ -77,6 +83,7 @@ class TestStringifyToolResult:
 class TestEmitLogText:
     @pytest.mark.asyncio
     async def test_text_block_calls_action_executor(self, monkeypatch):
+        monkeypatch.setenv("INSIDE_SANDBOX", "true")
         monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
         monkeypatch.setenv("ZAMP_CHANNEL_ID", "conv-1")
 
@@ -99,6 +106,7 @@ class TestEmitLogText:
 
     @pytest.mark.asyncio
     async def test_auto_stamps_parent_block_id_from_env(self, monkeypatch):
+        monkeypatch.setenv("INSIDE_SANDBOX", "true")
         monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_abc")
         execute = AsyncMock(return_value=None)
         block = TextContentBlock(content="hello")
@@ -254,3 +262,101 @@ class TestBlockShapes:
 
     def test_tool_result_block_type_value(self):
         assert ToolResultContentBlock(content="r").type.value == "tool_result"
+
+
+class TestLogCapture:
+    """The capture buffer records clean, logger-style steps: emitted blocks (compact,
+    not full serialized blocks) and every ActionExecutor call (name + input + output),
+    so a runtime can return every step the script ran."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_buffer(self):
+        from zamp_sdk.capture.step_capture import _log_buffer
+
+        _log_buffer.set(None)
+        yield
+        _log_buffer.set(None)
+
+    @pytest.mark.asyncio
+    async def test_captures_clean_block_entries(self, monkeypatch):
+        monkeypatch.setenv("INSIDE_SANDBOX", "true")
+        start_log_capture()
+        execute = AsyncMock(return_value=None)
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+            await emit_text("hello")
+            tid = await emit_tool_use("MyTool", display_title="Doing", input={"x": 1})
+            await emit_tool_result(tid, {"ok": True}, name="MyTool")
+
+        steps = drain_log_capture()
+        # Every entry carries the SDK version (like the logger).
+        assert all(s["sdk_version"] == __version__ for s in steps)
+        assert steps[0] == {
+            "sdk_version": __version__,
+            "event": "emit_text",
+            "content": "hello",
+        }
+        assert steps[1] == {
+            "sdk_version": __version__,
+            "event": "emit_tool_use",
+            "id": tid,
+            "name": "MyTool",
+            "display_title": "Doing",
+            "input_json": json.dumps({"x": 1}),
+        }
+        assert steps[2]["event"] == "emit_tool_result"
+        assert steps[2]["id"] == tid
+        # Compact — not the full serialized block.
+        assert "parent_block_id" not in steps[0]
+        assert "type" not in steps[0]
+
+    def test_captures_action_call(self):
+        start_log_capture()
+        ActionExecutor._capture_action_step("do_thing", {"a": 1}, {"ok": True})
+        assert drain_log_capture() == [
+            {
+                "sdk_version": __version__,
+                "event": "action",
+                "name": "do_thing",
+                "input": {"a": 1},
+                "output": {"ok": True},
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_emit_log_suppresses_its_own_action_capture(self, monkeypatch):
+        # emit_log captures its block; the emit_log action call must NOT also be captured.
+        monkeypatch.setenv("INSIDE_SANDBOX", "true")
+        start_log_capture()
+
+        async def fake_execute(name, params, **kwargs):
+            # Simulate what ActionExecutor.execute does after dispatch.
+            ActionExecutor._capture_action_step(name, params, None)
+            return None
+
+        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", fake_execute):
+            await emit_text("hi")
+
+        # Only the block; the action was suppressed inside emit_log.
+        assert [s["event"] for s in drain_log_capture()] == ["emit_text"]
+
+    def test_suppress_step_capture(self):
+        start_log_capture()
+        capture_step({"event": "a"})
+        with suppress_step_capture():
+            capture_step({"event": "b"})  # suppressed
+        capture_step({"event": "c"})
+        assert [s["event"] for s in drain_log_capture()] == ["a", "c"]
+
+    def test_capture_is_noop_without_start(self):
+        # No start_log_capture() -> capture is a no-op (blocks still stream live elsewhere).
+        ActionExecutor._capture_action_step("do_thing", {"a": 1}, {"ok": True})
+        assert drain_log_capture() == []
+
+    def test_capture_active_reflects_state(self):
+        # Guard used to skip building entries when they would be discarded (e.g. sandbox).
+        assert capture_active() is False  # nothing started
+        start_log_capture()
+        assert capture_active() is True
+        with suppress_step_capture():
+            assert capture_active() is False  # suppressed
+        assert capture_active() is True
