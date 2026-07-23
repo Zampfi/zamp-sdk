@@ -41,6 +41,7 @@ from zamp_sdk.context import (
     ENV_INSIDE_SANDBOX,
     ENV_TOOL_CALL_ID,
     current_channel_context,
+    resolve_context,
 )
 from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
@@ -83,6 +84,20 @@ def _inside_sandbox() -> bool:
     return os.environ.get(ENV_INSIDE_SANDBOX) == "true"
 
 
+def _emit_context() -> dict[str, Any]:
+    """Resolve the agent context to attach to an emitted block.
+
+    Inside a sandbox the runtime injects the context as ``ZAMP_*`` env vars.
+    Otherwise (the code-executor case) it comes from the context the running
+    workflow bound via :func:`zamp_sdk.bind_channel_context`. Returns a flat dict
+    that is wire-compatible with the platform's ``EmitLogContext`` either way.
+    """
+    if _inside_sandbox():
+        return resolve_context()
+    ctx = current_channel_context()
+    return ctx.model_dump(exclude_none=True) if ctx else {}
+
+
 def _current_tool_call_id() -> Optional[str]:
     """The running tool's id, from env in a sandbox or the bound context."""
     if _inside_sandbox():
@@ -112,10 +127,10 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
     if capture_active():
         capture_step(_clean_block_entry(block))
 
-    # Routing is driven by channel_context, which the platform injects (from the
-    # verified token, or the context the SDK attaches to the call) — so the block
-    # is all emit_log needs to send.
-    params: dict[str, Any] = {"block": block_payload}
+    params: dict[str, Any] = {
+        "block": block_payload,
+        "context": _emit_context(),
+    }
 
     try:
         # The block is already captured above; suppress capture of this action call so
