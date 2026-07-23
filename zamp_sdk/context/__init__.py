@@ -1,5 +1,6 @@
 from zamp_sdk.context.channel_context import (
     ChannelContext,
+    ChannelType,
     bind_channel_context,
     clear_channel_context,
     current_channel_context,
@@ -17,6 +18,7 @@ from zamp_sdk.context.resolve import resolve_context
 
 __all__ = [
     "ChannelContext",
+    "ChannelType",
     "ENV_CHANNEL_ID",
     "ENV_CHANNEL_TYPE",
     "ENV_INSIDE_SANDBOX",

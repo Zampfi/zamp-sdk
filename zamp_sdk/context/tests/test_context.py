@@ -1,6 +1,9 @@
-import pytest
+import uuid
 
-from zamp_sdk.context import resolve_context
+import pytest
+from pydantic import ValidationError
+
+from zamp_sdk.context import ChannelContext, ChannelType, resolve_context
 
 
 @pytest.fixture(autouse=True)
@@ -44,3 +47,38 @@ class TestResolveContext:
     def test_partial_context(self, monkeypatch):
         monkeypatch.setenv("ZAMP_CHANNEL_ID", "conv-7")
         assert resolve_context() == {"channel_id": "conv-7"}
+
+
+class TestChannelContextModel:
+    def _kwargs(self, **overrides) -> dict:
+        base = {
+            "channel_type": "conversation",
+            "channel_id": str(uuid.uuid4()),
+            "streaming_id": "s",
+            "message_id": "m",
+            "tool_call_id": "t",
+            "run_id": "r",
+        }
+        base.update(overrides)
+        return base
+
+    def test_valid_coerces_types(self):
+        cid = uuid.uuid4()
+        cc = ChannelContext(**self._kwargs(channel_type="conversation", channel_id=str(cid)))
+        assert cc.channel_type is ChannelType.CONVERSATION
+        assert cc.channel_id == cid  # str coerced to UUID
+
+    def test_task_channel_type(self):
+        cc = ChannelContext(**self._kwargs(channel_type="task"))
+        assert cc.channel_type is ChannelType.TASK
+
+    def test_channel_type_restricted_to_conversation_and_task(self):
+        assert {ct.value for ct in ChannelType} == {"conversation", "task"}
+
+    def test_invalid_channel_type_rejected(self):
+        with pytest.raises(ValidationError):
+            ChannelContext(**self._kwargs(channel_type="user"))
+
+    def test_non_uuid_channel_id_rejected(self):
+        with pytest.raises(ValidationError):
+            ChannelContext(**self._kwargs(channel_id="not-a-uuid"))

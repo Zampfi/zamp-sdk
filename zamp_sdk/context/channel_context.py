@@ -12,10 +12,20 @@ The context reaches the SDK two different ways depending on where the code runs:
 
 from __future__ import annotations
 
+import uuid
 from contextvars import ContextVar
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+
+class ChannelType(str, Enum):
+    """The channel a context originates from. Restricted to the creation-source
+    kinds so an invalid channel fails validation early."""
+
+    CONVERSATION = "conversation"
+    TASK = "task"
 
 
 class ChannelContext(BaseModel):
@@ -25,8 +35,8 @@ class ChannelContext(BaseModel):
     ``emit_log`` action payload stays wire-compatible.
     """
 
-    channel_type: str = Field(description="'conversation' | 'task' — current channel type")
-    channel_id: str = Field(description="Conversation or task id of the current context")
+    channel_type: ChannelType = Field(description="Channel type — conversation or task")
+    channel_id: uuid.UUID = Field(description="Conversation or task id (UUID)")
     streaming_id: str
     message_id: str
     tool_call_id: str
