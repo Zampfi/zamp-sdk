@@ -29,12 +29,15 @@ def start_log_capture() -> None:
 
 
 def drain_log_capture() -> list[dict[str, Any]]:
-    """Return the steps accumulated since :func:`start_log_capture`.
+    """Return and clear the steps accumulated since :func:`start_log_capture`.
 
-    Empty list if capture was never started. Safe to call in a ``finally`` to
-    collect steps on both success and failure.
+    Clearing deactivates capture, so a later append or a reused execution context
+    can't leak stale steps into the next drain. Empty list if capture was never
+    started. Safe to call in a ``finally`` to collect steps on success and failure.
     """
-    return list(_log_buffer.get() or [])
+    buffer = _log_buffer.get()
+    _log_buffer.set(None)
+    return list(buffer or [])
 
 
 def capture_active() -> bool:
