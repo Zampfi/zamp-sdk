@@ -142,7 +142,7 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
                 summary="Emit log to current agent context",
             )
         return EmitLogResult(ok=True, result=result)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("emit_log failed", error=str(exc))
         return EmitLogResult(ok=False, error=str(exc))
 
