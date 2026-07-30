@@ -3,8 +3,6 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from pydantic import ValidationError
-
 from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
 from zamp_sdk.context.env import (
     ENV_CHANNEL_ID,
@@ -42,10 +40,14 @@ def resolve_channel_context() -> Optional[ChannelContext]:
     (None if they don't form a complete, valid context); otherwise from the
     context the running workflow bound via :func:`bind_channel_context`. Sent once
     when calling the platform so actions don't each have to attach it.
+
+    Resolving the context is best-effort and must never break the action call it
+    decorates, so *any* failure here resolves to None and the action goes through
+    without a context.
     """
     if os.environ.get(ENV_INSIDE_SANDBOX) == "true":
         try:
             return ChannelContext(**resolve_context())
-        except ValidationError:
+        except Exception:
             return None
     return current_channel_context()

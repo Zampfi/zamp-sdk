@@ -129,6 +129,16 @@ class TestResolveChannelContext:
         # Not a sandbox and nothing bound -> None.
         assert resolve_channel_context() is None
 
+    def test_none_when_resolution_raises_unexpectedly(self, monkeypatch):
+        # Resolution is best-effort: a failure that isn't a ValidationError must still
+        # resolve to None rather than breaking the action call it decorates.
+        def _boom() -> dict:
+            raise RuntimeError("boom")
+
+        monkeypatch.setenv("INSIDE_SANDBOX", "true")
+        monkeypatch.setattr("zamp_sdk.context.resolve.resolve_context", _boom)
+        assert resolve_channel_context() is None
+
     def test_uses_bound_context_outside_sandbox(self):
         cid = uuid.uuid4()
         bind_channel_context(
