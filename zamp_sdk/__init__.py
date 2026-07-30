@@ -3,6 +3,9 @@ from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.context import (
     ChannelContext,
     ChannelType,
+    bind_channel_context,
+    clear_channel_context,
+    current_channel_context,
 )
 from zamp_sdk.logging import (
     ContentBlock,
@@ -11,10 +14,12 @@ from zamp_sdk.logging import (
     TextContentBlock,
     ToolResultContentBlock,
     ToolUseContentBlock,
+    drain_log_capture,
     emit_log,
     emit_text,
     emit_tool_result,
     emit_tool_use,
+    start_log_capture,
 )
 from zamp_sdk.user_input import (
     InputOption,
@@ -48,6 +53,11 @@ __all__ = [
     "InputOption",
     "RetryPolicy",
     "SdkConfig",
+    "bind_channel_context",
+    "clear_channel_context",
+    "current_channel_context",
+    "drain_log_capture",
+    "start_log_capture",
     "TextContentBlock",
     "ToolResultContentBlock",
     "ToolUseContentBlock",

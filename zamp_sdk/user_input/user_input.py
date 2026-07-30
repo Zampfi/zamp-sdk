@@ -157,7 +157,7 @@ async def request_user_input(
             params,
             summary="Request human input from a sandboxed script",
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # If we cannot register the HITL we must not silently continue — that
         # would run downstream steps without the human's answer. Surface it.
         logger.error("request_user_input: failed to register HITL", error=str(exc))

@@ -6,6 +6,8 @@ from pydantic import ValidationError
 from zamp_sdk.context import (
     ChannelContext,
     ChannelType,
+    bind_channel_context,
+    clear_channel_context,
     resolve_channel_context,
     resolve_context,
 )
@@ -123,8 +125,8 @@ class TestResolveChannelContext:
         monkeypatch.setenv("ZAMP_CHANNEL_ID", str(uuid.uuid4()))
         assert resolve_channel_context() is None
 
-    def test_none_when_not_sandbox(self):
-        # Outside a sandbox there are no ZAMP_* env vars to resolve from -> None.
+    def test_none_when_no_context(self):
+        # Not a sandbox and nothing bound -> None.
         assert resolve_channel_context() is None
 
     def test_none_when_resolution_raises_unexpectedly(self, monkeypatch):
@@ -136,3 +138,23 @@ class TestResolveChannelContext:
         monkeypatch.setenv("INSIDE_SANDBOX", "true")
         monkeypatch.setattr("zamp_sdk.context.resolve.resolve_context", _boom)
         assert resolve_channel_context() is None
+
+    def test_uses_bound_context_outside_sandbox(self):
+        cid = uuid.uuid4()
+        bind_channel_context(
+            ChannelContext(
+                channel_type="task",
+                channel_id=str(cid),
+                streaming_id="s",
+                message_id="m",
+                tool_call_id="t",
+                run_id="r",
+            )
+        )
+        try:
+            cc = resolve_channel_context()
+            assert cc is not None
+            assert cc.channel_type is ChannelType.TASK
+            assert cc.channel_id == cid
+        finally:
+            clear_channel_context()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from zamp_sdk.context.channel_context import ChannelContext
+from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
 from zamp_sdk.context.env import (
     ENV_CHANNEL_ID,
     ENV_CHANNEL_TYPE,
@@ -36,9 +36,10 @@ def resolve_context() -> dict[str, Any]:
 def resolve_channel_context() -> Optional[ChannelContext]:
     """The caller's full channel context as a validated ``ChannelContext``, or None.
 
-    Inside a sandbox it comes from the ``ZAMP_*`` env vars the runtime injected —
-    None if they don't form a complete, valid context. Sent once when calling the
-    platform so actions don't each have to attach it.
+    Inside a sandbox it comes from the ``ZAMP_*`` env vars the runtime injected
+    (None if they don't form a complete, valid context); otherwise from the
+    context the running workflow bound via :func:`bind_channel_context`. Sent once
+    when calling the platform so actions don't each have to attach it.
 
     Resolving the context is best-effort and must never break the action call it
     decorates, so *any* failure here resolves to None and the action goes through
@@ -49,4 +50,4 @@ def resolve_channel_context() -> Optional[ChannelContext]:
             return ChannelContext(**resolve_context())
         except Exception:
             return None
-    return None
+    return current_channel_context()

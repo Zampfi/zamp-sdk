@@ -74,5 +74,10 @@ class TestPublicApi:
             "text_input",
             "ChannelContext",
             "ChannelType",
+            "bind_channel_context",
+            "clear_channel_context",
+            "current_channel_context",
+            "start_log_capture",
+            "drain_log_capture",
         }
         assert set(zamp_sdk.__all__) == expected

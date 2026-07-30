@@ -1,7 +1,8 @@
 import asyncio
+import json
 import os
 from datetime import timedelta
-from typing import Any
+from typing import Any, Callable
 
 from zamp_sdk.action_executor.constants import (
     IN_PROGRESS_STATUSES,
@@ -15,6 +16,7 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
+from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import resolve_channel_context
 from zamp_sdk.logger import get_logger
 
@@ -60,7 +62,7 @@ class ActionExecutor:
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
         if cls._is_inside_sandbox():
-            return await cls._execute_via_api(
+            result = await cls._execute_via_api(
                 action_name=action_name,
                 params=params,
                 base_url=base_url,
@@ -70,14 +72,66 @@ class ActionExecutor:
                 action_retry_policy=action_retry_policy,
                 action_start_to_close_timeout=action_start_to_close_timeout,
             )
-        return await cls._execute_via_actions_hub(
-            action_name=action_name,
-            params=params,
-            summary=summary,
-            return_type=return_type,
-            execution_mode=execution_mode,
-            action_retry_policy=action_retry_policy,
-            action_start_to_close_timeout=action_start_to_close_timeout,
+        else:
+            gateway = cls._get_action_gateway()
+            if gateway is not None and not await cls._is_registered_locally(action_name):
+                result = await gateway(
+                    action_name,
+                    params,
+                    summary=summary,
+                    return_type=return_type,
+                    action_retry_policy=action_retry_policy,
+                    action_start_to_close_timeout=action_start_to_close_timeout,
+                )
+            else:
+                result = await cls._execute_via_actions_hub(
+                    action_name=action_name,
+                    params=params,
+                    summary=summary,
+                    return_type=return_type,
+                    execution_mode=execution_mode,
+                    action_retry_policy=action_retry_policy,
+                    action_start_to_close_timeout=action_start_to_close_timeout,
+                )
+        cls._capture_action_step(action_name, params, result)
+        return result
+
+    @staticmethod
+    def _capture_action_step(action_name: str, params: dict[str, Any], result: Any) -> None:
+        """Append this action call (name + input + output) to the in-execution step
+        buffer so a runtime (the code executor) can surface every step it ran. A no-op
+        unless capture is active (e.g. never inside a sandbox); emit_log suppresses this
+        for its own call.
+
+        The buffer is drained into ``CodeExecutorOutput.logs`` and serialized across the
+        Temporal boundary. The action result is normally JSON-serializable, so it's
+        captured as-is; only if it isn't do we fall back to a stringified ``output`` so a
+        non-serializable result degrades gracefully instead of sinking the whole output
+        on the return path. We check with a cheap ``json.dumps`` (no recursive walk —
+        that risks latency on the Temporal path)."""
+        if not capture_active():
+            return
+        output: Any = result
+        try:
+            json.dumps(result)
+        except Exception as exc:
+            logger.warning(
+                "action result is not JSON-serializable; capturing a stringified output",
+                action_name=action_name,
+                result_type=type(result).__name__,
+                error=repr(exc),
+            )
+            try:
+                output = str(result)
+            except Exception:
+                output = f"<unserializable {type(result).__name__}>"
+        capture_step(
+            {
+                "event": "action",
+                "name": action_name,
+                "input": params,
+                "output": output,
+            }
         )
 
     @classmethod
@@ -137,6 +191,22 @@ class ActionExecutor:
             action_retry_policy=ah_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
         )
+
+    @classmethod
+    def _get_action_gateway(cls) -> Callable[..., Any] | None:
+        """Return the action gateway registered on ActionsHub, or None if none is."""
+        from zamp_public_workflow_sdk.actions_hub import ActionsHub
+
+        return ActionsHub.get_action_gateway()
+
+    @classmethod
+    async def _is_registered_locally(cls, action_name: str) -> bool:
+        """Whether the action resolves to an action registered in this environment."""
+        from zamp_public_workflow_sdk.actions_hub import ActionsHub
+        from zamp_public_workflow_sdk.actions_hub.models.core_models import ActionFilter
+
+        actions = await ActionsHub.get_available_actions(ActionFilter(name=action_name))
+        return len(actions) > 0
 
     @classmethod
     async def _execute_action(
