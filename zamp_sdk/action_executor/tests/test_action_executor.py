@@ -1,3 +1,4 @@
+import uuid
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -299,6 +300,39 @@ class TestExecuteAction:
             assert body["action_name"] == "send_email"
             assert body["params"] == {"to": "a@b.com"}
             assert body["is_external_action"] is True
+
+    async def test_includes_channel_context_in_body_when_provided(self):
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-123"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+        cc = {
+            "channel_type": "conversation",
+            "channel_id": str(uuid.uuid4()),
+            "streaming_id": "s",
+            "message_id": "m",
+            "tool_call_id": "t",
+            "run_id": "r",
+        }
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client):
+            await self._executor()._execute_action(
+                action_name="a",
+                params={"p": 1},
+                config=self._make_config(),
+                channel_context=cc,
+            )
+        assert mock_client.post.call_args.kwargs["data"]["channel_context"] == cc
+
+    async def test_omits_channel_context_from_body_when_none(self):
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-123"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client):
+            await self._executor()._execute_action(
+                action_name="a",
+                params={"p": 1},
+                config=self._make_config(),
+            )
+        assert "channel_context" not in mock_client.post.call_args.kwargs["data"]
 
     async def test_sends_sdk_default_retry_policy_when_none_passed(self):
         # When the caller does not supply a retry policy, the SDK must inject its
@@ -681,3 +715,53 @@ class TestPollActionResult:
             pytest.raises(HttpClientError, match="HTTP 404"),
         ):
             await self._executor()._poll_action_result(client, "action-4xx")
+
+
+class TestChannelContextOnApiCall:
+    """The SDK resolves the caller's channel context once and attaches it to the POST
+    /actions body, so individual actions don't each have to send it."""
+
+    async def test_sandbox_execute_attaches_channel_context_to_body(self):
+        cid = str(uuid.uuid4())
+        env = {
+            "INSIDE_SANDBOX": "true",
+            "ZAMP_BASE_URL": "https://api.zamp.test",
+            "ZAMP_AUTH_TOKEN": "tok",
+            "ZAMP_CHANNEL_TYPE": "conversation",
+            "ZAMP_CHANNEL_ID": cid,
+            "ZAMP_STREAMING_ID": "s",
+            "ZAMP_MESSAGE_ID": "m",
+            "ZAMP_TOOL_CALL_ID": "t",
+            "ZAMP_RUN_ID": "r",
+        }
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-1"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch(f"{_MODULE}.HttpClient", return_value=mock_client),
+        ):
+            await ActionExecutor.execute("some_action", {"p": 1})
+        cc = mock_client.post.call_args.kwargs["data"]["channel_context"]
+        assert cc["channel_id"] == cid
+        assert cc["channel_type"] == "conversation"
+
+    async def test_sandbox_execute_omits_channel_context_when_env_incomplete(self):
+        # Only channel type/id in the env (no streaming/message/tool/run) -> no valid
+        # ChannelContext -> nothing attached; the action still goes through.
+        env = {
+            "INSIDE_SANDBOX": "true",
+            "ZAMP_BASE_URL": "https://api.zamp.test",
+            "ZAMP_AUTH_TOKEN": "tok",
+            "ZAMP_CHANNEL_TYPE": "conversation",
+            "ZAMP_CHANNEL_ID": str(uuid.uuid4()),
+        }
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-1"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+        with (
+            patch.dict("os.environ", env, clear=True),
+            patch(f"{_MODULE}.HttpClient", return_value=mock_client),
+        ):
+            await ActionExecutor.execute("some_action", {"p": 1})
+        assert "channel_context" not in mock_client.post.call_args.kwargs["data"]
