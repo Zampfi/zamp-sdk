@@ -72,5 +72,7 @@ class TestPublicApi:
             "resume_script",
             "select_one",
             "text_input",
+            "ChannelContext",
+            "ChannelType",
         }
         assert set(zamp_sdk.__all__) == expected
