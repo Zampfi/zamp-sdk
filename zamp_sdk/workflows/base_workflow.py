@@ -3,8 +3,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict
 
-from zamp_sdk.workflows.models import CodeWorkflowCoreParams
-
 
 class BaseWorkflow(ABC):
     """
@@ -15,10 +13,6 @@ class BaseWorkflow(ABC):
     """
 
     @abstractmethod
-    async def workflow_impl(
-        self,
-        workflow_params: Dict[str, Any],
-        core_params: CodeWorkflowCoreParams,
-    ) -> Any:
+    async def workflow_impl(self, workflow_params: Dict[str, Any]) -> Any:
         """Main workflow implementation function."""
         ...

@@ -35,7 +35,6 @@ from zamp_sdk.version import __version__ as __version__
 from zamp_sdk.workflows import (
     BaseActivity,
     BaseWorkflow,
-    CodeWorkflowCoreParams,
 )
 
 __all__ = [
@@ -44,7 +43,6 @@ __all__ = [
     "BaseWorkflow",
     "ChannelContext",
     "ChannelType",
-    "CodeWorkflowCoreParams",
     "ContentBlock",
     "ContentBlockType",
     "EmitLogResult",

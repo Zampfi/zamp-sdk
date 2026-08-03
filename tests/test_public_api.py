@@ -50,7 +50,6 @@ class TestPublicApi:
             "ActionExecutor",
             "BaseActivity",
             "BaseWorkflow",
-            "CodeWorkflowCoreParams",
             "ContentBlock",
             "ContentBlockType",
             "EmitLogResult",
