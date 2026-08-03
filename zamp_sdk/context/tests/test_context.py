@@ -17,7 +17,6 @@ from zamp_sdk.context import (
 def _clear_zamp_env(monkeypatch):
     """Every test starts with a clean slate — context-resolving env vars off."""
     for var in (
-        "INSIDE_SANDBOX",
         "ZAMP_CHANNEL_TYPE",
         "ZAMP_CHANNEL_ID",
         "ZAMP_STREAMING_ID",
@@ -98,7 +97,6 @@ class TestResolveChannelContext:
     when no complete, valid one is available."""
 
     def _full_sandbox_env(self, monkeypatch, channel_id: str) -> None:
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
         monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
         monkeypatch.setenv("ZAMP_CHANNEL_ID", channel_id)
         monkeypatch.setenv("ZAMP_STREAMING_ID", "s")
@@ -120,7 +118,6 @@ class TestResolveChannelContext:
 
     def test_none_when_partial(self, monkeypatch):
         # Missing streaming/message/tool/run -> incomplete -> not a valid ChannelContext.
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
         monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
         monkeypatch.setenv("ZAMP_CHANNEL_ID", str(uuid.uuid4()))
         assert resolve_channel_context() is None
@@ -135,11 +132,14 @@ class TestResolveChannelContext:
         def _boom() -> dict:
             raise RuntimeError("boom")
 
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
         monkeypatch.setattr("zamp_sdk.context.resolve.resolve_context", _boom)
         assert resolve_channel_context() is None
 
-    def test_uses_bound_context_outside_sandbox(self):
+    def test_uses_bound_context_on_an_actions_hub_host(self, monkeypatch):
+        """The bound context is the source only for an ACTIONS_HUB host — a workflow bound
+        it in-process. An API host reads the environment instead, which is what stops
+        sandboxed code from binding its own and redirecting its output."""
+        monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
         cid = uuid.uuid4()
         bind_channel_context(
             ChannelContext(
@@ -156,5 +156,23 @@ class TestResolveChannelContext:
             assert cc is not None
             assert cc.channel_type is ChannelType.TASK
             assert cc.channel_id == cid
+        finally:
+            clear_channel_context()
+
+    def test_an_api_host_ignores_a_bound_context(self):
+        """Sandboxed code can import bind_channel_context and call it. On the API path the
+        bound value must never be consulted, or that code could redirect its own output."""
+        bind_channel_context(
+            ChannelContext(
+                channel_type="task",
+                channel_id=str(uuid.uuid4()),
+                streaming_id="s",
+                message_id="m",
+                tool_call_id="t",
+                run_id="r",
+            )
+        )
+        try:
+            assert resolve_channel_context() is None
         finally:
             clear_channel_context()

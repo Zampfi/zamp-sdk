@@ -17,7 +17,7 @@ from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_ex
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 from zamp_sdk.capture import capture_active, capture_step
-from zamp_sdk.context import resolve_channel_context
+from zamp_sdk.context import ExecutionHost, current_execution_host, resolve_channel_context
 from zamp_sdk.logger import get_logger
 
 logger = get_logger(__name__)
@@ -43,10 +43,6 @@ class ActionExecutor:
             auth_token=auth_token or os.environ["ZAMP_AUTH_TOKEN"],
         )
 
-    @staticmethod
-    def _is_inside_sandbox() -> bool:
-        return os.environ.get("INSIDE_SANDBOX") == "true"
-
     @classmethod
     async def execute(
         cls,
@@ -61,18 +57,7 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        if cls._is_inside_sandbox():
-            result = await cls._execute_via_api(
-                action_name=action_name,
-                params=params,
-                base_url=base_url,
-                auth_token=auth_token,
-                summary=summary,
-                return_type=return_type,
-                action_retry_policy=action_retry_policy,
-                action_start_to_close_timeout=action_start_to_close_timeout,
-            )
-        else:
+        if current_execution_host() is ExecutionHost.ACTIONS_HUB:
             gateway = cls._get_action_gateway()
             if gateway is not None and not await cls._is_registered_locally(action_name):
                 result = await gateway(
@@ -93,6 +78,17 @@ class ActionExecutor:
                     action_retry_policy=action_retry_policy,
                     action_start_to_close_timeout=action_start_to_close_timeout,
                 )
+        else:
+            result = await cls._execute_via_api(
+                action_name=action_name,
+                params=params,
+                base_url=base_url,
+                auth_token=auth_token,
+                summary=summary,
+                return_type=return_type,
+                action_retry_policy=action_retry_policy,
+                action_start_to_close_timeout=action_start_to_close_timeout,
+            )
         cls._capture_action_step(action_name, params, result)
         return result
 

@@ -12,7 +12,9 @@ from zamp_sdk.action_executor.utils import HttpClientError
 from zamp_sdk.capture import drain_log_capture, start_log_capture
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
-_SANDBOX_ENV = {"INSIDE_SANDBOX": "true"}
+# The API path is the default, so reaching it needs no host declaration.
+_API_ENV: dict[str, str] = {}
+_HUB_ENV = {"ZAMP_SDK_EXECUTION_HOST": "actions_hub"}
 
 
 def _http_error(status_code: int) -> HttpClientError:
@@ -24,7 +26,7 @@ class TestExecute:
 
     async def test_explicit_config_forwarded(self, base_url, auth_token):
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.dict("os.environ", _API_ENV, clear=False),
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
         ):
             mock.return_value = {"result": "ok"}
@@ -44,7 +46,7 @@ class TestExecute:
             assert config.auth_token == auth_token
 
     async def test_falls_back_to_env_vars(self, base_url, auth_token):
-        env = {"ZAMP_BASE_URL": base_url, "ZAMP_AUTH_TOKEN": auth_token, **_SANDBOX_ENV}
+        env = {"ZAMP_BASE_URL": base_url, "ZAMP_AUTH_TOKEN": auth_token, **_API_ENV}
         with (
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
             patch.dict("os.environ", env, clear=False),
@@ -60,7 +62,7 @@ class TestExecute:
 
     async def test_raises_when_env_vars_missing(self):
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=True),
+            patch.dict("os.environ", _API_ENV, clear=True),
             pytest.raises(KeyError, match="ZAMP_BASE_URL"),
         ):
             await ActionExecutor.execute("action", {})
@@ -70,7 +72,7 @@ class TestExecute:
         timeout = timedelta(minutes=5)
 
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.dict("os.environ", _API_ENV, clear=False),
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
         ):
             mock.return_value = None
@@ -94,7 +96,7 @@ class TestExecute:
 
     async def test_returns_result(self, base_url, auth_token):
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.dict("os.environ", _API_ENV, clear=False),
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
         ):
             mock.return_value = {"amount": 42}
@@ -110,15 +112,19 @@ class TestExecute:
 
 
 class TestExecuteDispatch:
-    """Tests for the sandbox-vs-actions-hub dispatch in ActionExecutor.execute()."""
+    """Tests for the api-vs-actions-hub dispatch in ActionExecutor.execute().
 
-    async def test_sandbox_env_takes_http_path(self, base_url, auth_token):
+    The API path is the default so an SDK used outside Zamp's own runtimes works with no
+    configuration; a host providing an ActionsHub opts in via ZAMP_SDK_EXECUTION_HOST.
+    """
+
+    async def test_unconfigured_env_takes_http_path(self, base_url, auth_token):
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.dict("os.environ", {}, clear=True),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
-            api_mock.return_value = "sandbox-result"
+            api_mock.return_value = "api-result"
 
             result = await ActionExecutor.execute(
                 "action",
@@ -128,16 +134,16 @@ class TestExecuteDispatch:
                 execution_mode=ExecutionMode.SYNC,
             )
 
-            assert result == "sandbox-result"
+            assert result == "api-result"
             api_mock.assert_awaited_once()
             ah_mock.assert_not_called()
             kwargs = api_mock.call_args.kwargs
             assert kwargs["base_url"] == base_url
             assert kwargs["auth_token"] == auth_token
 
-    async def test_non_sandbox_uses_actions_hub_path(self, base_url, auth_token):
+    async def test_declared_hub_uses_actions_hub_path(self, base_url, auth_token):
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _HUB_ENV, clear=True),
             patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
@@ -156,11 +162,42 @@ class TestExecuteDispatch:
             kwargs = ah_mock.call_args.kwargs
             assert kwargs["execution_mode"] is ExecutionMode.ASYNC
 
-    async def test_sandbox_value_other_than_true_uses_actions_hub(self):
+    async def test_a_stray_legacy_inside_sandbox_var_changes_nothing(self):
+        """The SDK no longer reads INSIDE_SANDBOX anywhere. A runtime that still injects it
+        (the sandbox image does) must reach the API path by being unconfigured, exactly like
+        any other caller — not by that variable being honoured."""
         with (
-            patch.dict("os.environ", {"INSIDE_SANDBOX": "false"}, clear=True),
+            patch.dict("os.environ", {"INSIDE_SANDBOX": "true"}, clear=True),
             patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
+            patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
+        ):
+            api_mock.return_value = "api"
+
+            await ActionExecutor.execute("action", {})
+
+            api_mock.assert_awaited_once()
+            ah_mock.assert_not_called()
+
+    @pytest.mark.parametrize("value", ["", "   ", "api", "API", " Api "])
+    async def test_api_and_blank_values_take_the_http_path(self, value):
+        with (
+            patch.dict("os.environ", {"ZAMP_SDK_EXECUTION_HOST": value}, clear=True),
+            patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
+            patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
+        ):
+            api_mock.return_value = "api"
+
+            await ActionExecutor.execute("action", {})
+
+            api_mock.assert_awaited_once()
+            ah_mock.assert_not_called()
+
+    @pytest.mark.parametrize("value", ["ACTIONS_HUB", " actions_hub "])
+    async def test_the_host_value_is_case_and_space_insensitive(self, value):
+        with (
+            patch.dict("os.environ", {"ZAMP_SDK_EXECUTION_HOST": value}, clear=True),
+            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
             ah_mock.return_value = "hub"
@@ -168,7 +205,13 @@ class TestExecuteDispatch:
             await ActionExecutor.execute("action", {})
 
             ah_mock.assert_awaited_once()
-            api_mock.assert_not_called()
+
+    async def test_an_unknown_host_raises_rather_than_falling_back(self):
+        """A typo must not silently change transport: falling back to the API would send
+        an action over HTTP from a process that meant to dispatch it in-process."""
+        with patch.dict("os.environ", {"ZAMP_SDK_EXECUTION_HOST": "actionshub"}, clear=True):
+            with pytest.raises(ValueError, match="not a known execution host"):
+                await ActionExecutor.execute("action", {})
 
 
 class TestExecuteViaActionsHub:
@@ -728,7 +771,6 @@ class TestChannelContextOnApiCall:
     async def test_sandbox_execute_attaches_channel_context_to_body(self):
         cid = str(uuid.uuid4())
         env = {
-            "INSIDE_SANDBOX": "true",
             "ZAMP_BASE_URL": "https://api.zamp.test",
             "ZAMP_AUTH_TOKEN": "tok",
             "ZAMP_CHANNEL_TYPE": "conversation",
@@ -754,7 +796,6 @@ class TestChannelContextOnApiCall:
         # Only channel type/id in the env (no streaming/message/tool/run) -> no valid
         # ChannelContext -> nothing attached; the action still goes through.
         env = {
-            "INSIDE_SANDBOX": "true",
             "ZAMP_BASE_URL": "https://api.zamp.test",
             "ZAMP_AUTH_TOKEN": "tok",
             "ZAMP_CHANNEL_TYPE": "conversation",

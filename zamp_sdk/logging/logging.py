@@ -38,9 +38,10 @@ from typing import Any, Optional
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.capture import capture_active, capture_step, suppress_step_capture
 from zamp_sdk.context import (
-    ENV_INSIDE_SANDBOX,
     ENV_TOOL_CALL_ID,
+    ExecutionHost,
     current_channel_context,
+    current_execution_host,
     resolve_context,
 )
 from zamp_sdk.logger import get_logger
@@ -80,30 +81,26 @@ def _clean_block_entry(block: ContentBlock) -> dict[str, Any]:
     return {"event": "emit_log", **block.model_dump(mode="json")}
 
 
-def _inside_sandbox() -> bool:
-    return os.environ.get(ENV_INSIDE_SANDBOX) == "true"
-
-
 def _emit_context() -> dict[str, Any]:
     """Resolve the agent context to attach to an emitted block.
 
-    Inside a sandbox the runtime injects the context as ``ZAMP_*`` env vars.
-    Otherwise (the code-executor case) it comes from the context the running
-    workflow bound via :func:`zamp_sdk.bind_channel_context`. Returns a flat dict
-    that is wire-compatible with the platform's ``EmitLogContext`` either way.
+    The execution host decides the source: an ``ACTIONS_HUB`` host has a workflow that
+    bound the context in-process, an ``API`` host reads the ``ZAMP_*`` variables its runtime
+    injected. Returns a flat dict that is wire-compatible with the platform's
+    ``EmitLogContext`` either way, and an empty dict when the source has nothing.
     """
-    if _inside_sandbox():
-        return resolve_context()
-    ctx = current_channel_context()
-    return ctx.model_dump(mode="json", exclude_none=True) if ctx else {}
+    if current_execution_host() is ExecutionHost.ACTIONS_HUB:
+        ctx = current_channel_context()
+        return ctx.model_dump(mode="json", exclude_none=True) if ctx else {}
+    return resolve_context()
 
 
 def _current_tool_call_id() -> Optional[str]:
-    """The running tool's id, from env in a sandbox or the bound context."""
-    if _inside_sandbox():
-        return os.environ.get(ENV_TOOL_CALL_ID)
-    ctx = current_channel_context()
-    return ctx.tool_call_id if ctx else None
+    """The running tool's id, from whichever source this execution host uses."""
+    if current_execution_host() is ExecutionHost.ACTIONS_HUB:
+        ctx = current_channel_context()
+        return ctx.tool_call_id if ctx else None
+    return os.environ.get(ENV_TOOL_CALL_ID)
 
 
 async def emit_log(block: ContentBlock) -> EmitLogResult:

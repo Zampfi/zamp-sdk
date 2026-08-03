@@ -27,7 +27,6 @@ from zamp_sdk.version import __version__
 def _clear_zamp_env(monkeypatch):
     """Every test starts with a clean slate — context-resolving env vars off."""
     for var in (
-        "INSIDE_SANDBOX",
         "ZAMP_CHANNEL_TYPE",
         "ZAMP_CHANNEL_ID",
         "ZAMP_STREAMING_ID",
@@ -83,7 +82,6 @@ class TestStringifyToolResult:
 class TestEmitLogText:
     @pytest.mark.asyncio
     async def test_text_block_calls_action_executor(self, monkeypatch):
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
         monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
         monkeypatch.setenv("ZAMP_CHANNEL_ID", "conv-1")
 
@@ -106,7 +104,6 @@ class TestEmitLogText:
 
     @pytest.mark.asyncio
     async def test_auto_stamps_parent_block_id_from_env(self, monkeypatch):
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
         monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "toolu_abc")
         execute = AsyncMock(return_value=None)
         block = TextContentBlock(content="hello")
@@ -279,7 +276,6 @@ class TestLogCapture:
 
     @pytest.mark.asyncio
     async def test_captures_clean_block_entries(self, monkeypatch):
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
         start_log_capture()
         execute = AsyncMock(return_value=None)
         with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
@@ -325,7 +321,6 @@ class TestLogCapture:
     @pytest.mark.asyncio
     async def test_emit_log_suppresses_its_own_action_capture(self, monkeypatch):
         # emit_log captures its block; the emit_log action call must NOT also be captured.
-        monkeypatch.setenv("INSIDE_SANDBOX", "true")
         start_log_capture()
 
         async def fake_execute(name, params, **kwargs):
