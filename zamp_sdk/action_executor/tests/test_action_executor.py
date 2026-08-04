@@ -1070,3 +1070,66 @@ class TestJsonSafeInvariant:
         assert json.dumps(float("nan")) == "NaN"
         value = {"n": float("nan"), "i": float("inf")}
         assert _safe(value) is value
+
+
+class TestCaptureIsFailSafe:
+    """Capture runs after the action has already succeeded and its result is about to be
+    returned, so no failure inside it may change what the caller sees. Each dependency and
+    helper is broken in turn - a guard that only covers the paths we thought of is not a
+    guard."""
+
+    @pytest.mark.parametrize("dependency", ["capture_active", "capture_step"])
+    def test_a_broken_capture_dependency_is_swallowed(self, dependency):
+        start_log_capture()
+        with patch(f"{_MODULE}.{dependency}", side_effect=RuntimeError("boom")):
+            ActionExecutor._capture_action_step("act", {"a": 1}, {"ok": True})
+
+    @pytest.mark.parametrize("helper", ["_json_safe", "_value_or_string", "_stringify_bad_values", "_as_string"])
+    def test_a_broken_helper_is_swallowed(self, helper):
+        start_log_capture()
+        with patch.object(ActionExecutor, helper, side_effect=RuntimeError("boom")):
+            ActionExecutor._capture_action_step("act", {"a": _Weird()}, _Weird())
+
+    def test_the_swallowed_failure_is_logged_once_naming_the_action(self):
+        start_log_capture()
+        with (
+            patch(f"{_MODULE}.capture_step", side_effect=RuntimeError("boom")),
+            patch(f"{_MODULE}.logger") as logger,
+        ):
+            ActionExecutor._capture_action_step("charge_card", {"a": 1}, {"ok": True})
+        assert logger.warning.call_count == 1
+        assert logger.warning.call_args.kwargs["action_name"] == "charge_card"
+
+    def test_a_failed_capture_leaves_the_buffer_usable(self):
+        """A broken step must not poison the buffer for the steps that follow."""
+        start_log_capture()
+        with patch(f"{_MODULE}.capture_step", side_effect=RuntimeError("boom")):
+            ActionExecutor._capture_action_step("bad", {"a": 1}, {"ok": True})
+        ActionExecutor._capture_action_step("good", {"b": 2}, {"ok": True})
+        steps = drain_log_capture()
+        assert [s["name"] for s in steps] == ["good"]
+
+    async def test_execute_still_returns_its_result_when_capture_explodes(self, monkeypatch):
+        """The property that actually matters: a caller gets the action's result even if
+        every part of the capture is broken."""
+        sentinel = {"invoice": "INV-1"}
+
+        async def dispatch(**kwargs):
+            return sentinel
+
+        monkeypatch.setattr(ActionExecutor, "_execute_via_api", staticmethod(dispatch))
+        start_log_capture()
+        with patch(f"{_MODULE}.capture_step", side_effect=RuntimeError("boom")):
+            result = await ActionExecutor.execute("get_invoice", {"id": "1"})
+        assert result is sentinel
+
+    async def test_execute_still_propagates_a_real_action_failure(self, monkeypatch):
+        """The guard must not swallow the action's own error - only the capture's."""
+
+        async def dispatch(**kwargs):
+            raise HttpClientError("upstream down")
+
+        monkeypatch.setattr(ActionExecutor, "_execute_via_api", staticmethod(dispatch))
+        start_log_capture()
+        with pytest.raises(HttpClientError, match="upstream down"):
+            await ActionExecutor.execute("get_invoice", {"id": "1"})

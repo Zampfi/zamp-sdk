@@ -81,6 +81,19 @@ def _clean_block_entry(block: ContentBlock) -> dict[str, Any]:
     return {"event": "emit_log", **block.model_dump(mode="json")}
 
 
+def _capture_block(block: ContentBlock) -> None:
+    """Mirror the emitted block into the step buffer, best effort.
+
+    Capture is telemetry, so a block that cannot be summarised costs the buffer entry and
+    nothing else - the emit itself still goes out. The fallback branch of
+    ``_clean_block_entry`` serializes the block, which is the part that can fail."""
+    try:
+        if capture_active():
+            capture_step(_clean_block_entry(block))
+    except Exception as exc:
+        logger.warning("could not capture the emitted block", error=str(exc))
+
+
 def _emit_context() -> dict[str, Any]:
     """Resolve the agent context to attach to an emitted block.
 
@@ -114,22 +127,21 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
     Returns:
         :class:`EmitLogResult`. Never raises.
     """
-    # Auto-stamp parent_block_id from the running tool's id so emitted blocks
-    # group under the correct parent when parallel tool calls interleave.
-    if block.parent_block_id is None:
-        block.parent_block_id = _current_tool_call_id()
-
-    block_payload = block.model_dump(mode="json")
-
-    if capture_active():
-        capture_step(_clean_block_entry(block))
-
-    params: dict[str, Any] = {
-        "block": block_payload,
-        "context": _emit_context(),
-    }
-
     try:
+        # Auto-stamp parent_block_id from the running tool's id so emitted blocks
+        # group under the correct parent when parallel tool calls interleave.
+        if block.parent_block_id is None:
+            block.parent_block_id = _current_tool_call_id()
+
+        block_payload = block.model_dump(mode="json")
+
+        _capture_block(block)
+
+        params: dict[str, Any] = {
+            "block": block_payload,
+            "context": _emit_context(),
+        }
+
         # The block is already captured above; suppress capture of this action call so
         # emit_log isn't recorded twice.
         with suppress_step_capture():

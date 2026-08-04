@@ -21,9 +21,8 @@ _suppress: ContextVar[bool] = ContextVar("zamp_step_suppress", default=False)
 def start_log_capture() -> None:
     """Begin accumulating steps for the current execution.
 
-    Used by a runtime that wants to return everything the script streamed as part
-    of its result. Blocks keep streaming live regardless; this only turns on the
-    second, accumulating sink.
+    Not for an ``api`` execution host: nothing there drains the buffer, so steps would
+    accumulate for the life of the process.
     """
     _log_buffer.set([])
 

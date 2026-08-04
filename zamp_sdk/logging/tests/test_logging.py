@@ -355,3 +355,87 @@ class TestLogCapture:
         with suppress_step_capture():
             assert capture_active() is False  # suppressed
         assert capture_active() is True
+
+
+class TestEmitLogIsFailSafe:
+    """Capture is telemetry on the way to the platform, so nothing in it may change the
+    outcome of the emit, and ``emit_log`` documents that it never raises."""
+
+    @pytest.mark.asyncio
+    async def test_a_broken_capture_does_not_stop_the_emit(self):
+        start_log_capture()
+        with (
+            patch("zamp_sdk.logging.logging._clean_block_entry", side_effect=RuntimeError("capture broke")),
+            patch.object(ActionExecutor, "execute", new_callable=AsyncMock) as execute,
+        ):
+            execute.return_value = {"delivered": True}
+            result = await emit_log(TextContentBlock(content="hello"))
+
+        assert execute.await_count == 1  # the block still went out
+        assert result.ok is True
+        assert drain_log_capture() == []  # the entry is what was lost
+
+    @pytest.mark.asyncio
+    async def test_a_block_that_cannot_be_serialized_comes_back_as_a_result_not_a_raise(self):
+        with patch.object(TextContentBlock, "model_dump", side_effect=RuntimeError("dump broke")):
+            result = await emit_log(TextContentBlock(content="x"))
+
+        assert result.ok is False
+        assert result.error == "dump broke"
+
+    @pytest.mark.asyncio
+    async def test_a_failure_resolving_the_context_comes_back_as_a_result_not_a_raise(self):
+        with patch("zamp_sdk.logging.logging._emit_context", side_effect=RuntimeError("ctx broke")):
+            result = await emit_log(TextContentBlock(content="x"))
+
+        assert result.ok is False
+        assert result.error == "ctx broke"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("dependency", ["capture_active", "capture_step", "_clean_block_entry"])
+    async def test_any_broken_capture_dependency_still_emits(self, dependency):
+        """Each part of the capture is broken in turn — a guard that only covers the paths we
+        thought of is not a guard."""
+        start_log_capture()
+        with (
+            patch(f"zamp_sdk.logging.logging.{dependency}", side_effect=RuntimeError("boom")),
+            patch.object(ActionExecutor, "execute", new_callable=AsyncMock) as execute,
+        ):
+            execute.return_value = {"delivered": True}
+            result = await emit_log(TextContentBlock(content="hi"))
+
+        assert execute.await_count == 1
+        assert result.ok is True
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_a_capture_failure_is_reported_separately_from_an_emit_failure(self):
+        """The two must not be conflated: a broken capture logs its own warning and leaves
+        ok=True, while a failed dispatch is what sets ok=False."""
+        start_log_capture()
+        with (
+            patch("zamp_sdk.logging.logging._clean_block_entry", side_effect=RuntimeError("capture broke")),
+            patch("zamp_sdk.logging.logging.logger") as logger,
+            patch.object(ActionExecutor, "execute", new_callable=AsyncMock) as execute,
+        ):
+            execute.return_value = {"delivered": True}
+            result = await emit_log(TextContentBlock(content="hi"))
+
+        assert result.ok is True
+        messages = [call.args[0] for call in logger.warning.call_args_list]
+        assert "could not capture the emitted block" in messages
+        assert "emit_log failed" not in messages
+
+    @pytest.mark.asyncio
+    async def test_a_failed_dispatch_still_leaves_the_block_in_the_buffer(self):
+        """Capture happens before the call on purpose: a transient delivery failure must not
+        erase what the script was trying to report."""
+        start_log_capture()
+        with patch.object(ActionExecutor, "execute", new_callable=AsyncMock) as execute:
+            execute.side_effect = RuntimeError("upstream down")
+            result = await emit_log(TextContentBlock(content="processing row 3"))
+
+        assert result.ok is False
+        steps = drain_log_capture()
+        assert [s["event"] for s in steps] == ["emit_text"]
+        assert steps[0]["content"] == "processing row 3"
