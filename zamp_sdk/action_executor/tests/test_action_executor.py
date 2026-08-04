@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,9 +9,12 @@ from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClientError
+from zamp_sdk.capture import drain_log_capture, start_log_capture
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
-_SANDBOX_ENV = {"INSIDE_SANDBOX": "true"}
+# The API path is the default, so reaching it needs no host declaration.
+_API_ENV: dict[str, str] = {}
+_HUB_ENV = {"ZAMP_SDK_EXECUTION_HOST": "actions_hub"}
 
 
 def _http_error(status_code: int) -> HttpClientError:
@@ -22,7 +26,7 @@ class TestExecute:
 
     async def test_explicit_config_forwarded(self, base_url, auth_token):
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.dict("os.environ", _API_ENV, clear=False),
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
         ):
             mock.return_value = {"result": "ok"}
@@ -42,7 +46,7 @@ class TestExecute:
             assert config.auth_token == auth_token
 
     async def test_falls_back_to_env_vars(self, base_url, auth_token):
-        env = {"ZAMP_BASE_URL": base_url, "ZAMP_AUTH_TOKEN": auth_token, **_SANDBOX_ENV}
+        env = {"ZAMP_BASE_URL": base_url, "ZAMP_AUTH_TOKEN": auth_token, **_API_ENV}
         with (
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
             patch.dict("os.environ", env, clear=False),
@@ -58,7 +62,7 @@ class TestExecute:
 
     async def test_raises_when_env_vars_missing(self):
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=True),
+            patch.dict("os.environ", _API_ENV, clear=True),
             pytest.raises(KeyError, match="ZAMP_BASE_URL"),
         ):
             await ActionExecutor.execute("action", {})
@@ -68,7 +72,7 @@ class TestExecute:
         timeout = timedelta(minutes=5)
 
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.dict("os.environ", _API_ENV, clear=False),
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
         ):
             mock.return_value = None
@@ -92,7 +96,7 @@ class TestExecute:
 
     async def test_returns_result(self, base_url, auth_token):
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.dict("os.environ", _API_ENV, clear=False),
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
         ):
             mock.return_value = {"amount": 42}
@@ -108,15 +112,19 @@ class TestExecute:
 
 
 class TestExecuteDispatch:
-    """Tests for the sandbox-vs-actions-hub dispatch in ActionExecutor.execute()."""
+    """Tests for the api-vs-actions-hub dispatch in ActionExecutor.execute().
 
-    async def test_sandbox_env_takes_http_path(self, base_url, auth_token):
+    The API path is the default so an SDK used outside Zamp's own runtimes works with no
+    configuration; a host providing an ActionsHub opts in via ZAMP_SDK_EXECUTION_HOST.
+    """
+
+    async def test_unconfigured_env_takes_http_path(self, base_url, auth_token):
         with (
-            patch.dict("os.environ", _SANDBOX_ENV, clear=False),
+            patch.dict("os.environ", {}, clear=True),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
-            api_mock.return_value = "sandbox-result"
+            api_mock.return_value = "api-result"
 
             result = await ActionExecutor.execute(
                 "action",
@@ -126,16 +134,17 @@ class TestExecuteDispatch:
                 execution_mode=ExecutionMode.SYNC,
             )
 
-            assert result == "sandbox-result"
+            assert result == "api-result"
             api_mock.assert_awaited_once()
             ah_mock.assert_not_called()
             kwargs = api_mock.call_args.kwargs
             assert kwargs["base_url"] == base_url
             assert kwargs["auth_token"] == auth_token
 
-    async def test_non_sandbox_uses_actions_hub_path(self, base_url, auth_token):
+    async def test_declared_hub_uses_actions_hub_path(self, base_url, auth_token):
         with (
-            patch.dict("os.environ", {}, clear=True),
+            patch.dict("os.environ", _HUB_ENV, clear=True),
+            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
@@ -153,10 +162,42 @@ class TestExecuteDispatch:
             kwargs = ah_mock.call_args.kwargs
             assert kwargs["execution_mode"] is ExecutionMode.ASYNC
 
-    async def test_sandbox_value_other_than_true_uses_actions_hub(self):
+    async def test_a_stray_legacy_inside_sandbox_var_changes_nothing(self):
+        """The SDK no longer reads INSIDE_SANDBOX anywhere. A runtime that still injects it
+        (the sandbox image does) must reach the API path by being unconfigured, exactly like
+        any other caller — not by that variable being honoured."""
         with (
-            patch.dict("os.environ", {"INSIDE_SANDBOX": "false"}, clear=True),
+            patch.dict("os.environ", {"INSIDE_SANDBOX": "true"}, clear=True),
+            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
+            patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
+        ):
+            api_mock.return_value = "api"
+
+            await ActionExecutor.execute("action", {})
+
+            api_mock.assert_awaited_once()
+            ah_mock.assert_not_called()
+
+    @pytest.mark.parametrize("value", ["", "   ", "api", "API", " Api "])
+    async def test_api_and_blank_values_take_the_http_path(self, value):
+        with (
+            patch.dict("os.environ", {"ZAMP_SDK_EXECUTION_HOST": value}, clear=True),
+            patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
+            patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
+        ):
+            api_mock.return_value = "api"
+
+            await ActionExecutor.execute("action", {})
+
+            api_mock.assert_awaited_once()
+            ah_mock.assert_not_called()
+
+    @pytest.mark.parametrize("value", ["ACTIONS_HUB", " actions_hub "])
+    async def test_the_host_value_is_case_and_space_insensitive(self, value):
+        with (
+            patch.dict("os.environ", {"ZAMP_SDK_EXECUTION_HOST": value}, clear=True),
+            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
             ah_mock.return_value = "hub"
@@ -164,7 +205,13 @@ class TestExecuteDispatch:
             await ActionExecutor.execute("action", {})
 
             ah_mock.assert_awaited_once()
-            api_mock.assert_not_called()
+
+    async def test_an_unknown_host_raises_rather_than_falling_back(self):
+        """A typo must not silently change transport: falling back to the API would send
+        an action over HTTP from a process that meant to dispatch it in-process."""
+        with patch.dict("os.environ", {"ZAMP_SDK_EXECUTION_HOST": "actionshub"}, clear=True):
+            with pytest.raises(ValueError, match="not a known execution host"):
+                await ActionExecutor.execute("action", {})
 
 
 class TestExecuteViaActionsHub:
@@ -724,7 +771,6 @@ class TestChannelContextOnApiCall:
     async def test_sandbox_execute_attaches_channel_context_to_body(self):
         cid = str(uuid.uuid4())
         env = {
-            "INSIDE_SANDBOX": "true",
             "ZAMP_BASE_URL": "https://api.zamp.test",
             "ZAMP_AUTH_TOKEN": "tok",
             "ZAMP_CHANNEL_TYPE": "conversation",
@@ -750,7 +796,6 @@ class TestChannelContextOnApiCall:
         # Only channel type/id in the env (no streaming/message/tool/run) -> no valid
         # ChannelContext -> nothing attached; the action still goes through.
         env = {
-            "INSIDE_SANDBOX": "true",
             "ZAMP_BASE_URL": "https://api.zamp.test",
             "ZAMP_AUTH_TOKEN": "tok",
             "ZAMP_CHANNEL_TYPE": "conversation",
@@ -765,3 +810,329 @@ class TestChannelContextOnApiCall:
         ):
             await ActionExecutor.execute("some_action", {"p": 1})
         assert "channel_context" not in mock_client.post.call_args.kwargs["data"]
+
+
+class _Weird:
+    def __str__(self) -> str:
+        return "<weird>"
+
+
+def test_capture_action_step_serializable_result_stored_asis():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, {"ok": True})
+    steps = drain_log_capture()
+    assert steps[0]["output"] == {"ok": True}
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_non_serializable_result_degrades_to_string():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, _Weird())
+    steps = drain_log_capture()
+    assert steps[0]["output"] == "<weird>"
+    json.dumps(steps[0])  # the whole step is JSON-safe
+
+
+def test_capture_action_step_cyclic_result_does_not_hang_and_is_json_safe():
+    """The cycle must not survive into the buffer, and opening the dict one level must not
+    recurse into it."""
+    start_log_capture()
+    cyc: dict = {}
+    cyc["self"] = cyc
+    ActionExecutor._capture_action_step("act", {"a": 1}, cyc)
+    steps = drain_log_capture()
+    assert isinstance(steps[0]["output"]["self"], str)  # stringified, not the live cycle
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_keeps_the_serializable_result_fields_alongside_the_bad_one():
+    """The motivating case: one unserializable field must not flatten the whole result. A
+    datetime is JSON-unsafe even though Pydantic would carry it, so this is the common one."""
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, {"rows": [{"n": 1}], "at": _Weird()})
+    steps = drain_log_capture()
+    assert steps[0]["output"] == {"rows": [{"n": 1}], "at": "<weird>"}
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_degrades_only_the_bad_items_of_a_list_result():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, [{"n": 1}, _Weird()])
+    steps = drain_log_capture()
+    assert steps[0]["output"] == [{"n": 1}, "<weird>"]
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_non_serializable_params_do_not_sink_the_step():
+    """An INLINE dispatch never serializes params, so reaching the capture is no proof they
+    can cross the Temporal boundary. A bad input must not poison the whole step."""
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"who": _Weird()}, {"ok": True})
+    steps = drain_log_capture()
+    assert steps[0]["input"] == {"who": "<weird>"}
+    assert steps[0]["output"] == {"ok": True}
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_keeps_the_serializable_params_alongside_the_bad_one():
+    """Per-entry, not whole-dict: losing every param because one is unserializable would
+    throw away the more useful half of the step."""
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"keep": {"n": 1}, "drop": _Weird()}, None)
+    steps = drain_log_capture()
+    assert steps[0]["input"] == {"keep": {"n": 1}, "drop": "<weird>"}
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_cyclic_params_do_not_hang():
+    start_log_capture()
+    cyc: dict = {}
+    cyc["self"] = cyc
+    ActionExecutor._capture_action_step("act", {"cyc": cyc}, None)
+    steps = drain_log_capture()
+    assert isinstance(steps[0]["input"]["cyc"], str)
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_non_string_param_key_is_made_json_safe():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {(1, 2): "v"}, None)
+    steps = drain_log_capture()
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_non_dict_params_are_stringified():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", _Weird(), None)  # type: ignore[arg-type]
+    steps = drain_log_capture()
+    assert steps[0]["input"] == "<weird>"
+    json.dumps(steps[0])
+
+
+class _HostileDict(dict):
+    """A mapping that raises while being inspected, not while being serialized."""
+
+    def items(self):  # type: ignore[override]
+        raise RuntimeError("boom")
+
+
+def test_capture_action_step_never_raises_into_the_caller():
+    """The action has already succeeded and its result is about to be returned, so a value
+    that misbehaves under inspection must cost the log line and nothing else."""
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", _HostileDict(a=1), {"ok": True})
+    assert drain_log_capture() == []
+
+
+def test_capture_action_step_never_raises_on_a_hostile_result():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, _HostileDict(b=2))
+    assert drain_log_capture() == []
+
+
+class _NoStr:
+    """``str()`` on this raises, so even the fallback has to have a fallback."""
+
+    def __str__(self) -> str:
+        raise RuntimeError("nope")
+
+
+def _safe(value):
+    return ActionExecutor._json_safe(value, half="output", action_name="act")
+
+
+class TestAsString:
+    def test_uses_str_when_it_works(self):
+        assert ActionExecutor._as_string(_Weird()) == "<weird>"
+
+    def test_names_the_type_when_str_itself_raises(self):
+        assert ActionExecutor._as_string(_NoStr()) == "<unserializable _NoStr>"
+
+
+class TestValueOrString:
+    def test_a_serializable_value_comes_back_untouched(self):
+        value = {"a": [1, {"b": None}]}
+        assert ActionExecutor._value_or_string(value) is value
+
+    def test_a_bad_value_becomes_a_string(self):
+        assert ActionExecutor._value_or_string(_Weird()) == "<weird>"
+
+    @pytest.mark.parametrize("value", [None, False, 0, "", [], {}, 0.0])
+    def test_falsy_but_serializable_values_are_not_mistaken_for_bad_ones(self, value):
+        """The check is "does it serialize", not "is it truthy" - a plain ``if not value``
+        would quietly stringify every legitimate empty result."""
+        assert ActionExecutor._value_or_string(value) is value
+
+
+class TestJsonSafeHappyPath:
+    def test_the_same_object_is_returned_not_a_copy(self):
+        """The happy path must not rebuild the value: it is the common case, and a copy
+        would cost time on every action call and hide later mutation."""
+        value = {"a": 1, "b": [2, 3]}
+        assert _safe(value) is value
+
+    def test_nothing_is_logged_when_the_value_serializes(self):
+        with patch(f"{_MODULE}.logger") as logger:
+            _safe({"a": 1})
+        logger.warning.assert_not_called()
+
+    def test_degrading_logs_once_naming_the_half_and_the_action(self):
+        with patch(f"{_MODULE}.logger") as logger:
+            ActionExecutor._json_safe({"a": _Weird()}, half="input", action_name="charge_card")
+        assert logger.warning.call_count == 1
+        kwargs = logger.warning.call_args.kwargs
+        assert kwargs["half"] == "input"
+        assert kwargs["action_name"] == "charge_card"
+        assert kwargs["value_type"] == "dict"
+        assert "error" in kwargs
+
+
+class TestJsonSafeContainers:
+    def test_a_dict_keeps_its_good_entries(self):
+        assert _safe({"keep": {"n": 1}, "drop": _Weird()}) == {"keep": {"n": 1}, "drop": "<weird>"}
+
+    def test_a_list_keeps_its_good_items(self):
+        assert _safe([{"n": 1}, _Weird(), "x"]) == [{"n": 1}, "<weird>", "x"]
+
+    def test_a_tuple_with_a_bad_item_comes_back_as_a_list(self):
+        """JSON has no tuple, so the shape a caller gets back is a list."""
+        assert _safe((1, _Weird())) == [1, "<weird>"]
+
+    def test_a_fully_serializable_tuple_is_left_alone(self):
+        value = (1, 2)
+        assert _safe(value) is value
+
+    def test_a_set_is_stringified_whole(self):
+        """A set is neither a mapping nor a sequence here, so there is nothing to open."""
+        assert _safe({"tags": {1}}) == {"tags": "{1}"}
+
+    def test_containers_are_opened_one_level_only(self):
+        """The deliberate limit: a full walk would cost every call, and a self-referential
+        value would not terminate. The bad value is two levels down, so the whole inner
+        container is stringified rather than rebuilt."""
+        out = _safe({"outer": {"inner": _Weird()}})
+        assert list(out) == ["outer"]
+        assert isinstance(out["outer"], str)  # the whole inner dict, flattened
+        assert "inner" in out["outer"]
+
+    def test_a_self_referential_value_terminates(self):
+        cyc: dict = {}
+        cyc["self"] = cyc
+        assert isinstance(_safe(cyc)["self"], str)
+
+    def test_a_bad_value_that_is_not_a_container_is_stringified(self):
+        assert _safe(_Weird()) == "<weird>"
+
+    @pytest.mark.parametrize("value", [{}, [], ()])
+    def test_empty_containers_pass_straight_through(self, value):
+        assert _safe(value) is value
+
+
+class TestJsonSafeKeys:
+    @pytest.mark.parametrize("key", [1, True, 2.5, None])
+    def test_non_string_keys_survive_untouched_while_the_dict_still_serializes(self, key):
+        """``json.dumps`` coerces these key types itself, so nothing needs doing on the happy
+        path. One key per case: ``True`` and ``1`` collapse into a single entry in one dict
+        literal, so pairing them would silently test half of what it looks like."""
+        value = {key: "a"}
+        assert _safe(value) is value
+
+    def test_a_non_string_key_is_stringified_when_the_dict_degrades(self):
+        assert _safe({(1, 2): _Weird()}) == {"(1, 2)": "<weird>"}
+
+    def test_a_stringified_key_can_collide_with_an_existing_string_key(self):
+        """Documented loss, not an accident: on the degraded path an int key becomes "1",
+        which overwrites a sibling "1". Needs a dict mixing both key types *and* an
+        unserializable value, so it is vanishingly rare - and the alternative (dropping the
+        whole input) is worse."""
+        assert _safe({1: "first", "1": _Weird()}) == {"1": "<weird>"}
+
+
+class TestJsonSafeInvariant:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            _Weird(),
+            _NoStr(),
+            b"\xff\xfe",
+            {1},
+            (x for x in [1]),
+            {"a": _NoStr(), "b": b"x", "c": {1}},
+            [_NoStr(), b"y"],
+            {"nested": {"deep": _Weird()}},
+        ],
+    )
+    def test_whatever_goes_in_the_result_can_be_serialized(self, value):
+        """The one property that matters: after this, the host can always serialize it."""
+        json.dumps(_safe(value))
+
+    def test_nan_and_inf_pass_the_probe_although_they_are_not_valid_json(self):
+        """Known gap, pinned so it is a decision rather than a surprise: ``json.dumps``
+        accepts them and emits bare ``NaN``/``Infinity``, which strict parsers reject. The
+        probe therefore lets them through unchanged."""
+        assert json.dumps(float("nan")) == "NaN"
+        value = {"n": float("nan"), "i": float("inf")}
+        assert _safe(value) is value
+
+
+class TestCaptureIsFailSafe:
+    """Capture runs after the action has already succeeded and its result is about to be
+    returned, so no failure inside it may change what the caller sees. Each dependency and
+    helper is broken in turn - a guard that only covers the paths we thought of is not a
+    guard."""
+
+    @pytest.mark.parametrize("dependency", ["capture_active", "capture_step"])
+    def test_a_broken_capture_dependency_is_swallowed(self, dependency):
+        start_log_capture()
+        with patch(f"{_MODULE}.{dependency}", side_effect=RuntimeError("boom")):
+            ActionExecutor._capture_action_step("act", {"a": 1}, {"ok": True})
+
+    @pytest.mark.parametrize("helper", ["_json_safe", "_value_or_string", "_stringify_bad_values", "_as_string"])
+    def test_a_broken_helper_is_swallowed(self, helper):
+        start_log_capture()
+        with patch.object(ActionExecutor, helper, side_effect=RuntimeError("boom")):
+            ActionExecutor._capture_action_step("act", {"a": _Weird()}, _Weird())
+
+    def test_the_swallowed_failure_is_logged_once_naming_the_action(self):
+        start_log_capture()
+        with (
+            patch(f"{_MODULE}.capture_step", side_effect=RuntimeError("boom")),
+            patch(f"{_MODULE}.logger") as logger,
+        ):
+            ActionExecutor._capture_action_step("charge_card", {"a": 1}, {"ok": True})
+        assert logger.warning.call_count == 1
+        assert logger.warning.call_args.kwargs["action_name"] == "charge_card"
+
+    def test_a_failed_capture_leaves_the_buffer_usable(self):
+        """A broken step must not poison the buffer for the steps that follow."""
+        start_log_capture()
+        with patch(f"{_MODULE}.capture_step", side_effect=RuntimeError("boom")):
+            ActionExecutor._capture_action_step("bad", {"a": 1}, {"ok": True})
+        ActionExecutor._capture_action_step("good", {"b": 2}, {"ok": True})
+        steps = drain_log_capture()
+        assert [s["name"] for s in steps] == ["good"]
+
+    async def test_execute_still_returns_its_result_when_capture_explodes(self, monkeypatch):
+        """The property that actually matters: a caller gets the action's result even if
+        every part of the capture is broken."""
+        sentinel = {"invoice": "INV-1"}
+
+        async def dispatch(**kwargs):
+            return sentinel
+
+        monkeypatch.setattr(ActionExecutor, "_execute_via_api", staticmethod(dispatch))
+        start_log_capture()
+        with patch(f"{_MODULE}.capture_step", side_effect=RuntimeError("boom")):
+            result = await ActionExecutor.execute("get_invoice", {"id": "1"})
+        assert result is sentinel
+
+    async def test_execute_still_propagates_a_real_action_failure(self, monkeypatch):
+        """The guard must not swallow the action's own error - only the capture's."""
+
+        async def dispatch(**kwargs):
+            raise HttpClientError("upstream down")
+
+        monkeypatch.setattr(ActionExecutor, "_execute_via_api", staticmethod(dispatch))
+        start_log_capture()
+        with pytest.raises(HttpClientError, match="upstream down"):
+            await ActionExecutor.execute("get_invoice", {"id": "1"})

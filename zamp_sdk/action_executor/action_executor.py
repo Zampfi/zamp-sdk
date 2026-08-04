@@ -1,7 +1,8 @@
 import asyncio
+import json
 import os
 from datetime import timedelta
-from typing import Any
+from typing import Any, Callable
 
 from zamp_sdk.action_executor.constants import (
     IN_PROGRESS_STATUSES,
@@ -15,7 +16,8 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
-from zamp_sdk.context import resolve_channel_context
+from zamp_sdk.capture import capture_active, capture_step
+from zamp_sdk.context import ExecutionHost, current_execution_host, resolve_channel_context
 from zamp_sdk.logger import get_logger
 
 logger = get_logger(__name__)
@@ -41,10 +43,6 @@ class ActionExecutor:
             auth_token=auth_token or os.environ["ZAMP_AUTH_TOKEN"],
         )
 
-    @staticmethod
-    def _is_inside_sandbox() -> bool:
-        return os.environ.get("INSIDE_SANDBOX") == "true"
-
     @classmethod
     async def execute(
         cls,
@@ -59,8 +57,29 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        if cls._is_inside_sandbox():
-            return await cls._execute_via_api(
+        if current_execution_host() is ExecutionHost.ACTIONS_HUB:
+            gateway = cls._get_action_gateway()
+            if gateway is not None and not await cls._is_registered_locally(action_name):
+                result = await gateway(
+                    action_name,
+                    params,
+                    summary=summary,
+                    return_type=return_type,
+                    action_retry_policy=action_retry_policy,
+                    action_start_to_close_timeout=action_start_to_close_timeout,
+                )
+            else:
+                result = await cls._execute_via_actions_hub(
+                    action_name=action_name,
+                    params=params,
+                    summary=summary,
+                    return_type=return_type,
+                    execution_mode=execution_mode,
+                    action_retry_policy=action_retry_policy,
+                    action_start_to_close_timeout=action_start_to_close_timeout,
+                )
+        else:
+            result = await cls._execute_via_api(
                 action_name=action_name,
                 params=params,
                 base_url=base_url,
@@ -70,15 +89,91 @@ class ActionExecutor:
                 action_retry_policy=action_retry_policy,
                 action_start_to_close_timeout=action_start_to_close_timeout,
             )
-        return await cls._execute_via_actions_hub(
-            action_name=action_name,
-            params=params,
-            summary=summary,
-            return_type=return_type,
-            execution_mode=execution_mode,
-            action_retry_policy=action_retry_policy,
-            action_start_to_close_timeout=action_start_to_close_timeout,
-        )
+        cls._capture_action_step(action_name, params, result)
+        return result
+
+    @staticmethod
+    def _as_string(value: Any) -> str:
+        """Last-resort stand-in for a value that cannot be serialized."""
+        try:
+            return str(value)
+        except Exception:
+            return f"<unserializable {type(value).__name__}>"
+
+    @classmethod
+    def _value_or_string(cls, value: Any) -> Any:
+        """The value itself when it serializes, else a stringified stand-in."""
+        try:
+            json.dumps(value)
+            return value
+        except Exception:
+            return cls._as_string(value)
+
+    @classmethod
+    def _stringify_bad_values(cls, value: Any) -> Any:
+        """The same shape with only the parts that cannot serialize replaced by strings.
+
+        One bad field should cost that field, not the whole half of the step: an action
+        returning ``{"rows": [...], "at": datetime}`` keeps its rows. Containers are opened
+        one level only - a full walk would add latency to every action call, and a
+        self-referential value would not terminate."""
+        if isinstance(value, dict):
+            return {(k if isinstance(k, str) else cls._as_string(k)): cls._value_or_string(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [cls._value_or_string(v) for v in value]
+        return cls._as_string(value)
+
+    @classmethod
+    def _json_safe(cls, value: Any, *, half: str, action_name: str) -> Any:
+        """``value`` when it serializes as a whole, else a copy with the bad parts as strings."""
+        try:
+            json.dumps(value)
+            return value
+        except Exception as exc:
+            logger.warning(
+                "action step value is not JSON-serializable; capturing stringified parts",
+                action_name=action_name,
+                half=half,
+                value_type=type(value).__name__,
+                error=repr(exc),
+            )
+        return cls._stringify_bad_values(value)
+
+    @classmethod
+    def _capture_action_step(cls, action_name: str, params: dict[str, Any], result: Any) -> None:
+        """Append this action call (name + input + output) to the in-execution step
+        buffer so the host runtime can surface every step it ran. A no-op unless capture
+        is active (e.g. never inside a sandbox); emit_log suppresses this for its own call.
+
+        The host drains the buffer and may serialize it, so both halves have to be
+        JSON-safe. They are normally captured as-is; only if one isn't do we replace the
+        bad parts, so an unserializable value costs that value rather than the whole step.
+        Both halves are checked, not just the result: an in-process dispatch
+        (``ExecutionMode.INLINE``) hands params to the host without serializing them, so
+        reaching here is no proof they can be serialized. The whole value is checked with a
+        single cheap ``json.dumps`` first, so the happy path stays one call.
+
+        Nothing here may raise into the caller. The action has already succeeded and its
+        result is about to be returned; a value that misbehaves while being inspected (a
+        mapping whose ``items()`` raises, a ``__str__`` that throws) must cost the log line,
+        not the call."""
+        try:
+            if not capture_active():
+                return
+            capture_step(
+                {
+                    "event": "action",
+                    "name": action_name,
+                    "input": cls._json_safe(params, half="input", action_name=action_name),
+                    "output": cls._json_safe(result, half="output", action_name=action_name),
+                }
+            )
+        except Exception as exc:
+            logger.warning(
+                "could not capture the action step; the action itself is unaffected",
+                action_name=action_name,
+                error=repr(exc),
+            )
 
     @classmethod
     async def _execute_via_api(
@@ -137,6 +232,22 @@ class ActionExecutor:
             action_retry_policy=ah_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
         )
+
+    @classmethod
+    def _get_action_gateway(cls) -> Callable[..., Any] | None:
+        """Return the action gateway registered on ActionsHub, or None if none is."""
+        from zamp_public_workflow_sdk.actions_hub import ActionsHub
+
+        return ActionsHub.get_action_gateway()
+
+    @classmethod
+    async def _is_registered_locally(cls, action_name: str) -> bool:
+        """Whether the action resolves to an action registered in this environment."""
+        from zamp_public_workflow_sdk.actions_hub import ActionsHub
+        from zamp_public_workflow_sdk.actions_hub.models.core_models import ActionFilter
+
+        actions = await ActionsHub.get_available_actions(ActionFilter(name=action_name))
+        return len(actions) > 0
 
     @classmethod
     async def _execute_action(

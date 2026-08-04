@@ -36,7 +36,14 @@ import os
 from typing import Any, Optional
 
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.context import ENV_TOOL_CALL_ID, resolve_context
+from zamp_sdk.capture import capture_active, capture_step, suppress_step_capture
+from zamp_sdk.context import (
+    ENV_TOOL_CALL_ID,
+    ExecutionHost,
+    current_channel_context,
+    current_execution_host,
+    resolve_context,
+)
 from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
 from zamp_sdk.logging.models import (
@@ -51,6 +58,64 @@ from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 logger = get_logger(__name__)
 
 
+def _clean_block_entry(block: ContentBlock) -> dict[str, Any]:
+    """A compact, logger-style capture entry for an emitted block — the same shape
+    as the ``emit_*`` structured logs, not the full serialized block."""
+    if isinstance(block, TextContentBlock):
+        return {"event": "emit_text", "content": block.content}
+    if isinstance(block, ToolUseContentBlock):
+        return {
+            "event": "emit_tool_use",
+            "id": block.id,
+            "name": block.name,
+            "display_title": block.display_title,
+            "input_json": block.input_json,
+        }
+    if isinstance(block, ToolResultContentBlock):
+        return {
+            "event": "emit_tool_result",
+            "id": block.id,
+            "name": block.name,
+            "content": block.content,
+        }
+    return {"event": "emit_log", **block.model_dump(mode="json")}
+
+
+def _capture_block(block: ContentBlock) -> None:
+    """Mirror the emitted block into the step buffer, best effort.
+
+    Capture is telemetry, so a block that cannot be summarised costs the buffer entry and
+    nothing else - the emit itself still goes out. The fallback branch of
+    ``_clean_block_entry`` serializes the block, which is the part that can fail."""
+    try:
+        if capture_active():
+            capture_step(_clean_block_entry(block))
+    except Exception as exc:
+        logger.warning("could not capture the emitted block", error=str(exc))
+
+
+def _emit_context() -> dict[str, Any]:
+    """Resolve the agent context to attach to an emitted block.
+
+    The execution host decides the source: an ``ACTIONS_HUB`` host has a workflow that
+    bound the context in-process, an ``API`` host reads the ``ZAMP_*`` variables its runtime
+    injected. Returns a flat dict that is wire-compatible with the platform's
+    ``EmitLogContext`` either way, and an empty dict when the source has nothing.
+    """
+    if current_execution_host() is ExecutionHost.ACTIONS_HUB:
+        ctx = current_channel_context()
+        return ctx.model_dump(mode="json", exclude_none=True) if ctx else {}
+    return resolve_context()
+
+
+def _current_tool_call_id() -> Optional[str]:
+    """The running tool's id, from whichever source this execution host uses."""
+    if current_execution_host() is ExecutionHost.ACTIONS_HUB:
+        ctx = current_channel_context()
+        return ctx.tool_call_id if ctx else None
+    return os.environ.get(ENV_TOOL_CALL_ID)
+
+
 async def emit_log(block: ContentBlock) -> EmitLogResult:
     """Emit a content block to the current agent context.
 
@@ -62,24 +127,31 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
     Returns:
         :class:`EmitLogResult`. Never raises.
     """
-    # Auto-stamp parent_block_id from the running tool's id so emitted blocks
-    # group under the correct parent when parallel tool calls interleave.
-    if block.parent_block_id is None:
-        block.parent_block_id = os.environ.get(ENV_TOOL_CALL_ID)
-
-    params: dict[str, Any] = {
-        "block": block.model_dump(mode="json"),
-        "context": resolve_context(),
-    }
-
     try:
-        result = await ActionExecutor.execute(
-            EMIT_LOG_ACTION_NAME,
-            params,
-            summary="Emit log to current agent context",
-        )
+        # Auto-stamp parent_block_id from the running tool's id so emitted blocks
+        # group under the correct parent when parallel tool calls interleave.
+        if block.parent_block_id is None:
+            block.parent_block_id = _current_tool_call_id()
+
+        block_payload = block.model_dump(mode="json")
+
+        _capture_block(block)
+
+        params: dict[str, Any] = {
+            "block": block_payload,
+            "context": _emit_context(),
+        }
+
+        # The block is already captured above; suppress capture of this action call so
+        # emit_log isn't recorded twice.
+        with suppress_step_capture():
+            result = await ActionExecutor.execute(
+                EMIT_LOG_ACTION_NAME,
+                params,
+                summary="Emit log to current agent context",
+            )
         return EmitLogResult(ok=True, result=result)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning("emit_log failed", error=str(exc))
         return EmitLogResult(ok=False, error=str(exc))
 

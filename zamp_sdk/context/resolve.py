@@ -3,16 +3,16 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
-from zamp_sdk.context.channel_context import ChannelContext
+from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
 from zamp_sdk.context.env import (
     ENV_CHANNEL_ID,
     ENV_CHANNEL_TYPE,
-    ENV_INSIDE_SANDBOX,
     ENV_MESSAGE_ID,
     ENV_RUN_ID,
     ENV_STREAMING_ID,
     ENV_TOOL_CALL_ID,
 )
+from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
 
 
 def resolve_context() -> dict[str, Any]:
@@ -36,17 +36,24 @@ def resolve_context() -> dict[str, Any]:
 def resolve_channel_context() -> Optional[ChannelContext]:
     """The caller's full channel context as a validated ``ChannelContext``, or None.
 
-    Inside a sandbox it comes from the ``ZAMP_*`` env vars the runtime injected —
-    None if they don't form a complete, valid context. Sent once when calling the
-    platform so actions don't each have to attach it.
+    The execution host decides the source, the same fact that decides how actions
+    dispatch: an ``ACTIONS_HUB`` host has a workflow that bound the context in-process,
+    while an ``API`` host is a standalone process the runtime fed through ``ZAMP_*``
+    environment variables. Sent once when calling the platform so actions don't each have
+    to attach it.
+
+    Deciding by host rather than by trying both matters on the API path: code running in a
+    sandbox can import and call :func:`bind_channel_context` itself, and a bound value is
+    never consulted there, so it cannot redirect its own output to a channel the runtime
+    did not give it.
 
     Resolving the context is best-effort and must never break the action call it
     decorates, so *any* failure here resolves to None and the action goes through
     without a context.
     """
-    if os.environ.get(ENV_INSIDE_SANDBOX) == "true":
-        try:
-            return ChannelContext(**resolve_context())
-        except Exception:
-            return None
-    return None
+    if current_execution_host() is ExecutionHost.ACTIONS_HUB:
+        return current_channel_context()
+    try:
+        return ChannelContext(**resolve_context())
+    except Exception:
+        return None
