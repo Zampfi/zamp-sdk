@@ -928,3 +928,145 @@ def test_capture_action_step_never_raises_on_a_hostile_result():
     start_log_capture()
     ActionExecutor._capture_action_step("act", {"a": 1}, _HostileDict(b=2))
     assert drain_log_capture() == []
+
+
+class _NoStr:
+    """``str()`` on this raises, so even the fallback has to have a fallback."""
+
+    def __str__(self) -> str:
+        raise RuntimeError("nope")
+
+
+def _safe(value):
+    return ActionExecutor._json_safe(value, half="output", action_name="act")
+
+
+class TestAsString:
+    def test_uses_str_when_it_works(self):
+        assert ActionExecutor._as_string(_Weird()) == "<weird>"
+
+    def test_names_the_type_when_str_itself_raises(self):
+        assert ActionExecutor._as_string(_NoStr()) == "<unserializable _NoStr>"
+
+
+class TestValueOrString:
+    def test_a_serializable_value_comes_back_untouched(self):
+        value = {"a": [1, {"b": None}]}
+        assert ActionExecutor._value_or_string(value) is value
+
+    def test_a_bad_value_becomes_a_string(self):
+        assert ActionExecutor._value_or_string(_Weird()) == "<weird>"
+
+    @pytest.mark.parametrize("value", [None, False, 0, "", [], {}, 0.0])
+    def test_falsy_but_serializable_values_are_not_mistaken_for_bad_ones(self, value):
+        """The check is "does it serialize", not "is it truthy" - a plain ``if not value``
+        would quietly stringify every legitimate empty result."""
+        assert ActionExecutor._value_or_string(value) is value
+
+
+class TestJsonSafeHappyPath:
+    def test_the_same_object_is_returned_not_a_copy(self):
+        """The happy path must not rebuild the value: it is the common case, and a copy
+        would cost time on every action call and hide later mutation."""
+        value = {"a": 1, "b": [2, 3]}
+        assert _safe(value) is value
+
+    def test_nothing_is_logged_when_the_value_serializes(self):
+        with patch(f"{_MODULE}.logger") as logger:
+            _safe({"a": 1})
+        logger.warning.assert_not_called()
+
+    def test_degrading_logs_once_naming_the_half_and_the_action(self):
+        with patch(f"{_MODULE}.logger") as logger:
+            ActionExecutor._json_safe({"a": _Weird()}, half="input", action_name="charge_card")
+        assert logger.warning.call_count == 1
+        kwargs = logger.warning.call_args.kwargs
+        assert kwargs["half"] == "input"
+        assert kwargs["action_name"] == "charge_card"
+        assert kwargs["value_type"] == "dict"
+        assert "error" in kwargs
+
+
+class TestJsonSafeContainers:
+    def test_a_dict_keeps_its_good_entries(self):
+        assert _safe({"keep": {"n": 1}, "drop": _Weird()}) == {"keep": {"n": 1}, "drop": "<weird>"}
+
+    def test_a_list_keeps_its_good_items(self):
+        assert _safe([{"n": 1}, _Weird(), "x"]) == [{"n": 1}, "<weird>", "x"]
+
+    def test_a_tuple_with_a_bad_item_comes_back_as_a_list(self):
+        """JSON has no tuple, so the shape a caller gets back is a list."""
+        assert _safe((1, _Weird())) == [1, "<weird>"]
+
+    def test_a_fully_serializable_tuple_is_left_alone(self):
+        value = (1, 2)
+        assert _safe(value) is value
+
+    def test_a_set_is_stringified_whole(self):
+        """A set is neither a mapping nor a sequence here, so there is nothing to open."""
+        assert _safe({"tags": {1}}) == {"tags": "{1}"}
+
+    def test_containers_are_opened_one_level_only(self):
+        """The deliberate limit: a full walk would cost every call, and a self-referential
+        value would not terminate. The bad value is two levels down, so the whole inner
+        container is stringified rather than rebuilt."""
+        out = _safe({"outer": {"inner": _Weird()}})
+        assert list(out) == ["outer"]
+        assert isinstance(out["outer"], str)  # the whole inner dict, flattened
+        assert "inner" in out["outer"]
+
+    def test_a_self_referential_value_terminates(self):
+        cyc: dict = {}
+        cyc["self"] = cyc
+        assert isinstance(_safe(cyc)["self"], str)
+
+    def test_a_bad_value_that_is_not_a_container_is_stringified(self):
+        assert _safe(_Weird()) == "<weird>"
+
+    @pytest.mark.parametrize("value", [{}, [], ()])
+    def test_empty_containers_pass_straight_through(self, value):
+        assert _safe(value) is value
+
+
+class TestJsonSafeKeys:
+    def test_non_string_keys_survive_untouched_while_the_dict_still_serializes(self):
+        """``json.dumps`` coerces int keys itself, so nothing needs doing on the happy path."""
+        value = {1: "a", True: "b"}
+        assert _safe(value) is value
+
+    def test_a_non_string_key_is_stringified_when_the_dict_degrades(self):
+        assert _safe({(1, 2): _Weird()}) == {"(1, 2)": "<weird>"}
+
+    def test_a_stringified_key_can_collide_with_an_existing_string_key(self):
+        """Documented loss, not an accident: on the degraded path an int key becomes "1",
+        which overwrites a sibling "1". Needs a dict mixing both key types *and* an
+        unserializable value, so it is vanishingly rare - and the alternative (dropping the
+        whole input) is worse."""
+        assert _safe({1: "first", "1": _Weird()}) == {"1": "<weird>"}
+
+
+class TestJsonSafeInvariant:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            _Weird(),
+            _NoStr(),
+            b"\xff\xfe",
+            {1},
+            (x for x in [1]),
+            {"a": _NoStr(), "b": b"x", "c": {1}},
+            [_NoStr(), b"y"],
+            {"nested": {"deep": _Weird()}},
+        ],
+    )
+    def test_whatever_goes_in_the_result_can_be_serialized(self, value):
+        """The one property that matters: after this, the host can always serialize it."""
+        json.dumps(_safe(value))
+
+    def test_nan_and_inf_pass_the_probe_although_they_are_not_valid_json(self):
+        """Known gap, pinned so it is a decision rather than a surprise: ``json.dumps``
+        accepts them and emits bare ``NaN``/``Infinity``, which strict parsers reject. The
+        probe therefore lets them through unchanged."""
+        assert json.dumps(float("nan")) == "NaN"
+        value = {"n": float("nan"), "i": float("inf")}
+        assert _safe(value) is value
