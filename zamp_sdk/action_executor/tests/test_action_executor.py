@@ -834,10 +834,97 @@ def test_capture_action_step_non_serializable_result_degrades_to_string():
 
 
 def test_capture_action_step_cyclic_result_does_not_hang_and_is_json_safe():
+    """The cycle must not survive into the buffer, and opening the dict one level must not
+    recurse into it."""
     start_log_capture()
     cyc: dict = {}
     cyc["self"] = cyc
     ActionExecutor._capture_action_step("act", {"a": 1}, cyc)
     steps = drain_log_capture()
-    assert isinstance(steps[0]["output"], str)  # stringified, not the live cycle
+    assert isinstance(steps[0]["output"]["self"], str)  # stringified, not the live cycle
     json.dumps(steps[0])
+
+
+def test_capture_action_step_keeps_the_serializable_result_fields_alongside_the_bad_one():
+    """The motivating case: one unserializable field must not flatten the whole result. A
+    datetime is JSON-unsafe even though Pydantic would carry it, so this is the common one."""
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, {"rows": [{"n": 1}], "at": _Weird()})
+    steps = drain_log_capture()
+    assert steps[0]["output"] == {"rows": [{"n": 1}], "at": "<weird>"}
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_degrades_only_the_bad_items_of_a_list_result():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, [{"n": 1}, _Weird()])
+    steps = drain_log_capture()
+    assert steps[0]["output"] == [{"n": 1}, "<weird>"]
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_non_serializable_params_do_not_sink_the_step():
+    """An INLINE dispatch never serializes params, so reaching the capture is no proof they
+    can cross the Temporal boundary. A bad input must not poison the whole step."""
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"who": _Weird()}, {"ok": True})
+    steps = drain_log_capture()
+    assert steps[0]["input"] == {"who": "<weird>"}
+    assert steps[0]["output"] == {"ok": True}
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_keeps_the_serializable_params_alongside_the_bad_one():
+    """Per-entry, not whole-dict: losing every param because one is unserializable would
+    throw away the more useful half of the step."""
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"keep": {"n": 1}, "drop": _Weird()}, None)
+    steps = drain_log_capture()
+    assert steps[0]["input"] == {"keep": {"n": 1}, "drop": "<weird>"}
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_cyclic_params_do_not_hang():
+    start_log_capture()
+    cyc: dict = {}
+    cyc["self"] = cyc
+    ActionExecutor._capture_action_step("act", {"cyc": cyc}, None)
+    steps = drain_log_capture()
+    assert isinstance(steps[0]["input"]["cyc"], str)
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_non_string_param_key_is_made_json_safe():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {(1, 2): "v"}, None)
+    steps = drain_log_capture()
+    json.dumps(steps[0])
+
+
+def test_capture_action_step_non_dict_params_are_stringified():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", _Weird(), None)  # type: ignore[arg-type]
+    steps = drain_log_capture()
+    assert steps[0]["input"] == "<weird>"
+    json.dumps(steps[0])
+
+
+class _HostileDict(dict):
+    """A mapping that raises while being inspected, not while being serialized."""
+
+    def items(self):  # type: ignore[override]
+        raise RuntimeError("boom")
+
+
+def test_capture_action_step_never_raises_into_the_caller():
+    """The action has already succeeded and its result is about to be returned, so a value
+    that misbehaves under inspection must cost the log line and nothing else."""
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", _HostileDict(a=1), {"ok": True})
+    assert drain_log_capture() == []
+
+
+def test_capture_action_step_never_raises_on_a_hostile_result():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, _HostileDict(b=2))
+    assert drain_log_capture() == []
