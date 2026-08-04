@@ -1029,9 +1029,12 @@ class TestJsonSafeContainers:
 
 
 class TestJsonSafeKeys:
-    def test_non_string_keys_survive_untouched_while_the_dict_still_serializes(self):
-        """``json.dumps`` coerces int keys itself, so nothing needs doing on the happy path."""
-        value = {1: "a", True: "b"}
+    @pytest.mark.parametrize("key", [1, True, 2.5, None])
+    def test_non_string_keys_survive_untouched_while_the_dict_still_serializes(self, key):
+        """``json.dumps`` coerces these key types itself, so nothing needs doing on the happy
+        path. One key per case: ``True`` and ``1`` collapse into a single entry in one dict
+        literal, so pairing them would silently test half of what it looks like."""
+        value = {key: "a"}
         assert _safe(value) is value
 
     def test_a_non_string_key_is_stringified_when_the_dict_degrades(self):
