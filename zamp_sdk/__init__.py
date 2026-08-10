@@ -7,6 +7,7 @@ from zamp_sdk.context import (
     clear_channel_context,
     current_channel_context,
 )
+from zamp_sdk.db import AgentDbError, datasets
 from zamp_sdk.logging import (
     ContentBlock,
     ContentBlockType,
@@ -39,6 +40,7 @@ from zamp_sdk.workflows import (
 
 __all__ = [
     "ActionExecutor",
+    "AgentDbError",
     "BaseActivity",
     "BaseWorkflow",
     "ChannelContext",
@@ -54,6 +56,7 @@ __all__ = [
     "bind_channel_context",
     "clear_channel_context",
     "current_channel_context",
+    "datasets",
     "drain_log_capture",
     "start_log_capture",
     "TextContentBlock",

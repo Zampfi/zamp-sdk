@@ -111,6 +111,98 @@ to opt into longer retries when needed.
 
 Explicit parameters passed to `ActionExecutor.execute()` take precedence over environment variables.
 
+## Databases (`zamp_sdk.db`)
+
+Access the organization's datasets by writing ordinary SQLAlchemy. The SDK compiles
+your expression and ships it to the platform — **no DSN, no connection, no credential
+ever reaches your script**.
+
+```python
+import sqlalchemy as sa
+from sqlalchemy import select, insert, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from zamp_sdk.db import datasets
+
+# Existing dataset: one line, and you get a real sqlalchemy.Table
+invoices = await datasets.table("invoices")
+
+# From here down it is stock SQLAlchemy
+rows = await datasets.execute(
+    select(invoices).where(invoices.c.status == "open").limit(50)
+)
+
+# Several statements, one transaction — all land or none do
+async with datasets.transaction() as tx:
+    tx.add(insert(invoices).values(vendor="Acme", amount=1200.50))
+    tx.add(
+        update(invoices).where(invoices.c.id == 7).values(status="closed"),
+        expected_rows=1,          # 0 → someone else changed it → whole body rolls back
+    )
+
+# Large reads page with a keyset cursor
+async for page in datasets.stream(select(invoices), page_size=10000):
+    process(page)
+```
+
+### The six calls
+
+| Call | Does |
+|------|------|
+| `datasets.table(name)` / `datasets.tables(names)` | Fetch schema, return live `sa.Table` objects. The plural form is **one** call |
+| `datasets.execute(stmt, expected_rows=None)` | Run one statement, return its rows |
+| `datasets.transaction()` | Buffer statements, ship one body as one transaction |
+| `datasets.stream(stmt, page_size=10000, key="id")` | Page a large read with a keyset cursor |
+| `datasets.create(table, if_exists="error"\|"skip")` | Create a dataset. **Returns the table to use** — see below |
+| `datasets.drop(table_or_name)` | Delete a dataset and all its rows |
+
+Renaming, altering, sharing, revoking and listing are called directly via
+`ActionExecutor` (`agent_db_rename_dataset`, `agent_db_alter_dataset`,
+`agent_db_share_dataset_access`, `agent_db_revoke_dataset_access`,
+`agent_db_list_datasets`) — SQLAlchemy has no construct to compile from for those, so
+a wrapper would add a surface without adding anything.
+
+### Creating: use the returned table
+
+Every dataset gets an auto-injected `id` primary key. `create()` mirrors that rule
+locally and **returns the mirrored table**, so `table.c.id` exists on the object you
+go on to use:
+
+```python
+customers = sa.Table("customers", sa.MetaData(),
+                     sa.Column("name", sa.Text, nullable=False))
+
+customers = await datasets.create(customers, if_exists="skip")   # ← reassign
+await datasets.execute(select(customers.c.id, customers.c.name))
+```
+
+Declaring your own `id` is safe and wins — the injection is skipped.
+
+### Errors
+
+One exception type, `AgentDbError`, carrying Postgres's own vocabulary:
+
+```python
+from zamp_sdk import AgentDbError
+
+try:
+    await datasets.execute(stmt)
+except AgentDbError as e:
+    print(e.sqlstate)          # "23505" — None if it never reached Postgres
+    print(e.statement_index)   # which statement in the body failed
+```
+
+`sqlstate is None` is meaningful: it says the failure happened before Postgres saw
+the statement (a gate rejection, an authorization refusal). A `TimeoutError`
+propagates unwrapped, because the statement may have committed.
+
+### Idempotency
+
+The SDK sends no idempotency key — v1 does not honour one. When a write must be safe
+to repeat, say so in the SQL: `on_conflict_do_update` is idempotent by construction,
+and a guarded `update(...).where(status == "pending")` is safe to repeat. Both need a
+unique constraint, which you declare in the `CREATE TABLE` or add later with
+`CREATE UNIQUE INDEX`.
+
 ## Error Handling
 
 | Exception | When |
