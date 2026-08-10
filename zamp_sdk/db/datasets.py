@@ -129,10 +129,14 @@ async def stream(
     cost grows quadratically across pages — and rows shift under concurrent writes,
     which silently skips and duplicates. A keyset cursor is stable and O(page).
 
-    Requires an orderable unique key, defaulting to the injected ``id``. Each page is
-    one call, so ``page_size`` may not exceed the server's ``max_result_rows``.
+    Requires an orderable unique NOT NULL key, defaulting to the injected ``id``, and
+    a statement that carries no ORDER BY, LIMIT or OFFSET of its own — each of those
+    would fight the cursor rather than compose with it, so they are refused instead
+    of being silently overridden. Each page is one call, so ``page_size`` may not
+    exceed the server's ``max_result_rows``.
     """
     key_column = _key_column(statement, key)
+    _reject_conflicting_clauses(statement, key)
     cursor: Any = None
 
     while True:
@@ -153,22 +157,68 @@ async def stream(
         if len(rows) < page_size:
             return
         cursor = rows[-1][key_column.name]
+        if cursor is None:
+            # Postgres sorts NULLs last, so `key > NULL` is NULL and matches nothing:
+            # the cursor can never advance past this page. Left alone the loop would
+            # re-fetch the same page forever.
+            raise AgentDbError(
+                f"stream() cannot page past a NULL {key_column.name!r}. Page on a "
+                f"NOT NULL unique column via key='<column>'."
+            )
 
 
 def _key_column(statement: Any, key: str) -> Any:
-    """Find the cursor column on the statement's source table."""
-    get_final_froms = getattr(statement, "get_final_froms", None)
-    for source in get_final_froms() if get_final_froms else ():
-        if key in getattr(source, "c", {}):
-            return source.c[key]
-    # Fall back to the selected columns, which covers select(table.c.a, table.c.id).
+    """Find the cursor column among the statement's *selected* columns.
+
+    The projection, not the source table: the cursor is read back out of the rows the
+    statement returns, so a key the table has but the SELECT list omits would page on
+    a value that never arrives.
+    """
     for column in getattr(statement, "selected_columns", ()) or ():
         if getattr(column, "name", None) == key:
+            if getattr(column, "nullable", False):
+                # NULLs sort last, so the cursor either stops advancing on them or
+                # filters them out — the key is unusable either way. Rejected up
+                # front, while it still costs nothing.
+                raise AgentDbError(
+                    f"stream() cannot page on {key!r} because it is nullable: "
+                    f"Postgres sorts NULLs last, so the cursor would never reach the "
+                    f"rows past them. Page on a NOT NULL unique column via "
+                    f"key='<column>'."
+                )
             return column
     raise AgentDbError(
         f"stream() needs an orderable unique column to page on and could not find "
-        f"{key!r} in the statement. Select it, or pass key='<column>'."
+        f"{key!r} among the statement's selected columns. Select it, or pass "
+        f"key='<column>'."
     )
+
+
+def _reject_conflicting_clauses(statement: Any, key: str) -> None:
+    """Refuse a statement whose own paging clauses would corrupt the cursor.
+
+    SQLAlchemy exposes no public getter for these three, so the attributes ``Select``
+    stores them in are read directly.
+    """
+    if getattr(statement, "_order_by_clauses", ()):
+        raise AgentDbError(
+            f"stream() orders every page by {key!r} to page on it, and order_by() "
+            f"appends rather than replaces — the statement's own ordering would lead, "
+            f"so the cursor would skip and repeat rows. Drop the order_by(), or read "
+            f"the ordered result with execute()."
+        )
+    if getattr(statement, "_limit_clause", None) is not None:
+        raise AgentDbError(
+            "stream() sets its own LIMIT per page, which would replace the "
+            "statement's and read far more rows than it asked for. Drop the limit(), "
+            "or read the bounded result with execute()."
+        )
+    if getattr(statement, "_offset_clause", None) is not None:
+        raise AgentDbError(
+            "stream() pages with a keyset cursor, so an OFFSET would be re-applied on "
+            "top of every page and silently drop rows. Drop the offset() — stream() "
+            "already reads the whole result."
+        )
 
 
 async def create(
