@@ -156,8 +156,8 @@ def _validated_post_action(post_action: Optional[dict], *, expected: str, builde
     ever act on when they answer. The platform validates the payload again when it stores it;
     this is the early copy, and the only one that can name the builder to call instead.
     """
-    actual = (post_action or {}).get("type")
-    if actual != expected:
+    if not post_action or post_action.get("type") != expected:
+        actual = (post_action or {}).get("type")
         raise ValueError(
             f"request_user_input: post_action must be {builder} here, got "
             f"{actual or 'nothing'}. The two runtimes carry on differently — a script is "
@@ -177,7 +177,7 @@ async def request_user_input(
     requests: list,
     *,
     post_action: Optional[dict] = None,
-) -> NoReturn:
+) -> None:
     """Ask the user one or more questions, then stop.
 
     Args:
@@ -194,12 +194,12 @@ async def request_user_input(
             there; there is no sensible default, since only the author knows the next phase.
 
     Returns:
-        Nothing you can use, in either runtime — the answer never comes back to this caller,
-        which is what ``NoReturn`` states. A script does not come back at all: it exits here
-        and is re-run. A workflow does return, with no value, so the phase can end itself on
-        the next line with ``return AWAITING_USER_INPUT``. Recover the answer at the top of
-        the new run: :func:`parse_user_input` in a script, :func:`user_input_from` in a
-        workflow.
+        Nothing you can use, in either runtime — the answer never comes back to this caller.
+        A script does not come back at all: it exits here and is re-run, which is why
+        ``NoReturn`` sits on ``_ask_and_exit_script``, where it is literally true. A workflow
+        does return, with no value, so the phase can end itself on the next line with
+        ``return AWAITING_USER_INPUT``. Recover the answer at the top of the new run:
+        :func:`parse_user_input` in a script, :func:`user_input_from` in a workflow.
 
     Raises:
         ValueError: ``post_action`` is not the one this runtime can act on, or does not say
