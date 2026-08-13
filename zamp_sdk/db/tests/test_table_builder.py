@@ -6,6 +6,8 @@ whose element type arrives separately, unmapped types degrading instead of raisi
 and the id-injection rule that keeps the local Table matching the real one.
 """
 
+import datetime as dt
+
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.schema import CreateTable
@@ -74,6 +76,65 @@ class TestTypeResolution:
         still usable in expressions, just without client-side coercion."""
         table = build_table(_dataset([_col("tier", "aria_customer_tier")]), sa.MetaData())
         assert isinstance(table.c.tier.type, sa.types.NullType)
+
+
+class TestTimeZoneAwareness:
+    """Regression. ``ischema_names`` maps the aware and naive spellings to the SAME
+    class — TIMESTAMP for both "timestamp with time zone" and "...without" — so the
+    distinction survives only in the ``timezone`` flag, which this builder must set
+    itself. SQLAlchemy's own reflection reads the suffix; an offline builder cannot
+    inherit that.
+
+    It became load-bearing when the SDK moved to the asyncpg dialect, which renders
+    the bind's type into the SQL. A lost flag emits ``$1::TIMESTAMP WITHOUT TIME
+    ZONE``, and Postgres then parses an offset-bearing string under that cast,
+    discards the offset and keeps the wall clock — storing an instant wrong by the
+    offset, with no error. Under the previous psycopg2 dialect both flags rendered
+    the same ``%(name)s``, so the bug existed but could not reach the database.
+    """
+
+    def test_timestamptz_keeps_its_timezone_flag(self):
+        table = build_table(
+            _dataset([_col("ts", "timestamp with time zone", udt_name="timestamptz")]),
+            sa.MetaData(),
+        )
+        assert table.c.ts.type.timezone is True
+
+    def test_timetz_keeps_its_timezone_flag(self):
+        table = build_table(
+            _dataset([_col("tt", "time with time zone", udt_name="timetz")]), sa.MetaData()
+        )
+        assert table.c.tt.type.timezone is True
+
+    def test_the_naive_spellings_stay_naive(self):
+        table = build_table(
+            _dataset(
+                [
+                    _col("ts", "timestamp without time zone"),
+                    _col("tt", "time without time zone"),
+                ]
+            ),
+            sa.MetaData(),
+        )
+        assert table.c.ts.type.timezone is False
+        assert table.c.tt.type.timezone is False
+
+    def test_the_flag_reaches_the_rendered_sql(self):
+        """The assertion that actually matters: what Postgres is told to parse."""
+        from zamp_sdk.db._compile import compile_statement
+
+        table = build_table(
+            _dataset(
+                [_col("ts", "timestamp with time zone", udt_name="timestamptz")],
+                primary_key=(),
+            ),
+            sa.MetaData(),
+        )
+        sql, _ = compile_statement(
+            sa.insert(table).values(ts=dt.datetime(2026, 3, 14, tzinfo=dt.timezone.utc))
+        )
+        assert "WITH TIME ZONE" in sql
+        assert "WITHOUT TIME ZONE" not in sql
 
 
 class TestSerialIdHandling:

@@ -72,6 +72,10 @@ def _to_wire(value: Any) -> Any:
 
     ``datetime`` is checked before ``date`` because it is a subclass of it.
     """
+    if isinstance(value, dt.timedelta):
+        # Postgres reads this as an interval literal. isoformat() is not an option:
+        # timedelta has none, and json.dumps would reach it raw and raise.
+        return f"{value.days} days {value.seconds} seconds {value.microseconds} microseconds"
     if isinstance(value, (dt.datetime, dt.date, dt.time)):
         return value.isoformat()
     if isinstance(value, Decimal):

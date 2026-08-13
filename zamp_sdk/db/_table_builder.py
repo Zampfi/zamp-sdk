@@ -32,6 +32,18 @@ _SEQUENCE_DEFAULT_PREFIX = "nextval("
 # The auto-injected primary key every agent-db dataset carries.
 ID_COLUMN = "id"
 
+# Postgres spells the aware variants as a suffix, and ``ischema_names`` maps both the
+# aware and naive spelling to the SAME class — TIMESTAMP for both "timestamp with time
+# zone" and "timestamp without time zone" — so the distinction survives only in the
+# ``timezone`` flag, which the caller has to set. SQLAlchemy's own reflection reads the
+# suffix to do this; an offline builder has to do it explicitly.
+#
+# Getting it wrong is not cosmetic. The dialect renders the column's type next to the
+# placeholder, so a lost flag becomes ``$1::TIMESTAMP WITHOUT TIME ZONE`` — Postgres
+# then parses an offset-bearing string under that cast, DISCARDS the offset and keeps
+# the wall clock, storing an instant that is wrong by the offset. Silently.
+_AWARE_TYPE_SUFFIX = "with time zone"
+
 
 def _type_of(column: dict[str, Any]) -> Any:
     """Resolve one column's SQLAlchemy type from the describe payload."""
@@ -47,6 +59,12 @@ def _type_of(column: dict[str, Any]) -> Any:
         # Unmapped (a domain, a custom enum, something new). NullType still composes
         # into expressions; only client-side coercion is lost.
         return sa.types.NullType()
+
+    if name.endswith(_AWARE_TYPE_SUFFIX):
+        try:
+            return factory(timezone=True)
+        except TypeError:
+            return factory()
 
     length = column.get("length")
     if length is not None:
