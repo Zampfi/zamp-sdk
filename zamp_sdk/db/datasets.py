@@ -84,10 +84,10 @@ async def execute(
     This is the single-statement case, not the "non-transactional" one — it is still
     one call and one Postgres transaction.
     """
-    sql, params = compile_statement(statement)
+    sql, args = compile_statement(statement)
     entry: dict[str, Any] = {"sql": sql}
-    if params:
-        entry["params"] = params
+    if args:
+        entry["args"] = args
     if expected_rows is not None:
         entry["expected_rows"] = expected_rows
 

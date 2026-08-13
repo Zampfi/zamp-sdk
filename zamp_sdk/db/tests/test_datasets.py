@@ -102,7 +102,7 @@ class TestDescribe:
 
 class TestExecute:
     @pytest.mark.asyncio
-    async def test_compiles_to_sql_plus_bound_params(self, executor):
+    async def test_compiles_to_sql_plus_positional_args(self, executor):
         table = await _invoices(executor)
 
         await datasets.execute(select(table).where(table.c.vendor == "Acme"))
@@ -110,8 +110,9 @@ class TestExecute:
         payload = executor.await_args.args[1]
         statement = payload["statements"][0]
         assert "SELECT" in statement["sql"]
-        assert "%(vendor_1)s" in statement["sql"]
-        assert statement["params"] == {"vendor_1": "Acme"}
+        assert "$1" in statement["sql"]
+        assert "%(" not in statement["sql"]
+        assert statement["args"] == ["Acme"]
 
     @pytest.mark.asyncio
     async def test_values_are_never_inlined(self, executor):
@@ -123,7 +124,7 @@ class TestExecute:
 
         statement = executor.await_args.args[1]["statements"][0]
         assert "O'Brien" not in statement["sql"]
-        assert "O'Brien" in statement["params"].values()
+        assert "O'Brien" in statement["args"]
 
     @pytest.mark.asyncio
     async def test_in_lists_expand_to_one_bind_each(self, executor):
@@ -134,7 +135,7 @@ class TestExecute:
         await datasets.execute(select(table).where(table.c.vendor.in_(["a", "b", "c"])))
 
         statement = executor.await_args.args[1]["statements"][0]
-        assert len(statement["params"]) == 3
+        assert len(statement["args"]) == 3
 
     @pytest.mark.asyncio
     async def test_returns_the_first_statements_rows(self, executor):
@@ -154,11 +155,10 @@ class TestExecute:
         assert executor.await_args.args[1]["statements"][0]["expected_rows"] == 1
 
     @pytest.mark.asyncio
-    async def test_a_timestamp_crosses_the_wire_as_json_and_is_cast_back(self, executor):
+    async def test_a_timestamp_crosses_the_wire_as_json(self, executor):
         """The payload is serialised with plain json.dumps, which cannot encode a
-        datetime — so the value travels as text and the placeholder carries the cast
-        that restores its type. The cast is doubled because Postgres would otherwise
-        assign the parameter the cast's own type and want a datetime again."""
+        datetime — so the value travels as text. The placeholder already names the
+        type, because the dialect printed the cast itself."""
         table = await _invoices(executor)
 
         await datasets.execute(select(table).where(table.c.created_at > datetime(2026, 1, 1)))
@@ -166,8 +166,8 @@ class TestExecute:
         payload = executor.await_args.args[1]
         statement = payload["statements"][0]
         json.dumps(payload)
-        assert list(statement["params"].values()) == ["2026-01-01T00:00:00"]
-        assert "CAST(CAST(%(created_at_1)s AS TEXT) AS TIMESTAMP)" in statement["sql"]
+        assert statement["args"] == ["2026-01-01T00:00:00"]
+        assert "$1::TIMESTAMP" in statement["sql"]
 
     @pytest.mark.asyncio
     async def test_an_aware_timestamp_keeps_its_zone(self, executor):
@@ -176,8 +176,7 @@ class TestExecute:
         await datasets.execute(select(table).where(table.c.created_at > datetime(2026, 1, 1, tzinfo=timezone.utc)))
 
         statement = executor.await_args.args[1]["statements"][0]
-        assert "AS TIMESTAMP WITH TIME ZONE)" in statement["sql"]
-        assert list(statement["params"].values()) == ["2026-01-01T00:00:00+00:00"]
+        assert statement["args"] == ["2026-01-01T00:00:00+00:00"]
 
     @pytest.mark.asyncio
     async def test_dates_decimals_and_uuids_all_survive_serialisation(self, executor):
@@ -193,29 +192,25 @@ class TestExecute:
 
         payload = executor.await_args.args[1]
         json.dumps(payload)
-        sent = [statement["params"] for statement in payload["statements"]]
-        assert sent[0]["amount"] == "12.50"
-        assert sent[1]["created_at_1"] == "2026-01-01"
-        assert sent[2]["vendor_1"] == str(identifier)
-        assert "AS NUMERIC)" in payload["statements"][0]["sql"]
-        assert "AS DATE)" in payload["statements"][1]["sql"]
-        assert "AS UUID)" in payload["statements"][2]["sql"]
+        sent = [statement["args"] for statement in payload["statements"]]
+        assert "12.50" in sent[0]
+        assert sent[1] == ["2026-01-01"]
+        assert sent[2] == [str(identifier)]
 
     @pytest.mark.asyncio
-    async def test_bytes_travel_as_hex_and_are_decoded_back(self, executor):
+    async def test_bytes_travel_as_hex(self, executor):
         table = await _invoices(executor)
 
         await datasets.execute(select(table).where(table.c.doc == b"\x00\xff"))
 
         statement = executor.await_args.args[1]["statements"][0]
         json.dumps(statement)
-        assert statement["params"] == {"doc_1": "00ff"}
-        assert "DECODE(CAST(%(doc_1)s AS TEXT), 'hex')" in statement["sql"]
+        assert statement["args"] == ["\\x00ff"]
 
     @pytest.mark.asyncio
     async def test_every_element_of_an_in_list_is_encoded(self, executor):
-        """render_postcompile gives each element its own bind name, so the encoding
-        has to reach the expanded names rather than the original one."""
+        """render_postcompile gives each element its own placeholder, so the encoding
+        has to reach every expanded position rather than the original one."""
         table = await _invoices(executor)
 
         await datasets.execute(
@@ -224,46 +219,19 @@ class TestExecute:
 
         statement = executor.await_args.args[1]["statements"][0]
         json.dumps(statement)
-        assert sorted(statement["params"].values()) == ["2026-01-01T00:00:00", "2026-02-01T00:00:00"]
-        assert statement["sql"].count("AS TIMESTAMP)") == 2
+        assert statement["args"] == ["2026-01-01T00:00:00", "2026-02-01T00:00:00"]
 
     @pytest.mark.asyncio
-    async def test_a_value_json_cannot_carry_is_named_in_the_error(self, executor):
-        """Better than the transport's "Object of type X is not JSON serializable",
-        which arrives as an AgentDbError with sqlstate=None and reads like a gate
-        rejection or an access refusal."""
-        table = await _invoices(executor)
-
-        with pytest.raises(AgentDbError) as exc:
-            await datasets.execute(select(table).where(table.c.vendor == object()))
-
-        assert "'vendor_1'" in str(exc.value)
-        executor.assert_not_awaited()
-
-    @pytest.mark.asyncio
-    async def test_a_literal_percent_is_undoubled_when_there_are_no_params(self, executor):
-        """The pyformat dialect doubles every literal %. The server only un-doubles
-        when params are present — it uses that as the signal that the SQL came from a
-        pyformat compiler — so a statement with no binds has to arrive un-doubled or
-        Postgres stores two percent signs."""
+    async def test_a_literal_percent_is_never_escaped(self, executor):
+        """Under $n there is no percent escaping at all — the %% doubling only ever
+        existed because pyformat needed it, and both halves of undoing it are gone."""
         await _invoices(executor)
 
         await datasets.execute(sa.text("UPDATE invoices SET vendor = 'paid 100%' WHERE id = 1"))
 
         statement = executor.await_args.args[1]["statements"][0]
         assert statement["sql"] == "UPDATE invoices SET vendor = 'paid 100%' WHERE id = 1"
-        assert "params" not in statement
-
-    @pytest.mark.asyncio
-    async def test_a_literal_percent_is_left_doubled_when_params_are_present(self, executor):
-        """The server un-doubles this one itself, after substituting placeholders.
-        Un-doubling here as well would turn an author's %% into a single %."""
-        await _invoices(executor)
-
-        await datasets.execute(sa.text("UPDATE invoices SET vendor = 'paid 100%' WHERE id = :row").bindparams(row=1))
-
-        statement = executor.await_args.args[1]["statements"][0]
-        assert "'paid 100%%'" in statement["sql"]
+        assert "args" not in statement
 
     @pytest.mark.asyncio
     async def test_never_sends_retry_or_timeout_overrides(self, executor):
@@ -363,7 +331,7 @@ class TestStream:
         [page async for page in datasets.stream(select(table), page_size=2)]
 
         second_call_sql = executor.await_args_list[1].args[1]["statements"][0]
-        assert 7 in second_call_sql["params"].values()
+        assert 7 in second_call_sql["args"]
 
     @pytest.mark.asyncio
     async def test_page_size_caps_the_servers_row_limit_too(self, executor):

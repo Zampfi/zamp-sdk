@@ -37,10 +37,10 @@ class Transaction:
         number of rows, the whole body rolls back. Use it where a lost update would
         otherwise pass silently — claiming a row, or an update that must not hit zero.
         """
-        sql, params = compile_statement(statement)
+        sql, args = compile_statement(statement)
         entry: dict[str, Any] = {"sql": sql}
-        if params:
-            entry["params"] = params
+        if args:
+            entry["args"] = args
         if expected_rows is not None:
             entry["expected_rows"] = expected_rows
         self._statements.append(entry)
