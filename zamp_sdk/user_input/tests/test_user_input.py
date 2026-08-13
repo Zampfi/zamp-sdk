@@ -5,18 +5,24 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from zamp_sdk import (
+    AWAITING_USER_INPUT,
     InputOption,
     UserInputResponse,
     multiple_choice,
     parse_user_input,
     request_user_input,
     resume_script,
+    run_workflow,
     select_one,
     text_input,
+    user_input_from,
 )
+from zamp_sdk.context import ENV_EXECUTION_HOST, ExecutionHost
 from zamp_sdk.user_input.constants import (
+    POST_ACTION_RUN_CODE_EXECUTOR_WORKFLOW,
     SDK_USER_INPUT_EXIT_CODE,
     SDK_USER_INPUT_MARKER,
+    USER_INPUT_WORKFLOW_PARAMS_KEY,
 )
 
 # resume_command_with is an internal helper (behind resume_script), not public API.
@@ -253,3 +259,129 @@ class TestRequestInput:
                 await request_user_input([text_input("q?")])
         # registration failure must NOT silently continue downstream steps
         assert exc.value.code == 1
+
+
+class TestRunWorkflowPostAction:
+    def test_builds_the_run_code_executor_workflow_post_action(self):
+        pa = run_workflow(
+            "ApplyCategoryDecision",
+            code_directory_path="invoice_process/",
+            workflow_params={"checkpoint": "s3://ck.json"},
+        )
+        assert pa == {
+            "type": POST_ACTION_RUN_CODE_EXECUTOR_WORKFLOW,
+            "code_directory_path": "invoice_process/",
+            "workflow_name": "ApplyCategoryDecision",
+            "workflow_params": {"checkpoint": "s3://ck.json"},
+        }
+
+    def test_workflow_params_default_to_empty_and_are_copied(self):
+        params = {"a": 1}
+        pa = run_workflow("Next", code_directory_path="d/")
+        assert pa["workflow_params"] == {}
+        assert run_workflow("Next", code_directory_path="d/", workflow_params=params)["workflow_params"] is not params
+
+
+class TestRequestInputFromAWorkflow:
+    """The code-executor path: register the question, come back, let the phase end itself."""
+
+    @pytest.fixture(autouse=True)
+    def _on_the_workflow_host(self, monkeypatch):
+        monkeypatch.setenv(ENV_EXECUTION_HOST, ExecutionHost.ACTIONS_HUB.value)
+
+    @staticmethod
+    def _post_action():
+        return run_workflow(
+            "ApplyCategoryDecision",
+            code_directory_path="invoice_process/",
+            workflow_params={"checkpoint": "s3://ck.json"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_registers_the_question_and_returns_nothing(self):
+        """It comes back with no value — the phase ends itself with AWAITING_USER_INPUT."""
+        execute = AsyncMock(return_value={})
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
+            returned = await request_user_input(
+                [select_one("Category right?", [("y", "Yes"), ("n", "No")])],
+                post_action=self._post_action(),
+            )
+
+        assert returned is None
+        action_name, params = execute.call_args.args
+        assert action_name == "request_user_input"
+        assert params["requests"][0]["input_type"] == "select_one"
+        assert params["post_action"]["workflow_name"] == "ApplyCategoryDecision"
+
+    @pytest.mark.asyncio
+    async def test_no_caller_context_is_sent(self):
+        """channel_context is injected server-side from the execution token on this path."""
+        execute = AsyncMock(return_value={})
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
+            await request_user_input([text_input("?")], post_action=self._post_action())
+
+        assert set(execute.call_args.args[1]) == {"requests", "post_action"}
+
+    @pytest.mark.asyncio
+    async def test_a_script_post_action_is_rejected(self):
+        """resume_script has no meaning here: a workflow is not re-run, its next phase is."""
+        execute = AsyncMock(return_value={})
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
+            with pytest.raises(ValueError, match="run_workflow"):
+                await request_user_input([text_input("?")], post_action=resume_script("--x"))
+
+        execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_missing_post_action_is_rejected(self):
+        """No default here — only the author knows which phase runs next."""
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", AsyncMock()):
+            with pytest.raises(ValueError, match="got nothing"):
+                await request_user_input([text_input("?")])
+
+    @pytest.mark.asyncio
+    async def test_a_post_action_that_says_nothing_to_run_is_rejected(self):
+        """Rejected before the question is registered, so no unanswerable HITL is left behind."""
+        execute = AsyncMock(return_value={})
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
+            with pytest.raises(ValueError, match="code_directory_path"):
+                await request_user_input(
+                    [text_input("?")],
+                    post_action={
+                        "type": POST_ACTION_RUN_CODE_EXECUTOR_WORKFLOW,
+                        "workflow_name": "Next",
+                    },
+                )
+
+        execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_failure_to_register_propagates(self):
+        """A phase that ended quietly with no question recorded is worse than a failed one."""
+        execute = AsyncMock(side_effect=RuntimeError("boom"))
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
+            with pytest.raises(RuntimeError, match="boom"):
+                await request_user_input([text_input("?")], post_action=self._post_action())
+
+
+class TestUserInputFrom:
+    def test_reads_the_answer_the_platform_injected(self):
+        answer = user_input_from(
+            {
+                "checkpoint": "s3://ck.json",
+                USER_INPUT_WORKFLOW_PARAMS_KEY: {"responses": [{"response": {"selected_option": "no"}}]},
+            }
+        )
+        assert answer is not None
+        assert answer.selected_option_for(0) == "no"
+
+    def test_none_when_the_phase_was_not_started_by_an_answer(self):
+        assert user_input_from({"checkpoint": "s3://ck.json"}) is None
+        assert user_input_from({}) is None
+        assert user_input_from(None) is None
+
+    def test_none_when_the_key_holds_something_other_than_a_payload(self):
+        assert user_input_from({USER_INPUT_WORKFLOW_PARAMS_KEY: "not-a-dict"}) is None
+
+    def test_the_halt_sentinel_is_what_a_phase_returns(self):
+        assert AWAITING_USER_INPUT == {"_awaiting_user_input": True}

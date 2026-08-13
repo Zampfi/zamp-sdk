@@ -3,6 +3,7 @@ from zamp_sdk.user_input.utils.resume import (
     default_resume_command,
     resume_command_with,
     resume_script,
+    run_workflow,
 )
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "default_resume_command",
     "resume_command_with",
     "resume_script",
+    "run_workflow",
 ]
