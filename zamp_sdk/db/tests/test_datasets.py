@@ -266,7 +266,7 @@ class TestExecute:
         assert "'paid 100%%'" in statement["sql"]
 
     @pytest.mark.asyncio
-    async def test_never_sends_retry_timeout_or_idempotency_overrides(self, executor):
+    async def test_never_sends_retry_or_timeout_overrides(self, executor):
         """The platform's defaults exist because someone reasoned about the seam. A
         client-side override would silently replace that reasoning — and would add a
         write retry the raw psycopg2 path never had."""
@@ -276,7 +276,6 @@ class TestExecute:
 
         assert "action_retry_policy" not in executor.await_args.kwargs
         assert "action_start_to_close_timeout" not in executor.await_args.kwargs
-        assert "idempotency_key" not in executor.await_args.args[1]
 
 
 class TestTransaction:

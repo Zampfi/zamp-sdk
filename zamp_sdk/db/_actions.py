@@ -1,6 +1,6 @@
 """The single place the bridge talks to the platform.
 
-Every call funnels through here so three rules hold everywhere rather than being
+Every call funnels through here so two rules hold everywhere rather than being
 re-decided per call site:
 
 1. **Failures become AgentDbError.** Callers catch one type.
@@ -8,9 +8,6 @@ re-decided per call site:
    because someone reasoned about the seam; a client-side override would silently
    replace that reasoning. Notably, write paths must not gain a retry the raw
    psycopg2 path never had.
-3. **No idempotency key is sent.** v1 does not honour one, and an absent key always
-   means "execute unconditionally" — so when dedupe lands it arrives as an optional
-   kwarg and every script written before then keeps working.
 """
 
 from __future__ import annotations

@@ -195,12 +195,12 @@ except AgentDbError as e:
 the statement (a gate rejection, an authorization refusal). A `TimeoutError`
 propagates unwrapped, because the statement may have committed.
 
-### Idempotency
+### Writes that may run twice
 
-The SDK sends no idempotency key — v1 does not honour one. When a write must be safe
-to repeat, say so in the SQL: `on_conflict_do_update` is idempotent by construction,
-and a guarded `update(...).where(status == "pending")` is safe to repeat. Both need a
-unique constraint, which you declare in the `CREATE TABLE` or add later with
+A script can be re-run, so say in the SQL when a write must be safe to repeat:
+`on_conflict_do_update` is idempotent by construction, and a guarded
+`update(...).where(status == "pending")` is safe to repeat. Both need a unique
+constraint, which you declare in the `CREATE TABLE` or add later with
 `CREATE UNIQUE INDEX`.
 
 ## Error Handling
