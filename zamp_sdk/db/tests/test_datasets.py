@@ -15,9 +15,9 @@ import sqlalchemy as sa
 from sqlalchemy import insert, select, update
 
 from zamp_sdk.db import datasets
-from zamp_sdk.db.errors import AgentDbError
+from zamp_sdk.db.utils.errors import AgentDbError
 
-_ACTIONS = "zamp_sdk.db._actions.ActionExecutor.execute"
+_ACTIONS = "zamp_sdk.db.utils.actions.ActionExecutor.execute"
 
 DESCRIBE_RESPONSE = {
     "datasets": [

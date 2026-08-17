@@ -1,6 +1,6 @@
 """The single seam between the bridge and the platform.
 
-Everything funnels through ``_actions.call`` so the three rules below hold
+Everything funnels through ``actions.call`` so the three rules below hold
 everywhere rather than being re-decided at each call site.
 """
 
@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from zamp_sdk.db import _actions
-from zamp_sdk.db.errors import AgentDbError
+from zamp_sdk.db.utils import actions
+from zamp_sdk.db.utils.errors import AgentDbError
 
-_EXECUTE = "zamp_sdk.db._actions.ActionExecutor.execute"
+_EXECUTE = "zamp_sdk.db.utils.actions.ActionExecutor.execute"
 
 
 class TestErrorTranslation:
@@ -20,7 +20,7 @@ class TestErrorTranslation:
         """Callers catch one type, whatever the executor raised."""
         with patch(_EXECUTE, new=AsyncMock(side_effect=RuntimeError("Action a FAILED: boom"))):
             with pytest.raises(AgentDbError):
-                await _actions.call("agent_db_execute_sql", {})
+                await actions.call("agent_db_execute_sql", {})
 
     @pytest.mark.asyncio
     async def test_metadata_survives_the_translation(self):
@@ -31,7 +31,7 @@ class TestErrorTranslation:
             ),
         ):
             with pytest.raises(AgentDbError) as exc:
-                await _actions.call("agent_db_execute_sql", {})
+                await actions.call("agent_db_execute_sql", {})
 
         assert exc.value.sqlstate == "23505"
         assert exc.value.statement_index == 2
@@ -42,7 +42,7 @@ class TestErrorTranslation:
 
         with patch(_EXECUTE, new=AsyncMock(side_effect=original)):
             with pytest.raises(AgentDbError) as exc:
-                await _actions.call("agent_db_execute_sql", {})
+                await actions.call("agent_db_execute_sql", {})
 
         assert exc.value is original
 
@@ -53,7 +53,7 @@ class TestErrorTranslation:
         needs to see it for what it is."""
         with patch(_EXECUTE, new=AsyncMock(side_effect=TimeoutError("too slow"))):
             with pytest.raises(TimeoutError):
-                await _actions.call("agent_db_execute_sql", {})
+                await actions.call("agent_db_execute_sql", {})
 
 
 class TestWhatIsNeverSent:
@@ -63,7 +63,7 @@ class TestWhatIsNeverSent:
         client-side would replace that silently — and on a write path would add a
         retry the raw psycopg2 path never had."""
         with patch(_EXECUTE, new=AsyncMock(return_value={})) as executor:
-            await _actions.call("agent_db_execute_sql", {"statements": []})
+            await actions.call("agent_db_execute_sql", {"statements": []})
 
         assert "action_retry_policy" not in executor.await_args.kwargs
         assert "action_start_to_close_timeout" not in executor.await_args.kwargs
@@ -72,7 +72,7 @@ class TestWhatIsNeverSent:
     async def test_passthrough_kwargs_are_forwarded(self):
         """base_url / auth_token are how a local dev loop points at an ngrok tunnel."""
         with patch(_EXECUTE, new=AsyncMock(return_value={})) as executor:
-            await _actions.call("agent_db_execute_sql", {}, base_url="http://x", auth_token="t")
+            await actions.call("agent_db_execute_sql", {}, base_url="http://x", auth_token="t")
 
         assert executor.await_args.kwargs["base_url"] == "http://x"
         assert executor.await_args.kwargs["auth_token"] == "t"

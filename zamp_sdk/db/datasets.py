@@ -15,11 +15,14 @@ import sqlalchemy as sa
 from sqlalchemy import ClauseElement, Select
 from sqlalchemy.schema import CreateTable
 
-from zamp_sdk.db import _actions, constants
-from zamp_sdk.db._compile import compile_statement
-from zamp_sdk.db._table_builder import build_table
-from zamp_sdk.db._transaction import Transaction
-from zamp_sdk.db.errors import AgentDbError
+from zamp_sdk.db import constants
+from zamp_sdk.db.utils import (
+    AgentDbError,
+    Transaction,
+    actions,
+    build_table,
+    compile_statement,
+)
 
 
 async def table(
@@ -55,7 +58,7 @@ async def _describe(
     base_url: str | None,
     auth_token: str | None,
 ) -> dict[str, sa.Table]:
-    response = await _actions.call(
+    response = await actions.call(
         constants.DESCRIBE_DATASET,
         {"table_names": names},
         base_url=base_url,
@@ -100,7 +103,7 @@ async def execute(
     if max_result_rows is not None:
         payload["max_result_rows"] = max_result_rows
 
-    response = await _actions.call(constants.EXECUTE_SQL, payload, base_url=base_url, auth_token=auth_token)
+    response = await actions.call(constants.EXECUTE_SQL, payload, base_url=base_url, auth_token=auth_token)
     results = (response or {}).get("results") or []
     return list(results[0].get("rows") or []) if results else []
 
@@ -242,7 +245,7 @@ async def create(
     """
     create_sql = str(CreateTable(table_object).compile(dialect=constants.DDL_DIALECT))
 
-    await _actions.call(
+    await actions.call(
         constants.CREATE_DATASET,
         {"create_sql": create_sql.strip(), "if_exists": if_exists},
         base_url=base_url,
@@ -264,7 +267,7 @@ async def drop(
 ) -> None:
     """Delete a dataset and all of its rows. Irreversible."""
     name = table_or_name.name if isinstance(table_or_name, sa.Table) else table_or_name
-    await _actions.call(
+    await actions.call(
         constants.DROP_DATASET,
         {"table_name": name},
         base_url=base_url,

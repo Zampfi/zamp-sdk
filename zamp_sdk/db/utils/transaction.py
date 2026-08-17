@@ -12,8 +12,9 @@ from typing import Any
 
 from sqlalchemy import ClauseElement
 
-from zamp_sdk.db import _actions, constants
-from zamp_sdk.db._compile import compile_statement
+from zamp_sdk.db import constants
+from zamp_sdk.db.utils import actions
+from zamp_sdk.db.utils.compile import compile_statement
 
 
 class Transaction:
@@ -69,7 +70,7 @@ class Transaction:
         if self._max_result_rows is not None:
             payload["max_result_rows"] = self._max_result_rows
 
-        response = await _actions.call(
+        response = await actions.call(
             constants.EXECUTE_SQL,
             payload,
             base_url=self._base_url,

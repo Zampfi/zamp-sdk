@@ -14,9 +14,10 @@ from decimal import Decimal
 
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB, insert as pg_insert
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from zamp_sdk.db._compile import compile_statement
+from zamp_sdk.db.utils.compile import compile_statement
 
 
 @pytest.fixture

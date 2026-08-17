@@ -11,7 +11,7 @@ import datetime as dt
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-from zamp_sdk.db._table_builder import build_table
+from zamp_sdk.db.utils.table_builder import build_table
 
 
 def _dataset(columns, primary_key=("id",), name="invoices"):
@@ -113,7 +113,7 @@ class TestTimeZoneAwareness:
 
     def test_the_flag_reaches_the_rendered_sql(self):
         """The assertion that actually matters: what Postgres is told to parse."""
-        from zamp_sdk.db._compile import compile_statement
+        from zamp_sdk.db.utils.compile import compile_statement
 
         table = build_table(
             _dataset(

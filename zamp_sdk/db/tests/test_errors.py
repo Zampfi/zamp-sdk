@@ -12,7 +12,7 @@ error with a parser traceback.
 
 import pytest
 
-from zamp_sdk.db.errors import AgentDbError
+from zamp_sdk.db.utils.errors import AgentDbError
 
 
 class TestParsing:

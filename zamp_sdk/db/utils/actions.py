@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.db.errors import AgentDbError
+from zamp_sdk.db.utils.errors import AgentDbError
 
 
 async def call(

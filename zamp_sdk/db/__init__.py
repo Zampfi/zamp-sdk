@@ -10,6 +10,6 @@ DSN, no connection, no credential ever reaches the script.
 """
 
 from zamp_sdk.db import datasets
-from zamp_sdk.db.errors import AgentDbError
+from zamp_sdk.db.utils import AgentDbError
 
 __all__ = ["AgentDbError", "datasets"]
