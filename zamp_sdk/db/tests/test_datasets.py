@@ -429,25 +429,49 @@ class TestStream:
 
 
 class TestCreateAndDrop:
+    _CUSTOMERS_DESCRIBE = {
+        "datasets": [
+            {
+                "table_name": "customers",
+                "primary_key": ["id"],
+                "columns": [
+                    {
+                        "name": "id",
+                        "type": "integer",
+                        "nullable": False,
+                        "default": "nextval('customers_id_seq'::regclass)",
+                    },
+                    {"name": "name", "type": "text", "nullable": False},
+                ],
+            }
+        ]
+    }
+
     @pytest.mark.asyncio
-    async def test_create_compiles_ddl_and_mirrors_the_id_column(self, executor):
+    async def test_create_sends_the_authors_ddl_and_returns_the_described_table(self, executor):
+        executor.return_value = self._CUSTOMERS_DESCRIBE
         source = sa.Table("customers", sa.MetaData(), sa.Column("name", sa.Text, nullable=False))
 
-        mirrored = await datasets.create(source, if_exists="skip")
+        result = await datasets.create(source, if_exists="skip")
 
-        payload = executor.await_args.args[1]
-        assert payload["create_sql"].startswith("CREATE TABLE customers")
-        assert payload["if_exists"] == "skip"
-        # The returned Table is the one to build expressions from.
-        assert "id" in mirrored.c
+        # First call is the create: the author's DDL as-is, no client-side id injection.
+        create_payload = executor.await_args_list[0].args[1]
+        assert create_payload["create_sql"].startswith("CREATE TABLE customers")
+        assert '"id"' not in create_payload["create_sql"]
+        assert create_payload["if_exists"] == "skip"
+        # Then it re-describes, and the returned Table is the server's — with the id.
+        assert len(executor.await_args_list) == 2
+        assert "id" in result.c and "name" in result.c
+        assert result.name == "customers"
 
     @pytest.mark.asyncio
     async def test_create_defaults_to_error(self, executor):
-        source = sa.Table("t", sa.MetaData(), sa.Column("name", sa.Text))
+        executor.return_value = self._CUSTOMERS_DESCRIBE
+        source = sa.Table("customers", sa.MetaData(), sa.Column("name", sa.Text))
 
         await datasets.create(source)
 
-        assert executor.await_args.args[1]["if_exists"] == "error"
+        assert executor.await_args_list[0].args[1]["if_exists"] == "error"
 
     @pytest.mark.asyncio
     async def test_drop_accepts_a_table_or_a_name(self, executor):

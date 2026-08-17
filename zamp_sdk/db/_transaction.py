@@ -49,9 +49,15 @@ class Transaction:
         return len(self._statements) - 1
 
     async def __aenter__(self) -> "Transaction":
+        """Enter the ``async with`` block; the returned ``self`` binds to ``as tx``."""
         return self
 
     async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        """Ship the buffered statements as one transaction on a clean exit.
+
+        On an exception (or an empty body) nothing is sent. Always returns ``False``
+        so a raised exception is not suppressed and still propagates to the caller.
+        """
         if exc_type is not None:
             # The block raised, so the caller never finished describing the unit of
             # work. Sending a half-built body would commit an intent nobody stated.

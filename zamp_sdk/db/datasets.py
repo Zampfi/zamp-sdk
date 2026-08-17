@@ -17,7 +17,7 @@ from sqlalchemy.schema import CreateTable
 
 from zamp_sdk.db import _actions, constants
 from zamp_sdk.db._compile import compile_statement
-from zamp_sdk.db._table_builder import apply_id_injection, build_table
+from zamp_sdk.db._table_builder import build_table
 from zamp_sdk.db._transaction import Transaction
 from zamp_sdk.db.errors import AgentDbError
 
@@ -232,12 +232,15 @@ async def create(
 ) -> sa.Table:
     """Create a dataset from a ``sa.Table`` definition.
 
-    Returns the **mirrored** table — the one carrying the auto-injected ``id`` — so
-    the object the caller goes on to build expressions from matches the table that
-    now exists. Use the return value, not the input.
+    Returns the dataset as the platform **describes it after creation** — carrying the
+    server-injected ``id`` primary key — so the object you build expressions from
+    matches the table that now exists. Use the return value, not the input.
+
+    The ``id`` injection is the platform's rule and stays there: the SDK sends the
+    author's DDL as-is and reads the result back, rather than mirroring the rule
+    client-side (which would keep the same logic in step across two repos).
     """
-    mirrored = apply_id_injection(table_object)
-    create_sql = str(CreateTable(mirrored).compile(dialect=constants.DDL_DIALECT))
+    create_sql = str(CreateTable(table_object).compile(dialect=constants.DDL_DIALECT))
 
     await _actions.call(
         constants.CREATE_DATASET,
@@ -245,7 +248,12 @@ async def create(
         base_url=base_url,
         auth_token=auth_token,
     )
-    return mirrored
+
+    described = await _describe([table_object.name], base_url=base_url, auth_token=auth_token)
+    result = described.get(table_object.name)
+    if result is None:
+        raise AgentDbError(f"dataset {table_object.name!r} was created but the platform did not describe it back.")
+    return result
 
 
 async def drop(

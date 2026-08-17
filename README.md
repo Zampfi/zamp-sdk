@@ -163,9 +163,9 @@ a wrapper would add a surface without adding anything.
 
 ### Creating: use the returned table
 
-Every dataset gets an auto-injected `id` primary key. `create()` mirrors that rule
-locally and **returns the mirrored table**, so `table.c.id` exists on the object you
-go on to use:
+Every dataset gets an auto-injected `id` primary key (added by the platform).
+`create()` **returns the table as the platform describes it after creating**, so
+`table.c.id` exists on the object you go on to use:
 
 ```python
 customers = sa.Table("customers", sa.MetaData(),
