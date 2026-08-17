@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from zamp_sdk.db import _actions
+from sqlalchemy import ClauseElement
+
+from zamp_sdk.db import _actions, constants
 from zamp_sdk.db._compile import compile_statement
 
 
@@ -30,7 +32,7 @@ class Transaction:
         self._max_result_rows = max_result_rows
         self.results: list[dict[str, Any]] = []
 
-    def add(self, statement: Any, *, expected_rows: int | None = None) -> int:
+    def add(self, statement: ClauseElement, *, expected_rows: int | None = None) -> int:
         """Buffer one statement. Returns its index in ``results``.
 
         ``expected_rows`` is the race guard: if the statement affects a different
@@ -62,7 +64,7 @@ class Transaction:
             payload["max_result_rows"] = self._max_result_rows
 
         response = await _actions.call(
-            _actions.EXECUTE_SQL,
+            constants.EXECUTE_SQL,
             payload,
             base_url=self._base_url,
             auth_token=self._auth_token,

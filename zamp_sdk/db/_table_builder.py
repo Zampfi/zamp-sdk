@@ -19,6 +19,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql.base import ischema_names
 
+from zamp_sdk.db.constants import ID_COLUMN
+
 # information_schema spells an array's type as the literal string "ARRAY" and hides
 # the element type in udt_name with a leading underscore ("_text"). The platform
 # normalises that into element_type; this is the fallback when it could not.
@@ -28,9 +30,6 @@ _ARRAY_TYPE = "array"
 # the value. Attaching that default client-side would make SQLAlchemy render it into
 # INSERTs, so instead the column is marked autoincrement and left default-less.
 _SEQUENCE_DEFAULT_PREFIX = "nextval("
-
-# The auto-injected primary key every agent-db dataset carries.
-ID_COLUMN = "id"
 
 # Postgres spells the aware variants as a suffix, and ``ischema_names`` maps both the
 # aware and naive spelling to the SAME class — TIMESTAMP for both "timestamp with time
@@ -100,9 +99,6 @@ def build_table(dataset: dict[str, Any], metadata: sa.MetaData) -> sa.Table:
                 _type_of(column),
                 primary_key=column_name in primary_key,
                 nullable=bool(column.get("nullable", True)),
-                # A server-generated key must not appear in compiled INSERTs — the
-                # database assigns it, and sending NULL or a guess would either fail
-                # or fight the sequence.
                 autoincrement=is_serial,
             )
         )

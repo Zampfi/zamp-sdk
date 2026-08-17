@@ -12,16 +12,14 @@ from __future__ import annotations
 from typing import Any, AsyncIterator
 
 import sqlalchemy as sa
+from sqlalchemy import ClauseElement, Select
+from sqlalchemy.schema import CreateTable
 
-from zamp_sdk.db import _actions
+from zamp_sdk.db import _actions, constants
 from zamp_sdk.db._compile import compile_statement
-from zamp_sdk.db._table_builder import ID_COLUMN, apply_id_injection, build_table
+from zamp_sdk.db._table_builder import apply_id_injection, build_table
 from zamp_sdk.db._transaction import Transaction
 from zamp_sdk.db.errors import AgentDbError
-
-# Matches the platform's max_result_rows default exactly, so a full page is the
-# largest legal single call and a 10k-row read costs one call rather than two.
-DEFAULT_PAGE_SIZE = 10000
 
 
 async def table(
@@ -58,7 +56,7 @@ async def _describe(
     auth_token: str | None,
 ) -> dict[str, sa.Table]:
     response = await _actions.call(
-        _actions.DESCRIBE_DATASET,
+        constants.DESCRIBE_DATASET,
         {"table_names": names},
         base_url=base_url,
         auth_token=auth_token,
@@ -72,7 +70,7 @@ async def _describe(
 
 
 async def execute(
-    statement: Any,
+    statement: ClauseElement,
     *,
     expected_rows: int | None = None,
     max_result_rows: int | None = None,
@@ -83,6 +81,13 @@ async def execute(
 
     This is the single-statement case, not the "non-transactional" one — it is still
     one call and one Postgres transaction.
+
+    - ``expected_rows`` — a race guard on rows *affected*. If the statement touches a
+      different number of rows, the whole call rolls back. Use it where a lost update
+      would otherwise pass silently (claiming a row, an update that must not hit zero).
+    - ``max_result_rows`` — a cap on rows *returned*. A SELECT that would exceed it
+      **errors** rather than truncating, so a runaway read fails loudly instead of
+      returning a silently partial answer.
     """
     sql, args = compile_statement(statement)
     entry: dict[str, Any] = {"sql": sql}
@@ -95,7 +100,7 @@ async def execute(
     if max_result_rows is not None:
         payload["max_result_rows"] = max_result_rows
 
-    response = await _actions.call(_actions.EXECUTE_SQL, payload, base_url=base_url, auth_token=auth_token)
+    response = await _actions.call(constants.EXECUTE_SQL, payload, base_url=base_url, auth_token=auth_token)
     results = (response or {}).get("results") or []
     return list(results[0].get("rows") or []) if results else []
 
@@ -116,10 +121,10 @@ def transaction(
 
 
 async def stream(
-    statement: Any,
+    statement: Select,
     *,
-    page_size: int = DEFAULT_PAGE_SIZE,
-    key: str = ID_COLUMN,
+    page_size: int = constants.DEFAULT_PAGE_SIZE,
+    key: str = constants.ID_COLUMN,
     base_url: str | None = None,
     auth_token: str | None = None,
 ) -> AsyncIterator[list[dict[str, Any]]]:
@@ -167,7 +172,7 @@ async def stream(
             )
 
 
-def _key_column(statement: Any, key: str) -> Any:
+def _key_column(statement: Select, key: str) -> Any:
     """Find the cursor column among the statement's *selected* columns.
 
     The projection, not the source table: the cursor is read back out of the rows the
@@ -177,9 +182,6 @@ def _key_column(statement: Any, key: str) -> Any:
     for column in getattr(statement, "selected_columns", ()) or ():
         if getattr(column, "name", None) == key:
             if getattr(column, "nullable", False):
-                # NULLs sort last, so the cursor either stops advancing on them or
-                # filters them out — the key is unusable either way. Rejected up
-                # front, while it still costs nothing.
                 raise AgentDbError(
                     f"stream() cannot page on {key!r} because it is nullable: "
                     f"Postgres sorts NULLs last, so the cursor would never reach the "
@@ -194,7 +196,7 @@ def _key_column(statement: Any, key: str) -> Any:
     )
 
 
-def _reject_conflicting_clauses(statement: Any, key: str) -> None:
+def _reject_conflicting_clauses(statement: Select, key: str) -> None:
     """Refuse a statement whose own paging clauses would corrupt the cursor.
 
     SQLAlchemy exposes no public getter for these three, so the attributes ``Select``
@@ -234,13 +236,11 @@ async def create(
     the object the caller goes on to build expressions from matches the table that
     now exists. Use the return value, not the input.
     """
-    from sqlalchemy.schema import CreateTable
-
     mirrored = apply_id_injection(table_object)
-    create_sql = str(CreateTable(mirrored).compile(dialect=_dialect()))
+    create_sql = str(CreateTable(mirrored).compile(dialect=constants.DDL_DIALECT))
 
     await _actions.call(
-        _actions.CREATE_DATASET,
+        constants.CREATE_DATASET,
         {"create_sql": create_sql.strip(), "if_exists": if_exists},
         base_url=base_url,
         auth_token=auth_token,
@@ -257,14 +257,8 @@ async def drop(
     """Delete a dataset and all of its rows. Irreversible."""
     name = table_or_name.name if isinstance(table_or_name, sa.Table) else table_or_name
     await _actions.call(
-        _actions.DROP_DATASET,
+        constants.DROP_DATASET,
         {"table_name": name},
         base_url=base_url,
         auth_token=auth_token,
     )
-
-
-def _dialect() -> Any:
-    from sqlalchemy.dialects import postgresql
-
-    return postgresql.dialect()

@@ -12,19 +12,12 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy.dialects import postgresql
+from sqlalchemy import ClauseElement
 
-# Stateless — a dialect is a compiler, not a connection. Nothing here can perform
-# I/O, which is what makes it safe to hold at module scope.
-#
-# The asyncpg dialect, not the psycopg2 one, because asyncpg is what executes the
-# statement server-side. Its paramstyle is ``numeric_dollar``, so it renders ``$1``,
-# ``$2`` … directly and nothing has to rewrite the SQL in between. That is the whole
-# point: the string this returns is the string Postgres parses.
-_DIALECT = postgresql.asyncpg.dialect()
+from zamp_sdk.db.constants import COMPILE_DIALECT
 
 
-def compile_statement(statement: Any) -> tuple[str, list[Any]]:
+def compile_statement(statement: ClauseElement) -> tuple[str, list[Any]]:
     """Render a SQLAlchemy statement to ``$n`` SQL plus its arguments, in order.
 
     Three decisions are load-bearing:
@@ -45,7 +38,7 @@ def compile_statement(statement: Any) -> tuple[str, list[Any]]:
     twice appears once and reuses its ``$n`` — the compiler's job, not ours.
     """
     compiled = statement.compile(
-        dialect=_DIALECT,
+        dialect=COMPILE_DIALECT,
         compile_kwargs={"render_postcompile": True},
     )
     # DDL compiles to a PGDDLCompiler, which has neither attribute. A CREATE TABLE

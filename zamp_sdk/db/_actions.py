@@ -17,11 +17,6 @@ from typing import Any
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.db.errors import AgentDbError
 
-EXECUTE_SQL = "agent_db_execute_sql"
-DESCRIBE_DATASET = "agent_db_describe_dataset"
-CREATE_DATASET = "agent_db_create_dataset"
-DROP_DATASET = "agent_db_drop_dataset"
-
 
 async def call(
     action_name: str,
@@ -41,9 +36,6 @@ async def call(
     except AgentDbError:
         raise
     except TimeoutError:
-        # A timeout is not a database error and must not be dressed up as one: the
-        # statement may well have committed, so a caller deciding whether to retry
-        # needs to see it for what it is.
         raise
-    except Exception as exc:  # noqa: BLE001 - deliberately broad, re-raised as one type
+    except Exception as exc:
         raise AgentDbError.from_exception(exc) from exc
