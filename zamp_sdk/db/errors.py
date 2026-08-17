@@ -11,15 +11,11 @@ from __future__ import annotations
 
 import re
 
-# The platform's failure text is the contract this parses. Pantheon formats a
-# statement failure as:
-#     "statement 3 failed [sqlstate=23505]: duplicate key value violates ..."
-# Both tokens are matched independently and tolerantly, so a message that changes
-# shape degrades to a plain message rather than raising while raising.
-#
-# The trailing \b matters: pantheon writes "sqlstate=unknown" when the driver gave
-# it no code, and without the boundary this would happily report the first five
-# characters of that word as a SQLSTATE.
+# Cross-repo contract with pantheon, which emits either
+#   "statement 3 failed [sqlstate=23505]: ..."   (per statement, execute_sql_body)
+#   "agent_db_create_dataset failed [sqlstate=42501]: ..."   (per activity)
+# Tokens match independently and tolerantly, so a changed shape degrades to a plain
+# message. The trailing \b stops "sqlstate=unknown" being read as the code "unkno".
 _SQLSTATE_RE = re.compile(r"sqlstate[=:]\s*([0-9A-Za-z]{5})\b", re.IGNORECASE)
 _STATEMENT_INDEX_RE = re.compile(
     r"statement[\s_](?:index[=:]\s*)?(\d+)",

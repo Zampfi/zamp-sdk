@@ -60,6 +60,22 @@ class TestParsing:
         assert error.sqlstate is None
         assert error.statement_index == 0
 
+    def test_the_activity_level_failure_format(self):
+        """Pantheon's OTHER producer: `_raise_db_error` (agent_managed_db/errors.py)
+        emits "<action> failed [sqlstate=XXXXX]: <exc>" with no statement index, for a
+        failure outside a multi-statement body. Pinned here so a change to that
+        format fails the SDK half too, not only pantheon's."""
+        error = AgentDbError.from_exception(
+            RuntimeError(
+                "Action abc-1 FAILED: agent_db_create_dataset failed "
+                "[sqlstate=42501]: permission denied for schema public"
+            )
+        )
+
+        assert error.sqlstate == "42501"
+        assert error.statement_index is None
+        assert "permission denied" in error.message
+
     def test_an_unrecognised_shape_still_produces_a_usable_error(self):
         error = AgentDbError.from_exception(RuntimeError("the network fell over"))
 
