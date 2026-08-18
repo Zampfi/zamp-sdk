@@ -69,10 +69,10 @@ class TestWhatIsNeverSent:
         assert "action_start_to_close_timeout" not in executor.await_args.kwargs
 
     @pytest.mark.asyncio
-    async def test_passthrough_kwargs_are_forwarded(self):
-        """base_url / auth_token are how a local dev loop points at an ngrok tunnel."""
+    async def test_no_base_url_or_auth_token(self):
+        """Identity rides in the env, not the call — ActionExecutor injects it."""
         with patch(_EXECUTE, new=AsyncMock(return_value={})) as executor:
-            await actions.call("agent_db_execute_sql", {}, base_url="http://x", auth_token="t")
+            await actions.call("agent_db_execute_sql", {})
 
-        assert executor.await_args.kwargs["base_url"] == "http://x"
-        assert executor.await_args.kwargs["auth_token"] == "t"
+        assert "base_url" not in executor.await_args.kwargs
+        assert "auth_token" not in executor.await_args.kwargs

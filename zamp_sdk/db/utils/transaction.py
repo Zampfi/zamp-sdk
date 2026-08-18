@@ -20,16 +20,8 @@ from zamp_sdk.db.utils.compile import compile_statement
 class Transaction:
     """Buffers statements, then ships them as one body in one Postgres transaction."""
 
-    def __init__(
-        self,
-        *,
-        base_url: str | None = None,
-        auth_token: str | None = None,
-        max_result_rows: int | None = None,
-    ) -> None:
+    def __init__(self, *, max_result_rows: int | None = None) -> None:
         self._statements: list[dict[str, Any]] = []
-        self._base_url = base_url
-        self._auth_token = auth_token
         self._max_result_rows = max_result_rows
         self.results: list[dict[str, Any]] = []
 
@@ -70,12 +62,7 @@ class Transaction:
         if self._max_result_rows is not None:
             payload["max_result_rows"] = self._max_result_rows
 
-        response = await actions.call(
-            constants.EXECUTE_SQL,
-            payload,
-            base_url=self._base_url,
-            auth_token=self._auth_token,
-        )
+        response = await actions.call(constants.ACTION_EXECUTE_SQL, payload)
         # Positionally aligned with add() order, so results[i] answers statement i.
         self.results = list((response or {}).get("results") or [])
         return False

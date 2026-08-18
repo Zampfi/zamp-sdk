@@ -5,10 +5,10 @@ from __future__ import annotations
 from sqlalchemy.dialects import postgresql
 
 # ─── Platform action names (the agent-db activities the bridge calls) ───
-EXECUTE_SQL = "agent_db_execute_sql"
-DESCRIBE_DATASET = "agent_db_describe_dataset"
-CREATE_DATASET = "agent_db_create_dataset"
-DROP_DATASET = "agent_db_drop_dataset"
+ACTION_EXECUTE_SQL = "agent_db_execute_sql"
+ACTION_DESCRIBE_DATASET = "agent_db_describe_dataset"
+ACTION_CREATE_DATASET = "agent_db_create_dataset"
+ACTION_DROP_DATASET = "agent_db_drop_dataset"
 
 # The auto-injected primary key every agent-db dataset carries.
 ID_COLUMN = "id"

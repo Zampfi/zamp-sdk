@@ -25,45 +25,25 @@ from zamp_sdk.db.utils import (
 )
 
 
-async def table(
-    name: str,
-    *,
-    base_url: str | None = None,
-    auth_token: str | None = None,
-) -> sa.Table:
+async def table(name: str) -> sa.Table:
     """Fetch one dataset's schema and return a live ``sqlalchemy.Table``."""
-    tables = await _describe([name], base_url=base_url, auth_token=auth_token)
+    tables = await _describe([name])
     if name not in tables:
         raise AgentDbError(f"dataset {name!r} was not found, or you have no access to it.")
     return tables[name]
 
 
-async def tables(
-    names: list[str],
-    *,
-    base_url: str | None = None,
-    auth_token: str | None = None,
-) -> dict[str, sa.Table]:
+async def tables(names: list[str]) -> dict[str, sa.Table]:
     """Fetch several datasets' schemas in **one** call.
 
     A script touching nine tables describes them once rather than nine times. The
     returned tables share one ``MetaData``, so joins across them compose.
     """
-    return await _describe(names, base_url=base_url, auth_token=auth_token)
+    return await _describe(names)
 
 
-async def _describe(
-    names: list[str],
-    *,
-    base_url: str | None,
-    auth_token: str | None,
-) -> dict[str, sa.Table]:
-    response = await actions.call(
-        constants.DESCRIBE_DATASET,
-        {"table_names": names},
-        base_url=base_url,
-        auth_token=auth_token,
-    )
+async def _describe(names: list[str]) -> dict[str, sa.Table]:
+    response = await actions.call(constants.ACTION_DESCRIBE_DATASET, {"table_names": names})
     metadata = sa.MetaData()
     built: dict[str, sa.Table] = {}
     for dataset in (response or {}).get("datasets") or []:
@@ -77,8 +57,6 @@ async def execute(
     *,
     expected_rows: int | None = None,
     max_result_rows: int | None = None,
-    base_url: str | None = None,
-    auth_token: str | None = None,
 ) -> list[dict[str, Any]]:
     """Run one statement and return its rows.
 
@@ -103,24 +81,19 @@ async def execute(
     if max_result_rows is not None:
         payload["max_result_rows"] = max_result_rows
 
-    response = await actions.call(constants.EXECUTE_SQL, payload, base_url=base_url, auth_token=auth_token)
+    response = await actions.call(constants.ACTION_EXECUTE_SQL, payload)
     results = (response or {}).get("results") or []
     return list(results[0].get("rows") or []) if results else []
 
 
-def transaction(
-    *,
-    max_result_rows: int | None = None,
-    base_url: str | None = None,
-    auth_token: str | None = None,
-) -> Transaction:
+def transaction(*, max_result_rows: int | None = None) -> Transaction:
     """Buffer several statements and ship them as one transaction.
 
     ``async with datasets.transaction() as tx:`` — every ``tx.add()`` inside the
     block lands together or not at all. Results arrive on ``tx.results`` after the
     block exits, aligned with ``add()`` order.
     """
-    return Transaction(base_url=base_url, auth_token=auth_token, max_result_rows=max_result_rows)
+    return Transaction(max_result_rows=max_result_rows)
 
 
 async def stream(
@@ -128,8 +101,6 @@ async def stream(
     *,
     page_size: int = constants.DEFAULT_PAGE_SIZE,
     key: str = constants.ID_COLUMN,
-    base_url: str | None = None,
-    auth_token: str | None = None,
 ) -> AsyncIterator[list[dict[str, Any]]]:
     """Read a large result in pages, using a keyset cursor.
 
@@ -153,12 +124,7 @@ async def stream(
             page_statement = page_statement.where(key_column > cursor)
         page_statement = page_statement.order_by(key_column).limit(page_size)
 
-        rows = await execute(
-            page_statement,
-            max_result_rows=page_size,
-            base_url=base_url,
-            auth_token=auth_token,
-        )
+        rows = await execute(page_statement, max_result_rows=page_size)
         if rows:
             yield rows
         # A short page means the last one: there is no further row past the cursor.
@@ -226,13 +192,7 @@ def _reject_conflicting_clauses(statement: Select, key: str) -> None:
         )
 
 
-async def create(
-    table_object: sa.Table,
-    *,
-    if_exists: str = "error",
-    base_url: str | None = None,
-    auth_token: str | None = None,
-) -> sa.Table:
+async def create(table_object: sa.Table, *, if_exists: str = "error") -> sa.Table:
     """Create a dataset from a ``sa.Table`` definition.
 
     Returns the dataset as the platform **describes it after creation** — carrying the
@@ -246,30 +206,18 @@ async def create(
     create_sql = str(CreateTable(table_object).compile(dialect=constants.DDL_DIALECT))
 
     await actions.call(
-        constants.CREATE_DATASET,
+        constants.ACTION_CREATE_DATASET,
         {"create_sql": create_sql.strip(), "if_exists": if_exists},
-        base_url=base_url,
-        auth_token=auth_token,
     )
 
-    described = await _describe([table_object.name], base_url=base_url, auth_token=auth_token)
+    described = await _describe([table_object.name])
     result = described.get(table_object.name)
     if result is None:
         raise AgentDbError(f"dataset {table_object.name!r} was created but the platform did not describe it back.")
     return result
 
 
-async def drop(
-    table_or_name: sa.Table | str,
-    *,
-    base_url: str | None = None,
-    auth_token: str | None = None,
-) -> None:
+async def drop(table_or_name: sa.Table | str) -> None:
     """Delete a dataset and all of its rows. Irreversible."""
     name = table_or_name.name if isinstance(table_or_name, sa.Table) else table_or_name
-    await actions.call(
-        constants.DROP_DATASET,
-        {"table_name": name},
-        base_url=base_url,
-        auth_token=auth_token,
-    )
+    await actions.call(constants.ACTION_DROP_DATASET, {"table_name": name})

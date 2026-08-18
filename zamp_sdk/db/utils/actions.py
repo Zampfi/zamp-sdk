@@ -18,21 +18,10 @@ from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.db.utils.errors import AgentDbError
 
 
-async def call(
-    action_name: str,
-    params: dict[str, Any],
-    *,
-    base_url: str | None = None,
-    auth_token: str | None = None,
-) -> Any:
+async def call(action_name: str, params: dict[str, Any]) -> Any:
     """Execute a platform action, translating any failure to AgentDbError."""
     try:
-        return await ActionExecutor.execute(
-            action_name,
-            params,
-            base_url=base_url,
-            auth_token=auth_token,
-        )
+        return await ActionExecutor.execute(action_name, params)
     except AgentDbError:
         raise
     except TimeoutError:
