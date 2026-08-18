@@ -47,10 +47,7 @@ def compile_statement(statement: ClauseElement) -> tuple[str, list[Any]]:
     params = getattr(compiled, "params", None) or {}
     processors = getattr(compiled, "_bind_processors", None) or {}
 
-    args = [
-        _to_wire(processors[name](params[name]) if name in processors else params[name])
-        for name in positions
-    ]
+    args = [_to_wire(processors[name](params[name]) if name in processors else params[name]) for name in positions]
     return str(compiled), args
 
 

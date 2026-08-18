@@ -39,18 +39,14 @@ class TestPlaceholders:
     """SQLAlchemy emits them; nothing here rewrites SQL."""
 
     def test_placeholders_are_dollar_n_not_pyformat(self, invoices):
-        sql, args = compile_statement(
-            sa.select(invoices.c.id).where(invoices.c.vendor == "Acme")
-        )
+        sql, args = compile_statement(sa.select(invoices.c.id).where(invoices.c.vendor == "Acme"))
         assert "$1" in sql
         assert "%(" not in sql
         assert args == ["Acme"]
 
     def test_arguments_are_positional_and_in_placeholder_order(self, invoices):
         sql, args = compile_statement(
-            sa.select(invoices.c.id)
-            .where(invoices.c.vendor == "Acme")
-            .where(invoices.c.amount > 100)
+            sa.select(invoices.c.id).where(invoices.c.vendor == "Acme").where(invoices.c.amount > 100)
         )
         assert sql.index("$1") < sql.index("$2")
         assert args == ["Acme", 100]
@@ -63,9 +59,7 @@ class TestPlaceholders:
         """
         target = sa.bindparam("target", "Acme")
         sql, args = compile_statement(
-            sa.select(invoices.c.id).where(
-                sa.or_(invoices.c.vendor == target, invoices.c.tags.any(target))
-            )
+            sa.select(invoices.c.id).where(sa.or_(invoices.c.vendor == target, invoices.c.tags.any(target)))
         )
         assert args == ["Acme"]
         assert sql.count("$1") == 2
@@ -74,9 +68,7 @@ class TestPlaceholders:
     def test_in_lists_expand_to_one_placeholder_per_element(self, invoices):
         """Without render_postcompile the SQL carries one token for the whole list,
         which no driver can bind."""
-        sql, args = compile_statement(
-            sa.select(invoices.c.id).where(invoices.c.vendor.in_(["a", "b", "c"]))
-        )
+        sql, args = compile_statement(sa.select(invoices.c.id).where(invoices.c.vendor.in_(["a", "b", "c"])))
         assert "POSTCOMPILE" not in sql
         assert args == ["a", "b", "c"]
         assert "$3" in sql
@@ -84,9 +76,7 @@ class TestPlaceholders:
     def test_a_literal_percent_is_never_doubled(self, invoices):
         """The %% escaping only exists for pyformat. Under $n there is nothing to
         escape, so a LIKE pattern survives as written."""
-        sql, args = compile_statement(
-            sa.select(invoices.c.id).where(invoices.c.vendor.like("%100%"))
-        )
+        sql, args = compile_statement(sa.select(invoices.c.id).where(invoices.c.vendor.like("%100%")))
         assert "%%" not in sql
         assert args == ["%100%"]
 
@@ -120,8 +110,7 @@ class TestValues:
             (dt.datetime(2026, 1, 2, 3, 4, 5), "2026-01-02T03:04:05"),
             (dt.date(2026, 1, 2), "2026-01-02"),
             (dt.time(3, 4, 5), "03:04:05"),
-            (uuid.UUID("11111111-1111-1111-1111-111111111111"),
-             "11111111-1111-1111-1111-111111111111"),
+            (uuid.UUID("11111111-1111-1111-1111-111111111111"), "11111111-1111-1111-1111-111111111111"),
             (b"\x00\x01\xff", "\\x0001ff"),
         ],
     )
@@ -147,9 +136,7 @@ class TestValues:
         assert json.loads(json.dumps({"sql": sql, "args": args}))["args"] == args
 
     def test_none_is_passed_through(self, invoices):
-        _, args = compile_statement(
-            sa.select(invoices.c.id).where(invoices.c.vendor == sa.null())
-        )
+        _, args = compile_statement(sa.select(invoices.c.id).where(invoices.c.vendor == sa.null()))
         assert args == []
 
 
@@ -157,8 +144,6 @@ class TestNothingIsInlined:
     def test_values_never_appear_in_the_sql_text(self, invoices):
         """literal_binds would lose type fidelity and require reimplementing Postgres
         escaping. Values stay arguments — including a string that looks like SQL."""
-        sql, args = compile_statement(
-            sa.select(invoices.c.id).where(invoices.c.vendor == "'; DROP TABLE t --")
-        )
+        sql, args = compile_statement(sa.select(invoices.c.id).where(invoices.c.vendor == "'; DROP TABLE t --"))
         assert "DROP TABLE" not in sql
         assert args == ["'; DROP TABLE t --"]

@@ -42,8 +42,7 @@ class TestParsing:
         meaningful — it says "Postgres never saw this" — not merely missing."""
         error = AgentDbError.from_exception(
             RuntimeError(
-                "Action x FAILED: statement 0: CREATE TABLE is not allowed here. "
-                "Use agent_db_create_dataset instead."
+                "Action x FAILED: statement 0: CREATE TABLE is not allowed here. Use agent_db_create_dataset instead."
             )
         )
 
