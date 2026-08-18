@@ -23,14 +23,17 @@ from zamp_sdk.logging import (
     start_log_capture,
 )
 from zamp_sdk.user_input import (
+    AWAITING_USER_INPUT,
     InputOption,
     UserInputResponse,
     multiple_choice,
     parse_user_input,
     request_user_input,
     resume_script,
+    run_workflow,
     select_one,
     text_input,
+    user_input_from,
 )
 from zamp_sdk.version import __version__ as __version__
 from zamp_sdk.workflows import (
@@ -39,6 +42,7 @@ from zamp_sdk.workflows import (
 )
 
 __all__ = [
+    "AWAITING_USER_INPUT",
     "ActionExecutor",
     "AgentDbError",
     "BaseActivity",
@@ -70,6 +74,8 @@ __all__ = [
     "parse_user_input",
     "request_user_input",
     "resume_script",
+    "run_workflow",
     "select_one",
     "text_input",
+    "user_input_from",
 ]
