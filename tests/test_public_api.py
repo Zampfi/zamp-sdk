@@ -81,5 +81,8 @@ class TestPublicApi:
             "current_channel_context",
             "start_log_capture",
             "drain_log_capture",
+            # Agent-managed database access for scripts.
+            "AgentDbError",
+            "datasets",
         }
         assert set(zamp_sdk.__all__) == expected

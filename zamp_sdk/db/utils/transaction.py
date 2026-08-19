@@ -1,0 +1,68 @@
+"""The buffering transaction context manager.
+
+``tx.add()`` cannot return rows, and that is the design rather than a limitation:
+at ``add()`` time nothing has executed — the body only crosses the wire when the
+block exits. Returning a lazy placeholder was considered and rejected, because it
+leaks the moment a caller tries to branch on it in Python.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from sqlalchemy import ClauseElement
+
+from zamp_sdk.db import constants
+from zamp_sdk.db.utils import actions
+from zamp_sdk.db.utils.compile import compile_statement
+
+
+class Transaction:
+    """Buffers statements, then ships them as one body in one Postgres transaction."""
+
+    def __init__(self, *, max_result_rows: int | None = None) -> None:
+        self._statements: list[dict[str, Any]] = []
+        self._max_result_rows = max_result_rows
+        self.results: list[dict[str, Any]] = []
+
+    def add(self, statement: ClauseElement, *, expected_rows: int | None = None) -> int:
+        """Buffer one statement. Returns its index in ``results``.
+
+        ``expected_rows`` is the race guard: if the statement affects a different
+        number of rows, the whole body rolls back. Use it where a lost update would
+        otherwise pass silently — claiming a row, or an update that must not hit zero.
+        """
+        sql, args = compile_statement(statement)
+        entry: dict[str, Any] = {"sql": sql}
+        if args:
+            entry["args"] = args
+        if expected_rows is not None:
+            entry["expected_rows"] = expected_rows
+        self._statements.append(entry)
+        return len(self._statements) - 1
+
+    async def __aenter__(self) -> "Transaction":
+        """Enter the ``async with`` block; the returned ``self`` binds to ``as tx``."""
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        """Ship the buffered statements as one transaction on a clean exit.
+
+        On an exception (or an empty body) nothing is sent. Always returns ``False``
+        so a raised exception is not suppressed and still propagates to the caller.
+        """
+        if exc_type is not None:
+            # The block raised, so the caller never finished describing the unit of
+            # work. Sending a half-built body would commit an intent nobody stated.
+            return False
+        if not self._statements:
+            return False
+
+        payload: dict[str, Any] = {"statements": self._statements}
+        if self._max_result_rows is not None:
+            payload["max_result_rows"] = self._max_result_rows
+
+        response = await actions.call(constants.ACTION_EXECUTE_SQL, payload)
+        # Positionally aligned with add() order, so results[i] answers statement i.
+        self.results = list((response or {}).get("results") or [])
+        return False

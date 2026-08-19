@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "zamp-sdk"
-version = "1.0.3"
+version = "1.1.0"
 description = "Customer-facing SDK for executing actions on the Zamp platform"
 authors = ["Zamp Engineering <engineering@zamp.com>"]
 readme = "README.md"
@@ -29,6 +29,7 @@ python = "^3.12"
 aiohttp = "*"
 pydantic = "*"
 structlog = "*"
+sqlalchemy = "^2.0.36"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
