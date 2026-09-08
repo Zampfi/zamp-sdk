@@ -30,6 +30,7 @@ jobs:
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
           owner: ${{ env.ORG }}
           repositories: ${{ env.TARGET_REPO }}
+          permission-contents: write
 
       - name: Checkout repository
         uses: actions/checkout@v4
