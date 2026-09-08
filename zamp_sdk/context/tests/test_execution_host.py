@@ -23,7 +23,7 @@ from zamp_sdk.context import (
     current_execution_host,
     resolve_channel_context,
 )
-from zamp_sdk.logging.logging import _current_tool_call_id, _emit_context
+from zamp_sdk.logging.logging import _current_tool_call_id
 
 _HOST = "ZAMP_SDK_EXECUTION_HOST"
 _ENV_VARS = (
@@ -237,56 +237,6 @@ class TestChannelContextSource:
         monkeypatch.setenv(_HOST, "hub")
         with pytest.raises(ValueError):
             resolve_channel_context()
-
-
-class TestEmitContextSource:
-    """``_emit_context`` — the ``context`` field on the emit_log payload."""
-
-    def test_api_host_emits_the_injected_context(self, monkeypatch):
-        for k, v in _full_env().items():
-            monkeypatch.setenv(k, v)
-
-        assert _emit_context() == {
-            "channel_type": "conversation",
-            "channel_id": str(_ENV_CHANNEL_ID),
-            "streaming_id": "env-stream",
-            "message_id": "env-message",
-            "tool_call_id": "env-tool-call",
-            "run_id": "env-run",
-        }
-
-    def test_api_host_emits_only_the_keys_that_are_set(self, monkeypatch):
-        """A partial env is still usable here — unlike a ChannelContext, the emit payload
-        is a flat dict, so an unset variable simply isn't sent."""
-        monkeypatch.setenv("ZAMP_CHANNEL_ID", str(_ENV_CHANNEL_ID))
-        monkeypatch.setenv("ZAMP_RUN_ID", "env-run")
-
-        assert _emit_context() == {"channel_id": str(_ENV_CHANNEL_ID), "run_id": "env-run"}
-
-    def test_api_host_emits_an_empty_context_when_nothing_is_injected(self):
-        assert _emit_context() == {}
-
-    def test_api_host_ignores_a_bound_context(self):
-        bind_channel_context(_bound())
-
-        assert _emit_context() == {}
-
-    def test_actions_hub_host_emits_the_bound_context(self, monkeypatch):
-        monkeypatch.setenv(_HOST, "actions_hub")
-        bind_channel_context(_bound())
-
-        emitted = _emit_context()
-
-        assert emitted["channel_id"] == str(_BOUND_CHANNEL_ID)
-        assert emitted["channel_type"] == "task"
-        assert emitted["streaming_id"] == "bound-stream"
-
-    def test_actions_hub_host_emits_an_empty_context_when_nothing_is_bound(self, monkeypatch):
-        monkeypatch.setenv(_HOST, "actions_hub")
-        for k, v in _full_env().items():
-            monkeypatch.setenv(k, v)
-
-        assert _emit_context() == {}
 
 
 class TestToolCallIdSource:

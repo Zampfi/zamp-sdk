@@ -220,6 +220,8 @@ async def _ask_and_exit_script(requests: list[dict], post_action: Optional[dict]
     with the answer on its command line. Defaults to re-running the current invocation, which
     is what a script almost always wants and is derivable from ``sys.argv``.
     """
+    # Only for the run_id below — the channel context itself is stamped into the params
+    # by the platform from the verified execution token, and is not sent from here.
     context = resolve_context()
     try:
         post_action = _validated_post_action(
@@ -232,7 +234,7 @@ async def _ask_and_exit_script(requests: list[dict], post_action: Optional[dict]
 
         await ActionExecutor.execute(
             REQUEST_USER_INPUT_ACTION,
-            {"requests": requests, "context": context, "post_action": post_action},
+            {"requests": requests, "post_action": post_action},
             summary="Request human input from a sandboxed script",
         )
     except Exception as exc:
