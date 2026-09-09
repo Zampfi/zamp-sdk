@@ -6,6 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
+from zamp_sdk.action_executor.constants.polling import (
+    POST_RETRY_BACKOFF_COEFFICIENT,
+    POST_RETRY_INITIAL_INTERVAL_SECONDS,
+    POST_RETRY_MAX_INTERVAL_SECONDS,
+)
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClientError
@@ -564,9 +569,12 @@ class TestPostAction:
 
         assert result == {"id": "action-ok"}
         assert client.post.await_count == 3
-        # Backoff grows between retries: first wait is the initial interval, then it doubles.
+        # Backoff grows between retries: first wait is the initial interval, then ×coeff.
         waits = [c.args[0] for c in mock_sleep.await_args_list]
-        assert waits == [1.0, 2.0]
+        assert waits == [
+            POST_RETRY_INITIAL_INTERVAL_SECONDS,
+            POST_RETRY_INITIAL_INTERVAL_SECONDS * POST_RETRY_BACKOFF_COEFFICIENT,
+        ]
 
     async def test_does_not_retry_on_4xx(self):
         client = AsyncMock()
@@ -582,8 +590,9 @@ class TestPostAction:
 
     async def test_raises_when_retry_timeout_budget_exhausted(self):
         # Bounded by a time budget (like the poll loop), not an attempt count.
-        # sleep is patched, so elapsed advances by the backoff intervals: after
-        # 1.0 + 2.0 = 3.0s the next 5xx exceeds retry_timeout=1.5 and re-raises.
+        # sleep is patched, so elapsed advances by the backoff intervals. With a
+        # budget of 2× the initial interval, the 3rd 5xx finds elapsed
+        # (initial + initial×coeff) past the budget and re-raises → 3 POSTs.
         client = AsyncMock()
         client.post.side_effect = _http_error(500)
 
@@ -591,7 +600,9 @@ class TestPostAction:
             patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
             pytest.raises(HttpClientError, match="HTTP 500"),
         ):
-            await self._executor()._post_action(client, "/actions", {}, retry_timeout=1.5)
+            await self._executor()._post_action(
+                client, "/actions", {}, retry_timeout=POST_RETRY_INITIAL_INTERVAL_SECONDS * 2
+            )
 
         assert client.post.await_count == 3
 
@@ -606,7 +617,12 @@ class TestPostAction:
             await self._executor()._post_action(client, "/actions", {}, retry_timeout=90.0)
 
         waits = [c.args[0] for c in mock_sleep.await_args_list]
-        assert waits == [1.0, 2.0, 4.0, 8.0, 16.0, 30.0, 30.0]
+        # Starts at the initial interval, multiplies by the coefficient each step,
+        # and is capped at the max interval (which it then holds).
+        assert waits[0] == POST_RETRY_INITIAL_INTERVAL_SECONDS
+        for prev, nxt in zip(waits, waits[1:]):
+            assert nxt == min(prev * POST_RETRY_BACKOFF_COEFFICIENT, POST_RETRY_MAX_INTERVAL_SECONDS)
+        assert waits[-1] == POST_RETRY_MAX_INTERVAL_SECONDS
 
     async def test_execute_action_retries_post_on_5xx(self):
         # End-to-end through _execute_action: a transient 5xx on create is retried.
