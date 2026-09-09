@@ -8,6 +8,9 @@
   ~300ms). Lowered `POLL_INITIAL_INTERVAL_SECONDS` 1.0 → 0.1 and gentled
   `POLL_BACKOFF_COEFFICIENT` 2.0 → 1.5, so a ~300ms action now returns in ~0.5s
   instead of ~1.0s. Max interval (30s) and the 1h poll ceiling are unchanged.
+  The POST-create retry-on-5xx path was split onto its own `POST_RETRY_*`
+  constants (kept at the original 1.0s / ×2.0), so this poll tuning no longer
+  accelerates retries into an already-failing create endpoint.
 
 ## 1.1.0
 

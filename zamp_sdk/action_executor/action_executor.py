@@ -10,6 +10,10 @@ from zamp_sdk.action_executor.constants import (
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
     POLL_TIMEOUT_SECONDS,
+    POST_RETRY_BACKOFF_COEFFICIENT,
+    POST_RETRY_INITIAL_INTERVAL_SECONDS,
+    POST_RETRY_MAX_INTERVAL_SECONDS,
+    POST_RETRY_TIMEOUT_SECONDS,
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
 )
@@ -303,16 +307,18 @@ class ActionExecutor:
         endpoint: str,
         body: dict,
         *,
-        retry_timeout: float = POLL_TIMEOUT_SECONDS,
+        retry_timeout: float = POST_RETRY_TIMEOUT_SECONDS,
     ) -> dict:
         """POST ``body`` to ``endpoint``, retrying transient 5xx with backoff.
 
-        Uses the same time-budget + backoff approach as the poll loop: on a 5xx,
-        keep retrying (backing off) until ``retry_timeout`` seconds elapse, so a
-        momentary server error doesn't fail the action before it is even
-        created. Non-5xx errors (e.g. 4xx, network) propagate immediately.
+        Uses a time-budget + gentle backoff on its OWN conservative constants
+        (a create endpoint returning 5xx is already failing — retries must not
+        accelerate into it): on a 5xx, keep retrying (backing off) until
+        ``retry_timeout`` seconds elapse, so a momentary server error doesn't
+        fail the action before it is even created. Non-5xx errors (e.g. 4xx,
+        network) propagate immediately.
         """
-        interval = POLL_INITIAL_INTERVAL_SECONDS
+        interval = POST_RETRY_INITIAL_INTERVAL_SECONDS
         elapsed = 0.0
 
         while True:
@@ -332,7 +338,7 @@ class ActionExecutor:
                 )
                 await asyncio.sleep(interval)
                 elapsed += interval
-                interval = cls._next_poll_interval(interval)
+                interval = cls._next_post_retry_interval(interval)
 
     @staticmethod
     def _is_retryable_5xx(exc: HttpClientError) -> bool:
@@ -343,6 +349,11 @@ class ActionExecutor:
     def _next_poll_interval(interval: float) -> float:
         """Next poll backoff interval, capped at ``POLL_MAX_INTERVAL_SECONDS``."""
         return min(interval * POLL_BACKOFF_COEFFICIENT, POLL_MAX_INTERVAL_SECONDS)
+
+    @staticmethod
+    def _next_post_retry_interval(interval: float) -> float:
+        """Next create-retry backoff interval, capped at ``POST_RETRY_MAX_INTERVAL_SECONDS``."""
+        return min(interval * POST_RETRY_BACKOFF_COEFFICIENT, POST_RETRY_MAX_INTERVAL_SECONDS)
 
     @classmethod
     async def _poll_action_result(

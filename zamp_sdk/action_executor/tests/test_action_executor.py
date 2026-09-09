@@ -7,9 +7,9 @@ import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants.polling import (
-    POLL_BACKOFF_COEFFICIENT,
-    POLL_INITIAL_INTERVAL_SECONDS,
-    POLL_MAX_INTERVAL_SECONDS,
+    POST_RETRY_BACKOFF_COEFFICIENT,
+    POST_RETRY_INITIAL_INTERVAL_SECONDS,
+    POST_RETRY_MAX_INTERVAL_SECONDS,
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
@@ -572,8 +572,8 @@ class TestPostAction:
         # Backoff grows between retries: first wait is the initial interval, then ×coeff.
         waits = [c.args[0] for c in mock_sleep.await_args_list]
         assert waits == [
-            POLL_INITIAL_INTERVAL_SECONDS,
-            POLL_INITIAL_INTERVAL_SECONDS * POLL_BACKOFF_COEFFICIENT,
+            POST_RETRY_INITIAL_INTERVAL_SECONDS,
+            POST_RETRY_INITIAL_INTERVAL_SECONDS * POST_RETRY_BACKOFF_COEFFICIENT,
         ]
 
     async def test_does_not_retry_on_4xx(self):
@@ -600,7 +600,9 @@ class TestPostAction:
             patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
             pytest.raises(HttpClientError, match="HTTP 500"),
         ):
-            await self._executor()._post_action(client, "/actions", {}, retry_timeout=POLL_INITIAL_INTERVAL_SECONDS * 2)
+            await self._executor()._post_action(
+                client, "/actions", {}, retry_timeout=POST_RETRY_INITIAL_INTERVAL_SECONDS * 2
+            )
 
         assert client.post.await_count == 3
 
@@ -617,10 +619,10 @@ class TestPostAction:
         waits = [c.args[0] for c in mock_sleep.await_args_list]
         # Starts at the initial interval, multiplies by the coefficient each step,
         # and is capped at the max interval (which it then holds).
-        assert waits[0] == POLL_INITIAL_INTERVAL_SECONDS
+        assert waits[0] == POST_RETRY_INITIAL_INTERVAL_SECONDS
         for prev, nxt in zip(waits, waits[1:]):
-            assert nxt == min(prev * POLL_BACKOFF_COEFFICIENT, POLL_MAX_INTERVAL_SECONDS)
-        assert waits[-1] == POLL_MAX_INTERVAL_SECONDS
+            assert nxt == min(prev * POST_RETRY_BACKOFF_COEFFICIENT, POST_RETRY_MAX_INTERVAL_SECONDS)
+        assert waits[-1] == POST_RETRY_MAX_INTERVAL_SECONDS
 
     async def test_execute_action_retries_post_on_5xx(self):
         # End-to-end through _execute_action: a transient 5xx on create is retried.
