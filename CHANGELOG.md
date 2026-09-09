@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1
+
+- **Faster action polling.** The client poll loop sleeps its interval before the
+  first `GET /actions/{id}`, so the previous 1.0s initial interval added a ~700ms
+  dead wait on every fast action (agent-managed DB calls complete server-side in
+  ~300ms). Lowered `POLL_INITIAL_INTERVAL_SECONDS` 1.0 → 0.1 and gentled
+  `POLL_BACKOFF_COEFFICIENT` 2.0 → 1.5, so a ~300ms action now returns in ~0.5s
+  instead of ~1.0s. Max interval (30s) and the 1h poll ceiling are unchanged.
+
 ## 1.1.0
 
 - **`zamp_sdk.db` — agent-managed database access for scripts.** Write ordinary
