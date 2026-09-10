@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # SHA pins are frozen by design: without this the pinned commit stays current
+  # forever and stops receiving upstream security fixes. Weekly, grouped into one
+  # PR, with a 7-day cooldown so a freshly published release soaks before we take it.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"
