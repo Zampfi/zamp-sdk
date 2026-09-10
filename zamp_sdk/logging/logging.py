@@ -42,7 +42,6 @@ from zamp_sdk.context import (
     ExecutionHost,
     current_channel_context,
     current_execution_host,
-    resolve_context,
 )
 from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
@@ -94,20 +93,6 @@ def _capture_block(block: ContentBlock) -> None:
         logger.warning("could not capture the emitted block", error=str(exc))
 
 
-def _emit_context() -> dict[str, Any]:
-    """Resolve the agent context to attach to an emitted block.
-
-    The execution host decides the source: an ``ACTIONS_HUB`` host has a workflow that
-    bound the context in-process, an ``API`` host reads the ``ZAMP_*`` variables its runtime
-    injected. Returns a flat dict that is wire-compatible with the platform's
-    ``EmitLogContext`` either way, and an empty dict when the source has nothing.
-    """
-    if current_execution_host() is ExecutionHost.ACTIONS_HUB:
-        ctx = current_channel_context()
-        return ctx.model_dump(mode="json", exclude_none=True) if ctx else {}
-    return resolve_context()
-
-
 def _current_tool_call_id() -> Optional[str]:
     """The running tool's id, from whichever source this execution host uses."""
     if current_execution_host() is ExecutionHost.ACTIONS_HUB:
@@ -137,10 +122,10 @@ async def emit_log(block: ContentBlock) -> EmitLogResult:
 
         _capture_block(block)
 
-        params: dict[str, Any] = {
-            "block": block_payload,
-            "context": _emit_context(),
-        }
+        # No channel context here: the platform stamps it into the params from the
+        # verified execution token, and emit_log's input model requires it. A
+        # caller-supplied one is not read.
+        params: dict[str, Any] = {"block": block_payload}
 
         # The block is already captured above; suppress capture of this action call so
         # emit_log isn't recorded twice.

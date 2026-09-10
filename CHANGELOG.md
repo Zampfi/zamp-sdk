@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.2
+
+- **`channel_context` is the only channel input.** `emit_log` and
+  `request_user_input` no longer put a `context` object in an action's params. The
+  platform stamps the channel into the params itself, from the verified execution
+  token, and the actions now require it — a caller-supplied one was already not
+  read. Nothing changes for callers: the context still reaches the platform as the
+  request body's `channel_context`, attached by `ActionExecutor` as before.
+  - `_emit_context()` is gone, along with the `context` key it filled.
+  - `request_user_input` still reads `ZAMP_RUN_ID` to carry `run_id` on the
+    post-action, so the platform can correlate the re-run.
+
 ## 1.1.1
 
 - **Faster action polling.** The client poll loop sleeps its interval before the

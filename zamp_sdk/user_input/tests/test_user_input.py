@@ -200,7 +200,9 @@ class TestRequestInput:
         action_name, params = execute.call_args.args
         assert action_name == "request_user_input"
         assert params["requests"][0]["input_type"] == "select_one"
-        assert params["context"] == {"channel_type": "task", "channel_id": "task-9", "run_id": "run-9"}
+        # No channel context in params: the platform stamps it in from the verified
+        # execution token. The run_id below is still carried, to correlate the re-run.
+        assert set(params) == {"requests", "post_action"}
         # default post-action is resume_script; command ends with the answer flag
         pa = params["post_action"]
         assert pa["type"] == "resume_script"

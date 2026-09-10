@@ -97,8 +97,9 @@ class TestEmitLogText:
         assert action_name == "emit_log"
         assert params["block"]["type"] == "text"
         assert params["block"]["content"] == "• **Progress** — building..."
-        assert params["context"]["channel_id"] == "conv-1"
-        assert params["context"]["channel_type"] == "conversation"
+        # No channel context in params: the platform stamps it in from the verified
+        # execution token, and a caller-supplied one is not read.
+        assert set(params) == {"block"}
         # summary kwarg is forwarded so server-side logs read nicely
         assert execute.call_args.kwargs.get("summary")
 
@@ -385,7 +386,12 @@ class TestEmitLogIsFailSafe:
 
     @pytest.mark.asyncio
     async def test_a_failure_resolving_the_context_comes_back_as_a_result_not_a_raise(self):
-        with patch("zamp_sdk.logging.logging._emit_context", side_effect=RuntimeError("ctx broke")):
+        """emit_log no longer sends a context, but it still resolves the running tool
+        call to parent the block under — and that must not be able to raise either."""
+        with patch(
+            "zamp_sdk.logging.logging._current_tool_call_id",
+            side_effect=RuntimeError("ctx broke"),
+        ):
             result = await emit_log(TextContentBlock(content="x"))
 
         assert result.ok is False

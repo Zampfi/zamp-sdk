@@ -30,8 +30,10 @@ class ChannelType(str, Enum):
 class ChannelContext(BaseModel):
     """Streaming/agent-context variables the platform propagates per execution.
 
-    Field names and shape match the platform-side ``EmitLogContext`` so the
-    ``emit_log`` action payload stays wire-compatible.
+    Attached to an action request as its ``channel_context``; the platform forces the
+    verified copy into the action's params from there. Every field is required — a
+    partial context is not a weaker context, it is no context, which is why the
+    runtime injects all six ``ZAMP_*`` variables or none.
     """
 
     channel_type: ChannelType = Field(description="Channel type — conversation or task")
