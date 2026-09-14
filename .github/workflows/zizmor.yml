@@ -18,8 +18,3 @@ on:
 jobs:
   zizmor:
     uses: Zampfi/.github/.github/workflows/zizmor-scan.yml@v1
-    with:
-      # This repo is public. The ARC runner groups set allows_public_repositories
-      # false, so a self-hosted job here would never be scheduled and would fail
-      # after GitHub's 24h queue limit instead of reporting.
-      runs-on: ubuntu-latest
