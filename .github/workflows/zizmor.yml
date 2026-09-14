@@ -1,25 +1,17 @@
 name: zizmor
 
-# Stub. Configures nothing: the policy lives in Zampfi/.github and applies
-# org-wide, so tightening or relaxing the gate is an edit to one file there.
+# Stub. Every other Zampfi repo points this at Zampfi/.github; zamp-sdk is
+# public and that repo is private, so GitHub refuses the cross-repo call and
+# this one points at a vendored copy instead. See _zizmor-scan.yml.
 #
 # Do not rename the `zizmor` job: the required check is "zizmor / scan", i.e.
 # <caller job id> / <called job name>, and rulesets require that exact string.
-#
-# Do not add `permissions: {}` here -- the called workflow grants what it uses,
-# and an empty block on the caller makes the run fail before it starts.
-#
-# Do not add a `paths:` filter: a required check that is skipped never reports,
-# so PRs that do not touch .github/ would be unable to merge.
+# Keeping the name identical to every other repo is the point of the indirection
+# -- the same ruleset context works here as everywhere else.
 
 on:
   pull_request:
 
 jobs:
   zizmor:
-    uses: Zampfi/.github/.github/workflows/zizmor-scan.yml@v1
-    with:
-      # This repo is public. The ARC runner groups set allows_public_repositories
-      # false, so a self-hosted job here would never be scheduled and would fail
-      # after GitHub's 24h queue limit instead of reporting.
-      runs-on: ubuntu-latest
+    uses: ./.github/workflows/_zizmor-scan.yml
