@@ -1,0 +1,17 @@
+name: zizmor
+
+# Stub. Every other Zampfi repo points this at Zampfi/.github; zamp-sdk is
+# public and that repo is private, so GitHub refuses the cross-repo call and
+# this one points at a vendored copy instead. See _zizmor-scan.yml.
+#
+# Do not rename the `zizmor` job: the required check is "zizmor / scan", i.e.
+# <caller job id> / <called job name>, and rulesets require that exact string.
+# Keeping the name identical to every other repo is the point of the indirection
+# -- the same ruleset context works here as everywhere else.
+
+on:
+  pull_request:
+
+jobs:
+  zizmor:
+    uses: ./.github/workflows/_zizmor-scan.yml

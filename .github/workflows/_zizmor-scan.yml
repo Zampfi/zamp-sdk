@@ -1,0 +1,194 @@
+name: zizmor (reusable)
+
+# VENDORED COPY of Zampfi/.github/.github/workflows/zizmor-scan.yml@v1.
+#
+# zamp-sdk is public and that repository is private, and GitHub does not let a
+# public repository call a reusable workflow from a private one -- the run fails
+# at resolution before any job starts. Every other Zampfi repo calls the shared
+# copy; this repo cannot, so it carries its own.
+#
+# This file is therefore DRIFT BY CONSTRUCTION. When the org copy changes, this
+# one does not. Re-vendor it with:
+#
+#   gh api 'repos/Zampfi/.github/contents/.github/workflows/zizmor-scan.yml?ref=v1' \
+#     -q .content | base64 -d > .github/workflows/_zizmor-scan.yml
+#
+# ...then re-apply the one local change below: `runs-on` defaults to
+# ubuntu-latest here, not the ARC pool, because the ARC runner groups set
+# allows_public_repositories false and a self-hosted job in this repo would sit
+# queued and fail after GitHub's 24h limit instead of reporting.
+
+# Shared GitHub Actions security check. Callers do not configure the policy;
+# they only call this workflow. Changing the gate for the whole organisation is
+# an edit to this one file.
+#
+# The filename is deliberately NOT zizmor.yml: callers carry a stub at
+# .github/workflows/zizmor.yml, and the bulk-PR loop that installs the stub
+# would overwrite this file if the two shared a path.
+#
+# Callers reference this as:
+#   uses: Zampfi/.github/.github/workflows/zizmor-scan.yml@v1
+#
+# Only Security pushes here, because every calling repository trusts it and
+# moving the v1 tag changes behaviour everywhere at once. That is also the
+# rollback: move v1 back to the previous commit, no pull request anywhere.
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: >-
+          Runner label. Defaults to the self-hosted pool. Public repositories
+          must pass a GitHub-hosted label: the ARC runner groups default to
+          allows_public_repositories false, so a public caller's job is never
+          scheduled and fails after 24 hours instead of reporting.
+        type: string
+        default: ubuntu-latest
+      min-severity:
+        description: "Drop findings below this severity: informational, low, medium, high."
+        type: string
+        default: high
+      min-confidence:
+        description: "Drop findings below this confidence: low, medium, high."
+        type: string
+        default: high
+      advisory:
+        description: >-
+          When true, findings annotate but do not fail the check. Only findings
+          are advisory: a zizmor that could not run fails the check either way.
+        type: boolean
+        default: true
+
+# The default token is not needed by any step here. The job grants what it uses.
+permissions: {}
+
+jobs:
+  # The job name is part of the required check's name, which is
+  # "<caller job id or name> / <this job's name>", so today "zizmor / scan".
+  # Renaming this, or a caller renaming its job, changes the check name and
+  # silently stops satisfying any ruleset that requires the old one. Treat both
+  # names as a public contract.
+  scan:
+    name: scan
+    runs-on: ${{ inputs.runs-on }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      # Pinned by digest, not by tag. The ARC image has no Docker, so the
+      # upstream zizmor-action cannot be used: it is a `docker run` wrapper.
+      # It also has no python3 and no pipx, so the binary is fetched directly.
+      ZIZMOR_VERSION: "1.30.0"
+      SHA256_AARCH64: "018a024d6b6d09733b07f6ef42838d984c23ec04bc9b2acd55f7d67826aeafe5"
+      SHA256_X86_64: "ec8c95cd800845abb9bbc5f377ec7c57d2eb8e2386a00a201d3a74ee4092e5ed"
+    steps:
+      - name: Check out the calling repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # This job reads attacker-influenced pull request content. Leaving the
+          # token in .git/config would expose it to anything that runs later.
+          persist-credentials: false
+
+      - name: Write the shared zizmor config
+        # Written inline rather than checked out of Zampfi/.github: a caller's
+        # GITHUB_TOKEN cannot read another private repository, so a cross-repo
+        # checkout fails in every private caller.
+        run: |
+          cat > "${GITHUB_WORKSPACE}/.zizmor-central.yml" <<'YAML'
+          rules:
+            unpinned-uses:
+              config:
+                policies:
+                  # Phase 1: thousands of unpinned third-party actions exist and
+                  # are fixed in bulk by pinact, not by the author of an
+                  # unrelated pull request. Tighten this to hash-pin once the
+                  # pinning pull requests have landed org-wide.
+                  "*": any
+                  # First-party reusable workflows are referenced by tag, which
+                  # is what makes a rollback a tag move rather than 61 pull
+                  # requests. ref-pin accepts that; the blanket hash-pin policy
+                  # would flag the caller's own stub and turn every stub red.
+                  "Zampfi/*": ref-pin
+          YAML
+          echo "--- config"
+          cat "${GITHUB_WORKSPACE}/.zizmor-central.yml"
+
+      - name: Install zizmor
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            aarch64|arm64) target=aarch64-unknown-linux-gnu; want="${SHA256_AARCH64}" ;;
+            x86_64|amd64)  target=x86_64-unknown-linux-gnu;  want="${SHA256_X86_64}" ;;
+            *) echo "::error title=zizmor::unsupported architecture $(uname -m)"; exit 1 ;;
+          esac
+
+          url="https://github.com/zizmorcore/zizmor/releases/download/v${ZIZMOR_VERSION}/zizmor-${target}.tar.gz"
+          curl -fsSL --retry 3 -o "${RUNNER_TEMP}/zizmor.tar.gz" "${url}"
+
+          # The pinned digest is the supply-chain control. Without it a
+          # compromised release would run with the repository checked out.
+          got=$(sha256sum "${RUNNER_TEMP}/zizmor.tar.gz" | cut -d' ' -f1)
+          if [ "${got}" != "${want}" ]; then
+            echo "::error title=zizmor::checksum mismatch for ${url}"
+            echo "expected ${want}"
+            echo "got      ${got}"
+            exit 1
+          fi
+
+          tar -xzf "${RUNNER_TEMP}/zizmor.tar.gz" -C "${RUNNER_TEMP}"
+          chmod +x "${RUNNER_TEMP}/zizmor"
+          "${RUNNER_TEMP}/zizmor" --version
+
+      - name: Audit workflows
+        env:
+          ADVISORY: ${{ inputs.advisory }}
+          MIN_SEVERITY: ${{ inputs.min-severity }}
+          MIN_CONFIDENCE: ${{ inputs.min-confidence }}
+        run: |
+          set -uo pipefail
+
+          # A check that scanned nothing must never report clean. Assert there is
+          # something to scan, and print the count so a green run is auditable.
+          count=$(find .github/workflows -maxdepth 1 \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null | wc -l | tr -d ' ')
+          if [ "${count}" -lt 1 ]; then
+            echo "::error title=zizmor::no workflow files found under .github/workflows. The check is broken, this is not a clean result."
+            exit 1
+          fi
+          echo "auditing ${count} workflow file(s)"
+
+          # --offline skips the audits that call the GitHub API. They need a
+          # token and answer the same for every repository, so the monthly
+          # org-wide scan covers them instead of every pull request paying.
+          rc=0
+          "${RUNNER_TEMP}/zizmor" \
+            --offline \
+            --no-progress \
+            --format github \
+            --config .zizmor-central.yml \
+            --min-severity "${MIN_SEVERITY}" \
+            --min-confidence "${MIN_CONFIDENCE}" \
+            . || rc=$?
+
+          # zizmor's exit codes are exact: 0 clean, 1 internal error, 2 bad
+          # arguments, 3 no inputs collected, 11 to 14 findings by highest
+          # severity. Only 11 to 14 are findings. Treating any other non-zero
+          # code as a finding would let a broken check pass as advisory, which
+          # is a green check that scanned nothing.
+          case "${rc}" in
+            0)
+              echo "audited ${count} file(s), no findings at ${MIN_SEVERITY}/${MIN_CONFIDENCE}"
+              exit 0
+              ;;
+            11|12|13|14)
+              if [ "${ADVISORY}" = "true" ]; then
+                echo "::warning title=zizmor::Findings above. This check is advisory today and will block once the rollout completes. Fix guidance: https://github.com/Zampfi/.github"
+                exit 0
+              fi
+              echo "::error title=zizmor::Findings above must be fixed before merge. Fix guidance: https://github.com/Zampfi/.github"
+              exit 1
+              ;;
+            *)
+              echo "::error title=zizmor::zizmor did not complete (exit ${rc}). This is a broken check, not a clean result. Ask #security."
+              exit 1
+              ;;
+          esac
