@@ -57,7 +57,7 @@ on:
           When true, findings annotate but do not fail the check. Only findings
           are advisory: a zizmor that could not run fails the check either way.
         type: boolean
-        default: true
+        default: false
 
 # The default token is not needed by any step here. The job grants what it uses.
 permissions: {}
