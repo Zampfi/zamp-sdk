@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from zamp_sdk.action_executor import ExecutionMode
 from zamp_sdk.db.utils import actions
 from zamp_sdk.db.utils.errors import AgentDbError
 
@@ -76,3 +77,21 @@ class TestWhatIsNeverSent:
 
         assert "base_url" not in executor.await_args.kwargs
         assert "auth_token" not in executor.await_args.kwargs
+
+
+class TestTransportSelection:
+    """``execution_mode`` picks the transport; it is not one of the overrides above."""
+
+    @pytest.mark.asyncio
+    async def test_the_execution_mode_is_forwarded(self):
+        with patch(_EXECUTE, new=AsyncMock(return_value={})) as executor:
+            await actions.call("agent_db_execute_sql", {}, execution_mode=ExecutionMode.INLINE)
+
+        assert executor.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
+
+    @pytest.mark.asyncio
+    async def test_the_default_leaves_the_platforms_transport(self):
+        with patch(_EXECUTE, new=AsyncMock(return_value={})) as executor:
+            await actions.call("agent_db_execute_sql", {})
+
+        assert executor.await_args.kwargs["execution_mode"] is None

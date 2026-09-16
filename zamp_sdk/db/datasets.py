@@ -5,6 +5,10 @@ A script writes ordinary SQLAlchemy; this module compiles it and ships it. It is
 enforced server-side, and a caller who bypassed this module entirely would meet
 exactly the same rules. It is also not a connection: it never opens a socket and
 never holds a DSN.
+
+Reads and writes run inline: the platform executes the statement inside the request
+and answers with the rows, so a call is one round trip with nothing to poll. DDL
+(``create`` / ``drop``) stays on the durable path.
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ import sqlalchemy as sa
 from sqlalchemy import ClauseElement, Select
 from sqlalchemy.schema import CreateTable
 
+from zamp_sdk.action_executor import ExecutionMode
 from zamp_sdk.db import constants
 from zamp_sdk.db.utils import (
     AgentDbError,
@@ -43,7 +48,11 @@ async def tables(names: list[str]) -> dict[str, sa.Table]:
 
 
 async def _describe(names: list[str]) -> dict[str, sa.Table]:
-    response = await actions.call(constants.ACTION_DESCRIBE_DATASET, {"table_names": names})
+    response = await actions.call(
+        constants.ACTION_DESCRIBE_DATASET,
+        {"table_names": names},
+        execution_mode=ExecutionMode.INLINE,
+    )
     metadata = sa.MetaData()
     built: dict[str, sa.Table] = {}
     for dataset in (response or {}).get("datasets") or []:
@@ -81,7 +90,7 @@ async def execute(
     if max_result_rows is not None:
         payload["max_result_rows"] = max_result_rows
 
-    response = await actions.call(constants.ACTION_EXECUTE_SQL, payload)
+    response = await actions.call(constants.ACTION_EXECUTE_SQL, payload, execution_mode=ExecutionMode.INLINE)
     results = (response or {}).get("results") or []
     return list(results[0].get("rows") or []) if results else []
 

@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.1.3
+
+- **Inline execution on the API path.** `ActionExecutor.execute(...,
+  execution_mode=ExecutionMode.INLINE)` sends `execution_mode: "INLINE"` on
+  `POST /actions`; the platform runs the action inside that request and answers
+  with its terminal state, so the result comes back from the one call with no
+  `GET /actions/{id}` polling. `SYNC` / `ASYNC` / unspecified keep today's
+  Temporal-backed behaviour.
+  - An inline `POST` is never retried on a 5xx: the action may already have run,
+    and a retry would re-run a non-idempotent write. The Temporal-path `POST`
+    retries as before.
+  - A `FAILED` / `TIMED_OUT` inline answer raises the same `RuntimeError` the poll
+    path raises for the same outcome; the terminal-state handling is shared.
+  - A `RUNNING` answer — an older platform that dropped the field — falls back to
+    polling, so a version skew costs latency, not correctness.
+  - The inline request carries its own timeout: the caller's
+    `action_start_to_close_timeout`, clamped to the platform's 25s inline ceiling,
+    plus a 5s margin so the platform's own `TIMED_OUT` arrives first.
+  - The SDK's default `RetryPolicy` is not sent with `INLINE`. A policy the caller
+    passes explicitly still is, and the platform refuses it with the reason.
+- **`HttpClientError` carries the platform's message.** A non-2xx response's
+  `message` (flat, or under `error`) is appended to the exception message, so a 400
+  from the inline allow-list reads as the platform wrote it rather than as
+  `HTTP 400`.
+- **`zamp_sdk.db` runs inline.** `datasets.table()` / `tables()`, `execute()`,
+  `stream()` and `transaction()` pass `ExecutionMode.INLINE` through
+  `actions.call`; `create()` and `drop()` stay on the durable path. The rules of
+  `actions.call` are unchanged — no retry or timeout override is ever sent; the
+  transport is a different axis.
+
 ## 1.1.2
 
 - **`channel_context` is the only channel input.** `emit_log` and
