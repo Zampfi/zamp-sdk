@@ -4,8 +4,13 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
+from zamp_sdk.action_executor.constants.inline import (
+    INLINE_REQUEST_TIMEOUT_MARGIN_SECONDS,
+    INLINE_SERVER_MAX_SECONDS,
+)
 from zamp_sdk.action_executor.constants.polling import (
     POST_RETRY_BACKOFF_COEFFICIENT,
     POST_RETRY_INITIAL_INTERVAL_SECONDS,
@@ -1152,3 +1157,267 @@ class TestCaptureIsFailSafe:
         start_log_capture()
         with pytest.raises(HttpClientError, match="upstream down"):
             await ActionExecutor.execute("get_invoice", {"id": "1"})
+
+
+def _inline_client(document: dict) -> MagicMock:
+    """An HttpClient whose one POST answers with a finished action document."""
+    client = MagicMock()
+    client.post = AsyncMock(return_value=document)
+    client.get = AsyncMock()
+    return client
+
+
+_CONFIG = SdkConfig(base_url="https://api.zamp.test", auth_token="tok")
+_COMPLETED = {"id": "action-1", "status": "COMPLETED", "result": {"rows": [1]}, "error": None}
+
+
+class TestExecuteForwardsExecutionMode:
+    async def test_the_api_path_receives_the_mode(self, base_url, auth_token):
+        with (
+            patch.dict("os.environ", _API_ENV, clear=False),
+            patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
+        ):
+            mock.return_value = {}
+            await ActionExecutor.execute(
+                "action",
+                {},
+                base_url=base_url,
+                auth_token=auth_token,
+                execution_mode=ExecutionMode.INLINE,
+            )
+
+        assert mock.call_args.kwargs["execution_mode"] is ExecutionMode.INLINE
+
+    async def test_no_mode_stays_none(self, base_url, auth_token):
+        with (
+            patch.dict("os.environ", _API_ENV, clear=False),
+            patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock,
+        ):
+            mock.return_value = {}
+            await ActionExecutor.execute("action", {}, base_url=base_url, auth_token=auth_token)
+
+        assert mock.call_args.kwargs["execution_mode"] is None
+
+
+class TestExecuteActionInline:
+    """``execution_mode=INLINE`` on the API path: the POST is the whole exchange."""
+
+    async def test_inline_issues_exactly_one_http_call(self):
+        client = _inline_client(_COMPLETED)
+        with patch(f"{_MODULE}.HttpClient", return_value=client):
+            result = await ActionExecutor._execute_action(
+                action_name="agent_db_execute_sql",
+                params={"statements": []},
+                config=_CONFIG,
+                execution_mode=ExecutionMode.INLINE,
+            )
+
+        assert result == {"rows": [1]}
+        client.post.assert_awaited_once()
+        client.get.assert_not_called()
+
+    async def test_inline_body_carries_the_mode_and_no_default_retry_policy(self):
+        client = _inline_client(_COMPLETED)
+        with patch(f"{_MODULE}.HttpClient", return_value=client):
+            await ActionExecutor._execute_action(
+                action_name="a",
+                params={"x": 1},
+                config=_CONFIG,
+                execution_mode=ExecutionMode.INLINE,
+            )
+
+        body = client.post.call_args.kwargs["data"]
+        assert body["execution_mode"] == "INLINE"
+        assert body["action_name"] == "a"
+        assert body["params"] == {"x": 1}
+        assert "retry_policy" not in body
+
+    async def test_an_explicit_retry_policy_is_still_sent_for_the_platform_to_refuse(self):
+        client = _inline_client(_COMPLETED)
+        with patch(f"{_MODULE}.HttpClient", return_value=client):
+            await ActionExecutor._execute_action(
+                action_name="a",
+                params={},
+                config=_CONFIG,
+                execution_mode=ExecutionMode.INLINE,
+                action_retry_policy=RetryPolicy.default(),
+            )
+
+        assert client.post.call_args.kwargs["data"]["retry_policy"]["maximum_attempts"] == 3
+
+    async def test_the_temporal_path_body_is_unchanged(self):
+        client = _inline_client({"id": "action-9"})
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=client),
+            patch.object(ActionExecutor, "_poll_action_result", new_callable=AsyncMock) as poll,
+        ):
+            poll.return_value = {"ok": True}
+            result = await ActionExecutor._execute_action(action_name="a", params={}, config=_CONFIG)
+
+        body = client.post.call_args.kwargs["data"]
+        assert "execution_mode" not in body
+        assert body["retry_policy"]["maximum_attempts"] == RetryPolicy.default().maximum_attempts
+        assert client.post.call_args.kwargs["timeout"] is None
+        assert client.post.call_args.kwargs["raise_on_envelope_error"] is True
+        poll.assert_awaited_once()
+        assert result == {"ok": True}
+
+    async def test_inline_post_gets_a_bounded_timeout_and_keeps_the_error_field(self):
+        client = _inline_client(_COMPLETED)
+        with patch(f"{_MODULE}.HttpClient", return_value=client):
+            await ActionExecutor._execute_action(
+                action_name="a", params={}, config=_CONFIG, execution_mode=ExecutionMode.INLINE
+            )
+
+        kwargs = client.post.call_args.kwargs
+        assert kwargs["timeout"] == INLINE_SERVER_MAX_SECONDS + INLINE_REQUEST_TIMEOUT_MARGIN_SECONDS
+        assert kwargs["raise_on_envelope_error"] is False
+
+    async def test_inline_timeout_follows_a_shorter_caller_timeout(self):
+        client = _inline_client(_COMPLETED)
+        with patch(f"{_MODULE}.HttpClient", return_value=client):
+            await ActionExecutor._execute_action(
+                action_name="a",
+                params={},
+                config=_CONFIG,
+                execution_mode=ExecutionMode.INLINE,
+                action_start_to_close_timeout=timedelta(seconds=10),
+            )
+
+        kwargs = client.post.call_args.kwargs
+        assert kwargs["timeout"] == 10 + INLINE_REQUEST_TIMEOUT_MARGIN_SECONDS
+        assert kwargs["data"]["start_to_close_timeout_seconds"] == 10.0
+
+    async def test_a_failed_inline_answer_raises_like_the_poll_path(self):
+        document = {"id": "action-2", "status": "FAILED", "result": None, "error": "boom"}
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=_inline_client(document)),
+            pytest.raises(RuntimeError) as inline_exc,
+        ):
+            await ActionExecutor._execute_action(
+                action_name="a", params={}, config=_CONFIG, execution_mode=ExecutionMode.INLINE
+            )
+
+        poll_client = MagicMock()
+        poll_client.get = AsyncMock(return_value=document)
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(RuntimeError) as poll_exc,
+        ):
+            await ActionExecutor._poll_action_result(poll_client, "action-2")
+
+        assert str(inline_exc.value) == str(poll_exc.value) == "Action action-2 FAILED: boom"
+
+    async def test_a_timed_out_inline_answer_raises(self):
+        document = {"id": "action-3", "status": "TIMED_OUT", "result": None, "error": "Action timed out"}
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=_inline_client(document)),
+            pytest.raises(RuntimeError, match="action-3 TIMED_OUT: Action timed out"),
+        ):
+            await ActionExecutor._execute_action(
+                action_name="a", params={}, config=_CONFIG, execution_mode=ExecutionMode.INLINE
+            )
+
+    async def test_a_running_answer_falls_back_to_polling(self):
+        """An older platform ignores the field and answers 201 RUNNING; a version skew
+        costs latency, not correctness."""
+        client = _inline_client({"id": "action-4", "status": "RUNNING"})
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=client),
+            patch.object(ActionExecutor, "_poll_action_result", new_callable=AsyncMock) as poll,
+        ):
+            poll.return_value = {"polled": True}
+            result = await ActionExecutor._execute_action(
+                action_name="a", params={}, config=_CONFIG, execution_mode=ExecutionMode.INLINE
+            )
+
+        assert result == {"polled": True}
+        poll.assert_awaited_once()
+        assert poll.call_args.args[1] == "action-4"
+
+    async def test_return_type_is_applied_to_an_inline_result(self):
+        class Rows(BaseModel):
+            rows: list[int]
+
+        with patch(f"{_MODULE}.HttpClient", return_value=_inline_client(_COMPLETED)):
+            result = await ActionExecutor._execute_action(
+                action_name="a",
+                params={},
+                config=_CONFIG,
+                return_type=Rows,
+                execution_mode=ExecutionMode.INLINE,
+            )
+
+        assert result == Rows(rows=[1])
+
+
+class TestPostActionInline:
+    async def test_an_inline_post_is_not_retried_on_5xx(self):
+        """The action may already have run; a retry would re-run a non-idempotent write."""
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=_http_error(503))
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as sleep,
+            pytest.raises(HttpClientError),
+        ):
+            await ActionExecutor._post_action(client, "/actions", {}, inline=True)
+
+        client.post.assert_awaited_once()
+        sleep.assert_not_called()
+
+    async def test_the_temporal_post_still_retries_on_5xx(self):
+        client = MagicMock()
+        client.post = AsyncMock(side_effect=[_http_error(503), {"id": "x"}])
+        with patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock):
+            result = await ActionExecutor._post_action(client, "/actions", {})
+
+        assert result == {"id": "x"}
+        assert client.post.await_count == 2
+
+    async def test_inline_disables_the_envelope_check_and_passes_the_timeout(self):
+        client = MagicMock()
+        client.post = AsyncMock(return_value={"id": "x"})
+
+        await ActionExecutor._post_action(client, "/actions", {"a": 1}, inline=True, timeout=12.5)
+
+        assert client.post.call_args.kwargs == {"data": {"a": 1}, "timeout": 12.5, "raise_on_envelope_error": False}
+
+    async def test_the_temporal_post_keeps_the_envelope_check(self):
+        client = MagicMock()
+        client.post = AsyncMock(return_value={"id": "x"})
+
+        await ActionExecutor._post_action(client, "/actions", {"a": 1})
+
+        assert client.post.call_args.kwargs == {"data": {"a": 1}, "timeout": None, "raise_on_envelope_error": True}
+
+
+class TestInlineRequestTimeout:
+    def test_defaults_to_the_server_ceiling_plus_margin(self):
+        assert ActionExecutor._inline_request_timeout(None) == 30.0
+
+    def test_a_shorter_caller_timeout_is_honoured(self):
+        assert ActionExecutor._inline_request_timeout(timedelta(seconds=10)) == 15.0
+
+    def test_a_longer_caller_timeout_is_clamped_to_the_ceiling(self):
+        assert ActionExecutor._inline_request_timeout(timedelta(minutes=5)) == 30.0
+
+
+class TestResultOrRaise:
+    def test_completed_returns_the_result(self):
+        assert ActionExecutor._result_or_raise({"status": "COMPLETED", "result": {"k": 1}}, "a") == {"k": 1}
+
+    def test_completed_without_a_result_returns_none(self):
+        assert ActionExecutor._result_or_raise({"status": "COMPLETED"}, "a") is None
+
+    @pytest.mark.parametrize("status", ["FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"])
+    def test_a_terminal_failure_raises_with_the_error(self, status):
+        with pytest.raises(RuntimeError, match=f"Action a {status}: why"):
+            ActionExecutor._result_or_raise({"status": status, "error": "why"}, "a")
+
+    def test_a_missing_error_message_is_named_unknown(self):
+        with pytest.raises(RuntimeError, match="unknown error"):
+            ActionExecutor._result_or_raise({"status": "FAILED"}, "a")
+
+    def test_an_unknown_status_raises(self):
+        with pytest.raises(RuntimeError, match="unexpected status: SOMETIMES"):
+            ActionExecutor._result_or_raise({"status": "SOMETIMES"}, "a")

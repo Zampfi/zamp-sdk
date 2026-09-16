@@ -6,6 +6,8 @@ from typing import Any, Callable
 
 from zamp_sdk.action_executor.constants import (
     IN_PROGRESS_STATUSES,
+    INLINE_REQUEST_TIMEOUT_MARGIN_SECONDS,
+    INLINE_SERVER_MAX_SECONDS,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
@@ -16,6 +18,7 @@ from zamp_sdk.action_executor.constants import (
     POST_RETRY_TIMEOUT_SECONDS,
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
+    TERMINAL_STATUSES,
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
@@ -61,6 +64,16 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
+        """Run ``action_name`` with ``params`` and return its result.
+
+        ``execution_mode`` picks the transport on the API path. ``INLINE`` asks the
+        platform to run the action inside the ``POST /actions`` request and answer
+        with its result: one round trip, no polling, and no retries — the platform
+        refuses actions that need them. ``SYNC``, ``ASYNC`` and ``None`` keep the
+        durable path, where the platform runs the action on Temporal and this client
+        polls ``GET /actions/{id}``. On the ActionsHub host the same member maps onto
+        the hub's own mode of that name.
+        """
         if current_execution_host() is ExecutionHost.ACTIONS_HUB:
             gateway = cls._get_action_gateway()
             if gateway is not None and not await cls._is_registered_locally(action_name):
@@ -90,6 +103,7 @@ class ActionExecutor:
                 auth_token=auth_token,
                 summary=summary,
                 return_type=return_type,
+                execution_mode=execution_mode,
                 action_retry_policy=action_retry_policy,
                 action_start_to_close_timeout=action_start_to_close_timeout,
             )
@@ -189,6 +203,7 @@ class ActionExecutor:
         auth_token: str | None,
         summary: str | None,
         return_type: type | None,
+        execution_mode: ExecutionMode | None,
         action_retry_policy: RetryPolicy | None,
         action_start_to_close_timeout: timedelta | None,
     ) -> Any:
@@ -203,6 +218,7 @@ class ActionExecutor:
             channel_context=channel_context.model_dump(mode="json") if channel_context is not None else None,
             return_type=return_type,
             summary=summary,
+            execution_mode=execution_mode,
             action_retry_policy=action_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
         )
@@ -263,25 +279,38 @@ class ActionExecutor:
         channel_context: dict[str, Any] | None = None,
         return_type: type | None = None,
         summary: str | None = None,
+        execution_mode: ExecutionMode | None = None,
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
-        """Post to ``{config.base_url}/actions`` and poll until a terminal state."""
+        """Post to ``{config.base_url}/actions`` and return the action's result.
+
+        ``ExecutionMode.INLINE`` asks the platform to run the action inside the POST
+        and answer with its terminal state, so the result is read from that one
+        response. Anything else is the Temporal path: the POST starts a workflow and
+        the result is polled from ``GET /actions/{id}`` until a terminal state.
+        """
         client = HttpClient(
             base_url=config.base_url,
             default_headers={"Authorization": f"Bearer {config.auth_token}"},
         )
-
-        # Always send the SDK's retry policy so the server doesn't fall back to
-        # its own (longer) default; callers can still override per-call.
-        effective_retry_policy = action_retry_policy if action_retry_policy is not None else RetryPolicy.default()
+        inline = execution_mode is ExecutionMode.INLINE
 
         body: dict = {
             "action_name": action_name,
             "params": params,
             "is_external_action": True,
-            "retry_policy": effective_retry_policy.model_dump(mode="json"),
         }
+        if inline:
+            body["execution_mode"] = ExecutionMode.INLINE.value
+        if action_retry_policy is not None:
+            # A policy the caller chose is sent as-is; with INLINE the platform
+            # refuses it and says why, which beats dropping it silently here.
+            body["retry_policy"] = action_retry_policy.model_dump(mode="json")
+        elif not inline:
+            # Always send the SDK's retry policy so the server doesn't fall back to
+            # its own (longer) default. An inline run is never retried, so it gets none.
+            body["retry_policy"] = RetryPolicy.default().model_dump(mode="json")
         if channel_context is not None:
             body["channel_context"] = channel_context
         if summary is not None:
@@ -289,16 +318,57 @@ class ActionExecutor:
         if action_start_to_close_timeout is not None:
             body["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
 
-        response = await cls._post_action(client, "/actions", body)
+        response = await cls._post_action(
+            client,
+            "/actions",
+            body,
+            inline=inline,
+            timeout=cls._inline_request_timeout(action_start_to_close_timeout) if inline else None,
+        )
         action_id = response["id"]
-        poll_timeout = POLL_TIMEOUT_SECONDS
-        if action_start_to_close_timeout is not None:
-            poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
-        result = await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
+
+        if inline and response.get("status") in TERMINAL_STATUSES:
+            result = cls._result_or_raise(response, action_id)
+        else:
+            # Not inline — or an older platform that dropped the field and answered
+            # RUNNING, in which case a version skew costs latency, not correctness.
+            poll_timeout = POLL_TIMEOUT_SECONDS
+            if action_start_to_close_timeout is not None:
+                poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
+            result = await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
 
         if return_type and hasattr(return_type, "model_validate"):
             return return_type.model_validate(result)
         return result
+
+    @staticmethod
+    def _inline_request_timeout(action_start_to_close_timeout: timedelta | None) -> float:
+        """Total seconds to wait for an inline POST.
+
+        The caller's timeout is clamped to the platform's inline ceiling, since the
+        platform clamps the run itself, and a margin is added so the platform's own
+        TIMED_OUT answer arrives before this client gives up on the socket.
+        """
+        requested = (
+            action_start_to_close_timeout.total_seconds()
+            if action_start_to_close_timeout is not None
+            else INLINE_SERVER_MAX_SECONDS
+        )
+        return min(requested, INLINE_SERVER_MAX_SECONDS) + INLINE_REQUEST_TIMEOUT_MARGIN_SECONDS
+
+    @staticmethod
+    def _result_or_raise(data: dict, action_id: str) -> Any:
+        """The result of a terminal action document, or the failure it reports, raised.
+
+        Shared by the inline response and the poll loop so both modes raise the same
+        error for the same outcome.
+        """
+        action_status = data["status"]
+        if action_status in SUCCESS_STATUSES:
+            return data.get("result")
+        if action_status in TERMINAL_FAILURE_STATUSES:
+            raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
+        raise RuntimeError(f"Action {action_id} unexpected status: {action_status}")
 
     @classmethod
     async def _post_action(
@@ -307,6 +377,8 @@ class ActionExecutor:
         endpoint: str,
         body: dict,
         *,
+        inline: bool = False,
+        timeout: float | None = None,
         retry_timeout: float = POST_RETRY_TIMEOUT_SECONDS,
     ) -> dict:
         """POST ``body`` to ``endpoint``, retrying transient 5xx with backoff.
@@ -317,16 +389,27 @@ class ActionExecutor:
         ``retry_timeout`` seconds elapse, so a momentary server error doesn't
         fail the action before it is even created. Non-5xx errors (e.g. 4xx,
         network) propagate immediately.
+
+        An ``inline`` POST is never retried: the action runs inside the request, so
+        a 5xx says nothing about whether it already committed, and a retry would
+        re-run a non-idempotent write. Its response is an action document whose
+        ``error`` field is the action's own failure message, so the envelope check
+        is switched off and the document is interpreted by the caller instead.
         """
         interval = POST_RETRY_INITIAL_INTERVAL_SECONDS
         elapsed = 0.0
 
         while True:
             try:
-                return await client.post(endpoint, data=body)
+                return await client.post(
+                    endpoint,
+                    data=body,
+                    timeout=timeout,
+                    raise_on_envelope_error=not inline,
+                )
             except HttpClientError as exc:
-                # Budget exhausted or non-transient: surface the original error.
-                if not cls._is_retryable_5xx(exc) or elapsed >= retry_timeout:
+                # Budget exhausted, non-transient, or possibly already run: surface the original error.
+                if inline or not cls._is_retryable_5xx(exc) or elapsed >= retry_timeout:
                     raise
                 logger.warning(
                     "action POST returned 5xx, retrying",
@@ -393,14 +476,8 @@ class ActionExecutor:
                 interval = cls._next_poll_interval(interval)
                 continue
 
-            action_status = data["status"]
-
-            if action_status in SUCCESS_STATUSES:
-                return data.get("result")
-            if action_status in TERMINAL_FAILURE_STATUSES:
-                raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
-            if action_status not in IN_PROGRESS_STATUSES:
-                raise RuntimeError(f"Action {action_id} unexpected status: {action_status}")
+            if data["status"] not in IN_PROGRESS_STATUSES:
+                return cls._result_or_raise(data, action_id)
             interval = cls._next_poll_interval(interval)
 
         raise TimeoutError(f"Action {action_id} did not complete within {poll_timeout}s")

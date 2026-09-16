@@ -147,3 +147,114 @@ class TestHttpClientErrorHandling:
             pytest.raises(HttpClientError, match="Request timed out"),
         ):
             await client.get("/test")
+
+
+def _session_answering(*, ok: bool, status: int, text: str) -> AsyncMock:
+    response = AsyncMock()
+    response.ok = ok
+    response.status = status
+    response.text = AsyncMock(return_value=text)
+
+    session = AsyncMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=False)
+
+    ctx = AsyncMock()
+    ctx.__aenter__ = AsyncMock(return_value=response)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    session.request = MagicMock(return_value=ctx)
+    return session
+
+
+class TestHttpClientActionDocuments:
+    """An inline POST answers with an action document whose ``error`` is the action's
+    own failure message, not the response envelope's."""
+
+    async def test_the_envelope_error_check_can_be_switched_off(self):
+        client = HttpClient(base_url="https://api.zamp.test")
+        document = {"id": "a", "status": "FAILED", "result": None, "error": "statement 1 failed"}
+        session = _session_answering(ok=True, status=200, text=json.dumps(document))
+
+        with patch("aiohttp.ClientSession", return_value=session):
+            result = await client.post("/actions", data={}, raise_on_envelope_error=False)
+
+        assert result == document
+
+    async def test_the_envelope_error_check_is_on_by_default(self):
+        client = HttpClient(base_url="https://api.zamp.test")
+        document = {"id": "a", "status": "FAILED", "result": None, "error": "statement 1 failed"}
+        session = _session_answering(ok=True, status=200, text=json.dumps(document))
+
+        with (
+            patch("aiohttp.ClientSession", return_value=session),
+            pytest.raises(HttpClientError, match="statement 1 failed"),
+        ):
+            await client.post("/actions", data={})
+
+    async def test_the_timeout_is_passed_per_request(self):
+        client = HttpClient(base_url="https://api.zamp.test", timeout=30)
+        session = _session_answering(ok=True, status=200, text=json.dumps({"id": "a"}))
+
+        with (
+            patch("aiohttp.ClientSession", return_value=session),
+            patch("zamp_sdk.action_executor.utils.http_client.aiohttp.ClientTimeout") as timeout_cls,
+        ):
+            await client.post("/actions", data={}, timeout=12.5)
+
+        timeout_cls.assert_called_once_with(total=12.5)
+
+
+class TestHttpClientErrorMessages:
+    """A 4xx carries the platform's sentence, which is the caller's only explanation."""
+
+    async def test_a_flat_platform_error_message_is_surfaced(self):
+        client = HttpClient(base_url="https://api.zamp.test")
+        body = {"code": "VALIDATION_FAILED", "message": "Action 'x' cannot run inline: it is a workflow"}
+        session = _session_answering(ok=False, status=400, text=json.dumps(body))
+
+        with (
+            patch("aiohttp.ClientSession", return_value=session),
+            pytest.raises(HttpClientError, match="HTTP 400 .*: Action 'x' cannot run inline: it is a workflow") as exc,
+        ):
+            await client.post("/actions", data={})
+
+        assert exc.value.status_code == 400
+        assert exc.value.response_body == json.dumps(body)
+
+    async def test_a_wrapped_error_message_is_surfaced(self):
+        client = HttpClient(base_url="https://api.zamp.test")
+        session = _session_answering(ok=False, status=403, text=json.dumps({"error": {"message": "no access"}}))
+
+        with (
+            patch("aiohttp.ClientSession", return_value=session),
+            pytest.raises(HttpClientError, match="HTTP 403 .*: no access"),
+        ):
+            await client.get("/actions/a")
+
+    async def test_a_non_json_body_keeps_the_generic_message(self):
+        client = HttpClient(base_url="https://api.zamp.test")
+        session = _session_answering(ok=False, status=502, text="Bad Gateway")
+
+        with (
+            patch("aiohttp.ClientSession", return_value=session),
+            pytest.raises(HttpClientError) as exc,
+        ):
+            await client.get("/actions/a")
+
+        assert str(exc.value) == "HTTP 502 from https://api.zamp.test/actions/a"
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ('{"message": "flat"}', "flat"),
+            ('{"error": {"message": "wrapped"}}', "wrapped"),
+            ('{"error": "bare"}', "bare"),
+            ('{"detail": "framework"}', "framework"),
+            ('{"detail": [{"loc": ["body"]}]}', None),
+            ('{"error": {"code": "X"}}', None),
+            ("[]", None),
+            ("not json", None),
+        ],
+    )
+    def test_server_message_shapes(self, text, expected):
+        assert HttpClient._server_message(text) == expected

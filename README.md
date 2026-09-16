@@ -58,6 +58,7 @@ async def execute(
     auth_token: str | None = None,
     summary: str | None = None,
     return_type: type | None = None,
+    execution_mode: ExecutionMode | None = None,
     action_retry_policy: RetryPolicy | None = None,
     action_start_to_close_timeout: timedelta | None = None,
 ) -> Any
@@ -71,8 +72,32 @@ async def execute(
 | `auth_token` | `str \| None` | No | API authentication token. Falls back to `ZAMP_AUTH_TOKEN` env var |
 | `summary` | `str \| None` | No | Human-readable description of the execution |
 | `return_type` | `type \| None` | No | Pydantic model to validate the result against |
-| `action_retry_policy` | `RetryPolicy \| None` | No | Retry configuration for the action |
+| `execution_mode` | `ExecutionMode \| None` | No | Transport: `INLINE` runs the action inside the request; anything else runs it on Temporal and polls (see below) |
+| `action_retry_policy` | `RetryPolicy \| None` | No | Retry configuration for the action (refused by the platform with `INLINE`) |
 | `action_start_to_close_timeout` | `timedelta \| None` | No | Maximum execution time for the action |
+
+### Execution modes
+
+```python
+from zamp_sdk import ActionExecutor, ExecutionMode
+
+rows = await ActionExecutor.execute(
+    "agent_db_execute_sql",
+    {"statements": [{"sql": "SELECT 1"}]},
+    execution_mode=ExecutionMode.INLINE,
+)
+```
+
+| Mode | On the wire | What you get |
+|------|-------------|--------------|
+| `None`, `SYNC`, `ASYNC` | `POST /actions` starts a durable Temporal workflow; the SDK polls `GET /actions/{id}` | Retries per `action_retry_policy`, survives a platform restart, the result once the poll sees a terminal state |
+| `INLINE` | `POST /actions` with `execution_mode: "INLINE"`; the platform runs the action inside that request and answers with its terminal state | One round trip, no polling. No retries and no Temporal history; the platform caps the run at its inline ceiling (25s) and refuses — with the reason, as a 400 — actions that need a workflow, and any `retry_policy` sent alongside |
+
+`INLINE` is for short, time-sensitive calls; the `zamp_sdk.db` reads and writes use it.
+Two properties keep it safe: an older platform that does not know the field answers
+`RUNNING` as before and the SDK falls back to polling, so a version skew costs latency
+rather than correctness; and because the action may already have run, the SDK never
+retries an inline `POST` on a 5xx.
 
 ### `RetryPolicy`
 
@@ -155,6 +180,9 @@ async for page in datasets.stream(select(invoices), page_size=10000):
 | `datasets.create(table, if_exists="error"\|"skip")` | Create a dataset. **Returns the table to use** — see below |
 | `datasets.drop(table_or_name)` | Delete a dataset and all its rows |
 
+`table(s)`, `execute`, `stream` and `transaction` run inline (one round trip, no
+polling); `create` and `drop` stay on the durable Temporal path.
+
 Renaming, altering, sharing, revoking and listing are called directly via
 `ActionExecutor` (`agent_db_rename_dataset`, `agent_db_alter_dataset`,
 `agent_db_share_dataset_access`, `agent_db_revoke_dataset_access`,
@@ -207,9 +235,9 @@ constraint, which you declare in the `CREATE TABLE` or add later with
 
 | Exception | When |
 |-----------|------|
-| `HttpClientError` | HTTP request fails (non-2xx status, network error, timeout) |
-| `RuntimeError` | Action reaches a terminal failure state (FAILED, CANCELED, TERMINATED, TIMED_OUT) |
-| `TimeoutError` | Polling for action result exceeds the timeout limit |
+| `HttpClientError` | HTTP request fails (non-2xx status, network error, timeout). The platform's own message is appended when it sends one, e.g. why an `INLINE` request was refused |
+| `RuntimeError` | Action reaches a terminal failure state (FAILED, CANCELED, TERMINATED, TIMED_OUT), whether polled or answered inline |
+| `TimeoutError` | Polling for a Temporal-path action result exceeds the timeout limit |
 | `KeyError` | Required environment variable is missing and no explicit value was provided |
 
 ```python

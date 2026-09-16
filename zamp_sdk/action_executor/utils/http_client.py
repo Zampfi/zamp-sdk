@@ -30,7 +30,7 @@ class HttpClient:
         self,
         base_url: Optional[str] = None,
         default_headers: Optional[Dict[str, str]] = None,
-        timeout: int = 30,
+        timeout: float = 30,
     ):
         self.base_url = base_url
         self.default_headers = default_headers or {}
@@ -51,6 +51,33 @@ class HttpClient:
         else:
             raise HttpClientError(f"Unexpected error: {exc}")
 
+    @staticmethod
+    def _server_message(response_text: str) -> Optional[str]:
+        """The human-readable message inside an error body, if it carries one.
+
+        The platform's rejections are a flat ``{"code": ..., "message": ...}``
+        document; a wrapped ``{"error": {"message": ...}}`` envelope and FastAPI's
+        string ``detail`` are read too. Surfacing it is what tells a caller *why* a
+        4xx happened: the platform is the only gate on what an action may do, so its
+        sentence is the whole explanation they get.
+        """
+        try:
+            parsed = json.loads(response_text)
+        except (TypeError, ValueError):
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        err = parsed.get("error")
+        if isinstance(err, dict) and err.get("message"):
+            return str(err["message"])
+        if isinstance(err, str) and err:
+            return err
+        for key in ("message", "detail"):
+            value = parsed.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return None
+
     async def _request(
         self,
         method: str,
@@ -58,8 +85,17 @@ class HttpClient:
         *,
         data: Optional[Union[Dict[str, Any], BaseModel]] = None,
         headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[int] = None,
+        timeout: Optional[float] = None,
+        raise_on_envelope_error: bool = True,
     ) -> dict:
+        """Issue the request and return the parsed JSON body.
+
+        ``raise_on_envelope_error`` treats a 2xx body with a non-null top-level
+        ``error`` as a failed call. That is right for the platform's response
+        envelope but wrong for an action document, whose ``error`` field is the
+        action's own failure message and is read by the caller: pass ``False`` there
+        so the document comes back whole.
+        """
         try:
             request_headers = {**self.default_headers}
             if headers:
@@ -89,14 +125,18 @@ class HttpClient:
                     response_text = await response.text()
 
                     if not response.ok:
+                        message = f"HTTP {response.status} from {url}"
+                        server_message = self._server_message(response_text)
+                        if server_message:
+                            message = f"{message}: {server_message}"
                         raise HttpClientError(
-                            f"HTTP {response.status} from {url}",
+                            message,
                             status_code=response.status,
                             response_body=response_text,
                         )
 
                     parsed: dict = json.loads(response_text)
-                    if isinstance(parsed, dict) and parsed.get("error") is not None:
+                    if raise_on_envelope_error and isinstance(parsed, dict) and parsed.get("error") is not None:
                         err = parsed["error"]
                         msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
                         raise HttpClientError(
@@ -117,15 +157,23 @@ class HttpClient:
         *,
         data: Optional[Union[Dict[str, Any], BaseModel]] = None,
         headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[int] = None,
+        timeout: Optional[float] = None,
+        raise_on_envelope_error: bool = True,
     ) -> dict:
-        return await self._request("POST", endpoint, data=data, headers=headers, timeout=timeout)
+        return await self._request(
+            "POST",
+            endpoint,
+            data=data,
+            headers=headers,
+            timeout=timeout,
+            raise_on_envelope_error=raise_on_envelope_error,
+        )
 
     async def get(
         self,
         endpoint: str,
         *,
         headers: Optional[Dict[str, str]] = None,
-        timeout: Optional[int] = None,
+        timeout: Optional[float] = None,
     ) -> dict:
         return await self._request("GET", endpoint, headers=headers, timeout=timeout)
