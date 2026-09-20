@@ -5,8 +5,8 @@ from datetime import timedelta
 from typing import Any, Callable
 
 from zamp_sdk.action_executor.constants import (
+    ACTION_ENVELOPE_KEYS,
     IN_PROGRESS_STATUSES,
-    LOGGED_ROUTES,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
@@ -82,18 +82,11 @@ class ActionExecutor:
         # Resolved before dispatch, not inside it, so one place names every route and one
         # place decides which of them log.
         route, gateway = await cls._resolve_route(action_name)
-
-        block_id = await open_action_log(
-            action_name,
-            params,
-            summary=summary,
-            logged_route=route in LOGGED_ROUTES,
-            log_action=log_action,
-        )
         try:
             result = await cls._dispatch(
                 route=route,
                 gateway=gateway,
+                log_action=log_action,
                 action_name=action_name,
                 params=params,
                 base_url=base_url,
@@ -105,14 +98,11 @@ class ActionExecutor:
                 action_start_to_close_timeout=action_start_to_close_timeout,
             )
         except Exception as exc:
-            # The failure is captured as well as shown. A reader of the step log is looking for
-            # the call that went wrong, which is exactly the one the old capture-after-dispatch
-            # placement left out.
+            # Captured, not just shown. A reader of the step log is looking for the call that
+            # went wrong, which is exactly the one a capture-after-dispatch placement leaves out.
+            # The live block was already closed as failed by the route that opened it.
             cls._capture_action_step(action_name, params, None, error=exc)
-            await fail_action_log(block_id, action_name, exc)
             raise
-        await close_action_log(block_id, action_name, result, envelope=route is Route.GATEWAY)
-
         cls._capture_action_step(action_name, params, result)
         return result
 
@@ -126,12 +116,32 @@ class ActionExecutor:
             return Route.GATEWAY, gateway
         return Route.LOCAL_AH, None
 
+    @staticmethod
+    def _unwrap_envelope(result: Any) -> Any:
+        """The answer inside the gateway's transport envelope.
+
+        The gateway returns ``{"id", "status", "result", "error"}``, where the id and status
+        describe the delivery rather than the answer and bury it under two lines of plumbing.
+        A failure shows its ``error``: the gateway reports one as a *value*, so reading
+        ``result`` alone would show ``None`` and lose the reason.
+
+        Display only — the envelope still reaches authored code untouched, because deployed
+        workflows read ``status`` and ``result`` off it themselves.
+
+        The key check is a guard, not a decision: only the gateway route calls this, so a
+        response of an unexpected shape is shown whole rather than reduced to nothing.
+        """
+        if isinstance(result, dict) and ACTION_ENVELOPE_KEYS.issubset(result):
+            return result.get("error") or result["result"]
+        return result
+
     @classmethod
     async def _dispatch(
         cls,
         *,
         route: Route,
         gateway: Callable[..., Any] | None,
+        log_action: bool | None,
         action_name: str,
         params: dict[str, Any],
         base_url: str | None,
@@ -142,12 +152,19 @@ class ActionExecutor:
         action_retry_policy: RetryPolicy | None,
         action_start_to_close_timeout: timedelta | None,
     ) -> Any:
-        """Run the action down the route already resolved for it."""
+        """Run the action down the route already resolved for it.
+
+        Each route logs, or does not, for itself. The two that reach the platform show the call
+        in the live message; a local call is plumbing on the worker that already owns the
+        action, so it has no logging code at all rather than a flag saying not to.
+        """
         if route is Route.GATEWAY and gateway is not None:
-            return await gateway(
-                action_name,
-                params,
+            return await cls._execute_via_gateway(
+                gateway,
+                action_name=action_name,
+                params=params,
                 summary=summary,
+                log_action=log_action,
                 return_type=return_type,
                 action_retry_policy=action_retry_policy,
                 action_start_to_close_timeout=action_start_to_close_timeout,
@@ -168,6 +185,7 @@ class ActionExecutor:
             base_url=base_url,
             auth_token=auth_token,
             summary=summary,
+            log_action=log_action,
             return_type=return_type,
             action_retry_policy=action_retry_policy,
             action_start_to_close_timeout=action_start_to_close_timeout,
@@ -272,6 +290,39 @@ class ActionExecutor:
             )
 
     @classmethod
+    async def _execute_via_gateway(
+        cls,
+        gateway: Callable[..., Any],
+        *,
+        action_name: str,
+        params: dict[str, Any],
+        summary: str | None,
+        log_action: bool | None,
+        return_type: type | None,
+        action_retry_policy: RetryPolicy | None,
+        action_start_to_close_timeout: timedelta | None,
+    ) -> Any:
+        """Hand the action to the host's gateway, showing the call in the live message.
+
+        Returns the gateway's envelope unchanged — only the block is unwrapped.
+        """
+        block_id = await open_action_log(action_name, params, summary=summary, log_action=log_action)
+        try:
+            result = await gateway(
+                action_name,
+                params,
+                summary=summary,
+                return_type=return_type,
+                action_retry_policy=action_retry_policy,
+                action_start_to_close_timeout=action_start_to_close_timeout,
+            )
+        except Exception as exc:
+            await fail_action_log(block_id, action_name, exc)
+            raise
+        await close_action_log(block_id, action_name, cls._unwrap_envelope(result))
+        return result
+
+    @classmethod
     async def _execute_via_api(
         cls,
         action_name: str,
@@ -280,24 +331,37 @@ class ActionExecutor:
         base_url: str | None,
         auth_token: str | None,
         summary: str | None,
+        log_action: bool | None,
         return_type: type | None,
         action_retry_policy: RetryPolicy | None,
         action_start_to_close_timeout: timedelta | None,
     ) -> Any:
+        """Call the platform over HTTP, showing the call in the live message.
+
+        No unwrapping here: this route already returns the action's own answer, and a terminal
+        failure raises rather than coming back as a value.
+        """
         config = cls._resolve_config(base_url, auth_token)
         # Attach the caller's channel context once here so the platform can inject it
         # into the action's params — individual actions don't each have to send it.
         channel_context = resolve_channel_context()
-        return await cls._execute_action(
-            action_name=action_name,
-            params=params,
-            config=config,
-            channel_context=channel_context.model_dump(mode="json") if channel_context is not None else None,
-            return_type=return_type,
-            summary=summary,
-            action_retry_policy=action_retry_policy,
-            action_start_to_close_timeout=action_start_to_close_timeout,
-        )
+        block_id = await open_action_log(action_name, params, summary=summary, log_action=log_action)
+        try:
+            result = await cls._execute_action(
+                action_name=action_name,
+                params=params,
+                config=config,
+                channel_context=channel_context.model_dump(mode="json") if channel_context is not None else None,
+                return_type=return_type,
+                summary=summary,
+                action_retry_policy=action_retry_policy,
+                action_start_to_close_timeout=action_start_to_close_timeout,
+            )
+        except Exception as exc:
+            await fail_action_log(block_id, action_name, exc)
+            raise
+        await close_action_log(block_id, action_name, result)
+        return result
 
     @classmethod
     async def _execute_via_actions_hub(

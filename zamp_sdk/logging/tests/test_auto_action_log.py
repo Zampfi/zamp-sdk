@@ -7,18 +7,18 @@ and a block that opens must always close.
 
 from __future__ import annotations
 
+import inspect
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
-from zamp_sdk.action_executor.constants import LOGGED_ROUTES, Route
+from zamp_sdk.action_executor.constants import Route
 from zamp_sdk.logging import log_control
 from zamp_sdk.logging.auto import (
     close_action_log,
     fail_action_log,
     open_action_log,
-    unwrap_result,
 )
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
 from zamp_sdk.logging.log_control import configure_auto_action_logs
@@ -69,11 +69,9 @@ def emits():
         yield recorder
 
 
-async def _run(action="do_thing", *, params=None, summary=None, logged_route=True, log_action=None):
+async def _run(action="do_thing", *, params=None, summary=None, log_action=None):
     """One successful action call, logged the way ``execute`` logs it."""
-    block_id = await open_action_log(
-        action, params or {}, summary=summary, logged_route=logged_route, log_action=log_action
-    )
+    block_id = await open_action_log(action, params or {}, summary=summary, log_action=log_action)
     await close_action_log(block_id, action, {"ok": True})
     return block_id
 
@@ -101,11 +99,6 @@ class TestWhenItLogs:
         await _run()
         assert emits.uses[0][3] is True
         assert emits.results[0][3] is True
-
-    @pytest.mark.asyncio
-    async def test_does_not_log_a_local_actions_hub_call(self, emits):
-        await _run(logged_route=False)
-        assert emits.uses == []
 
     @pytest.mark.asyncio
     async def test_does_not_log_emit_log_itself(self, emits):
@@ -160,7 +153,7 @@ class TestPairing:
     async def test_a_call_that_was_not_logged_emits_neither_half(self, emits):
         """Half-suppression is worse than none: a result would dangle against an id that was
         never announced. The None block id is what rules that out."""
-        block_id = await open_action_log("do_thing", {}, logged_route=False)
+        block_id = await open_action_log("do_thing", {}, log_action=False)
         assert block_id is None
 
         await fail_action_log(block_id, "do_thing", RuntimeError("boom"))
@@ -195,12 +188,18 @@ class TestRouting:
         assert gateway is None
 
     @pytest.mark.asyncio
-    async def test_an_action_registered_locally_is_not_logged(self):
+    async def test_a_local_call_has_no_logging_at_all(self):
         """It is an in-process call on the worker that owns the action — plumbing, not a tool
-        call the user is waiting on."""
-        assert Route.LOCAL_AH not in LOGGED_ROUTES
-        assert Route.API in LOGGED_ROUTES
-        assert Route.GATEWAY in LOGGED_ROUTES
+        call the user is waiting on. Structural, not a flag: the local route never opens a
+        block, so there is nothing to suppress and nothing that can be turned back on."""
+        source = inspect.getsource(ActionExecutor._execute_via_actions_hub)
+
+        assert "open_action_log" not in source
+        for logging_route in (
+            ActionExecutor._execute_via_gateway,
+            ActionExecutor._execute_via_api,
+        ):
+            assert "open_action_log" in inspect.getsource(logging_route)
 
 
 class TestItCostsNothingWhenOff:
@@ -250,51 +249,3 @@ class TestTheEmitPathCannotRecurse:
             await close_action_log(block_id, "do_thing", {"ok": True})
 
         assert dispatched == [EMIT_LOG_ACTION_NAME, EMIT_LOG_ACTION_NAME]
-
-
-class TestTheResultShown:
-    """A gateway call arrives wrapped in a transport envelope; only the answer is shown."""
-
-    @pytest.mark.parametrize(
-        ("returned", "shown"),
-        [
-            (
-                {"id": "external-action-executor-0d95", "status": "COMPLETED", "result": {"datasets": []}},
-                {"datasets": []},
-            ),
-            # The API route already unwraps, so its value passes through untouched.
-            ({"datasets": []}, {"datasets": []}),
-            # A failed call reports failure as a value, not an exception, so this runs on the
-            # success path — show the reason rather than the None it left in ``result``.
-            (
-                {"id": "x", "status": "FAILED", "result": None, "error": "Action not found"},
-                "Action not found",
-            ),
-            # Not an envelope: an action whose own output has a result key keeps all of it.
-            ({"result": 1, "status": "ok"}, {"result": 1, "status": "ok"}),
-            ("a string", "a string"),
-            (None, None),
-        ],
-    )
-    def test_the_envelope_is_stripped_but_nothing_else_is(self, returned, shown):
-        assert unwrap_result(returned) == shown
-
-    @pytest.mark.asyncio
-    async def test_a_gateway_result_is_closed_unwrapped(self):
-        envelope = {"id": "x", "status": "COMPLETED", "result": {"rows": 3}}
-
-        with patch("zamp_sdk.logging.auto.emit_tool_result", new=AsyncMock()) as emit:
-            await close_action_log("block-1", "agent_db_query", envelope, envelope=True)
-
-        assert emit.await_args.args[1] == {"rows": 3}, "the id and status are plumbing"
-
-    @pytest.mark.asyncio
-    async def test_any_other_route_is_closed_with_what_it_returned(self):
-        """The caller says which route it took; the value is never sniffed. An action whose own
-        output happens to carry those keys is left whole."""
-        looks_like_one = {"id": "row-7", "status": "active", "result": "kept"}
-
-        with patch("zamp_sdk.logging.auto.emit_tool_result", new=AsyncMock()) as emit:
-            await close_action_log("block-1", "read_row", looks_like_one)
-
-        assert emit.await_args.args[1] == looks_like_one

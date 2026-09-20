@@ -8,6 +8,8 @@ bug worth catching is one of them changing the others.
 from __future__ import annotations
 
 import asyncio
+import inspect
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -35,6 +37,14 @@ def _tool_use_blocks(run) -> list:
         if block.get("type") == "tool_use":
             titles.append(block.get("display_title"))
     return titles
+
+
+@pytest.fixture(autouse=True)
+def _api_credentials(monkeypatch):
+    """The API route resolves its config before it opens a block, so these have to be present
+    even where the call itself is stubbed out."""
+    monkeypatch.setenv("ZAMP_BASE_URL", "https://example.invalid")
+    monkeypatch.setenv("ZAMP_AUTH_TOKEN", "token")
 
 
 class TestFailureCapture:
@@ -71,7 +81,7 @@ class TestFailureCapture:
     @pytest.mark.asyncio
     async def test_a_raising_action_is_captured_and_still_raises(self):
         start_log_capture()
-        with patch.object(ActionExecutor, "_dispatch", new_callable=AsyncMock) as run:
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run:
             run.side_effect = RuntimeError("boom")
             with pytest.raises(RuntimeError, match="boom"):
                 await ActionExecutor.execute("do_thing", {"a": 1})
@@ -86,7 +96,7 @@ class TestTheEmittedBlocks:
     async def test_an_api_call_logs_itself(self):
         configure_auto_action_logs(True)
         with (
-            patch.object(ActionExecutor, "_dispatch", new_callable=AsyncMock) as run,
+            patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run,
             patch("zamp_sdk.logging.auto._emit_tool_use_block", new_callable=AsyncMock) as use,
             patch("zamp_sdk.logging.auto.emit_tool_result", new_callable=AsyncMock) as result,
         ):
@@ -106,7 +116,7 @@ class TestTheEmittedBlocks:
         that happen to be written as a gather."""
         configure_auto_action_logs(True)
 
-        with patch.object(ActionExecutor, "_dispatch", new_callable=AsyncMock) as run:
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run:
             run.return_value = {"ok": True}
 
             async def branch(i: int) -> None:
@@ -126,7 +136,7 @@ class TestTheEmittedBlocks:
     async def test_the_action_still_runs_when_logging_is_broken(self):
         configure_auto_action_logs(True)
         with (
-            patch.object(ActionExecutor, "_dispatch", new_callable=AsyncMock) as run,
+            patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run,
             patch(
                 "zamp_sdk.logging.auto._emit_tool_use_block",
                 new=AsyncMock(side_effect=RuntimeError("emit broke")),
@@ -143,7 +153,7 @@ class TestTheEmitActionLeavesNoTrace:
     @pytest.mark.asyncio
     async def test_a_successful_emit_records_nothing(self):
         start_log_capture()
-        with patch.object(ActionExecutor, "_dispatch", new_callable=AsyncMock) as run:
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run:
             run.return_value = {}
             await ActionExecutor.execute(EMIT_LOG_ACTION_NAME, {"block": {}})
 
@@ -154,7 +164,7 @@ class TestTheEmitActionLeavesNoTrace:
         """The failure path captures too, so it needs the same exemption — a log line that
         could not be delivered is not something the run did wrong."""
         start_log_capture()
-        with patch.object(ActionExecutor, "_dispatch", new_callable=AsyncMock) as run:
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run:
             run.side_effect = RuntimeError("emit wire down")
             with pytest.raises(RuntimeError):
                 await ActionExecutor.execute(EMIT_LOG_ACTION_NAME, {"block": {}})
@@ -164,8 +174,51 @@ class TestTheEmitActionLeavesNoTrace:
     @pytest.mark.asyncio
     async def test_an_ordinary_action_is_still_recorded(self):
         start_log_capture()
-        with patch.object(ActionExecutor, "_dispatch", new_callable=AsyncMock) as run:
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run:
             run.return_value = {"ok": True}
             await ActionExecutor.execute("do_thing", {"a": 1})
 
         assert [e["event"] for e in drain_log_capture()] == ["action"]
+
+
+class TestWhatTheBlockShows:
+    """The gateway wraps the answer in a transport envelope; its block shows the answer.
+
+    Only the gateway route unwraps, and it does so in its own dispatch method — the other
+    routes never call this, so there is no shape-sniffing to get wrong."""
+
+    ENVELOPE: dict[str, Any] = {
+        "id": "external-action-executor-0d95",
+        "status": "COMPLETED",
+        "result": {"datasets": []},
+        "error": None,
+    }
+
+    def test_a_gateway_envelope_is_stripped_to_its_answer(self):
+        assert ActionExecutor._unwrap_envelope(self.ENVELOPE) == {"datasets": []}
+
+    def test_a_failed_gateway_call_shows_its_reason(self):
+        """The gateway reports failure as a value rather than raising, so this is the success
+        path — reading ``result`` alone would show None and lose the reason."""
+        failed = {"id": "x", "status": "FAILED", "result": None, "error": "Action not found"}
+
+        assert ActionExecutor._unwrap_envelope(failed) == "Action not found"
+
+    def test_the_api_route_never_unwraps(self):
+        """It already returns the action's own answer, so a value of its own that happens to
+        look like an envelope is never at risk — that route does not call this at all."""
+        source = inspect.getsource(ActionExecutor._execute_via_api)
+
+        assert "_unwrap_envelope" not in source
+        assert "_unwrap_envelope" in inspect.getsource(ActionExecutor._execute_via_gateway)
+
+    def test_a_gateway_response_of_an_unexpected_shape_is_shown_whole(self):
+        """The key check is a guard, so a malformed response is shown rather than reduced to
+        nothing."""
+        odd = {"status": "COMPLETED"}
+
+        assert ActionExecutor._unwrap_envelope(odd) == odd
+
+    @pytest.mark.parametrize("value", ["a string", None, 42])
+    def test_a_non_dict_passes_through(self, value):
+        assert ActionExecutor._unwrap_envelope(value) == value

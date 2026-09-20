@@ -25,28 +25,28 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from zamp_sdk.logger import get_logger
-from zamp_sdk.logging.constants import ACTION_ENVELOPE_KEYS, NON_LOGGABLE_ACTIONS
+from zamp_sdk.logging.constants import NON_LOGGABLE_ACTIONS
 from zamp_sdk.logging.log_control import auto_action_logs_enabled
 from zamp_sdk.logging.logging import _emit_tool_use_block, emit_tool_result
 
 logger = get_logger(__name__)
 
 
-def _should_log(action_name: str, log_action: Optional[bool], logged_route: bool) -> bool:
+def _should_log(action_name: str, log_action: Optional[bool]) -> bool:
     """Whether this action call gets an auto-log.
 
-    The first check is correctness, not preference, so nothing overrides it: dispatching
-    ``emit_log`` is how a log line is *sent*, so logging that call would call it again.
+    Only asked by the routes that log at all — a local in-process call never reaches here, so
+    there is no route to weigh.
 
-    Everything after it is preference, and an explicit ``log_action`` settles it — including on
-    a route that is not logged by default. ``logged_route`` is that default, not a veto: an
-    in-process call is plumbing *unless the caller says otherwise*.
+    The first check is correctness, not preference, so nothing overrides it: dispatching
+    ``emit_log`` is how a log line is *sent*, so logging that call would call it again. After
+    that an explicit ``log_action`` settles it, and otherwise the run's own setting does.
     """
     if action_name in NON_LOGGABLE_ACTIONS:
         return False
     if log_action is not None:
         return log_action
-    return logged_route and auto_action_logs_enabled()
+    return auto_action_logs_enabled()
 
 
 async def open_action_log(
@@ -54,7 +54,6 @@ async def open_action_log(
     params: dict[str, Any],
     *,
     summary: Optional[str] = None,
-    logged_route: bool = True,
     log_action: Optional[bool] = None,
 ) -> Optional[str]:
     """Show the call as running, and return the block id that will close it.
@@ -64,11 +63,8 @@ async def open_action_log(
         params: The action's input, shown as the block's input.
         summary: The caller's own description of the call, used as the block's display title.
             Without one the platform falls back to the action's configured display name.
-        logged_route: Whether the route this call took is one the SDK logs by default. False
-            for an in-process call on the worker that already owns the action — plumbing, not a
-            tool call the user is waiting on. A default, not a veto: ``log_action`` overrides it.
-        log_action: An explicit per-call override, winning over every other consideration
-            except the non-loggable actions, which are a correctness rule.
+        log_action: An explicit per-call override, winning over the run's own setting. The
+            non-loggable actions still win over it — that is a correctness rule, not a taste.
 
     Returns:
         The block id, or ``None`` when this call is not logged **or the opening emit did not
@@ -78,7 +74,7 @@ async def open_action_log(
     Never raises. Logging is telemetry wrapped around somebody's real work, and a failure to
     describe that work must not become a failure to do it.
     """
-    if not _should_log(action_name, log_action, logged_route):
+    if not _should_log(action_name, log_action):
         return None
     try:
         block_id, result = await _emit_tool_use_block(action_name, display_title=summary, input=params, auto=True)
@@ -99,45 +95,14 @@ async def open_action_log(
     return block_id
 
 
-async def close_action_log(
-    block_id: Optional[str],
-    action_name: str,
-    result: Any,
-    *,
-    envelope: bool = False,
-) -> None:
-    """Complete the call's block with what the action returned. Never raises.
+async def close_action_log(block_id: Optional[str], action_name: str, result: Any) -> None:
+    """Complete the call's block with what the caller decided to show. Never raises.
 
-    ``envelope`` says the value came back wrapped by the gateway. The caller knows which route
-    it took, so it is told rather than guessed at — a result is not inspected to see whether it
-    *looks* like an envelope, which would mistake an action whose own output happens to carry
-    those keys.
+    Takes the value as given. What a result means — whether it is wrapped, whether it is a
+    failure reported as data — depends on the route the call took, which is the dispatcher's
+    knowledge, not this module's.
     """
-    await _close(block_id, action_name, unwrap_result(result) if envelope else result)
-
-
-def unwrap_result(result: Any) -> Any:
-    """What the action actually answered, with the gateway's transport envelope taken off.
-
-    Only ever called for a gateway result, which comes back as
-    ``{"id", "status", "result", "error"}``. The id and status describe the delivery rather than
-    the answer, and showing them buries the answer under two lines of plumbing. The API path
-    already returns the inner value, so stripping it here makes the two routes display alike.
-
-    The key check is a guard, not the decision — the route already settled that. It is here so
-    a gateway response that is not shaped as expected is passed through whole rather than
-    silently reduced to nothing.
-
-    A failed call shows its ``error``, because the gateway reports failure as a *value* — it
-    returns ``status="FAILED", result=None`` instead of raising, so this runs on the success
-    path and reading ``result`` alone would show ``None`` and lose the reason.
-
-    Anything that is not an envelope is returned untouched, which covers the API route and every
-    action that simply returns a value.
-    """
-    if not isinstance(result, dict) or not ACTION_ENVELOPE_KEYS.issubset(result):
-        return result
-    return result.get("error") or result["result"]
+    await _close(block_id, action_name, result)
 
 
 async def fail_action_log(block_id: Optional[str], action_name: str, error: BaseException) -> None:

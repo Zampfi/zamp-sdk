@@ -15,9 +15,3 @@ class Route(StrEnum):
     API = "api"
     GATEWAY = "gateway"
     LOCAL_AH = "local_ah"
-
-
-# Routes whose calls the SDK logs to the live message on the script's behalf. ``LOCAL_AH`` is
-# absent on purpose: an action registered on the worker that runs it is an in-process call —
-# plumbing, not a tool call the user is waiting on.
-LOGGED_ROUTES = frozenset({Route.API, Route.GATEWAY})
