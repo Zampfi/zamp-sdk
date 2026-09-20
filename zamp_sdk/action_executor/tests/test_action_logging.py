@@ -272,3 +272,35 @@ class TestTheApiRouteNeedsARuntime:
             await ActionExecutor.execute("do_thing", {}, base_url="https://api.example", auth_token="tok")
 
         assert seen == ["do_thing"], "the action still runs; only its log is skipped"
+
+    @pytest.mark.asyncio
+    async def test_it_stays_quiet_when_the_credentials_name_another_deployment(self):
+        """An emit re-resolves from the environment, so it would follow the ambient
+        credentials and carry this action's input and result to a deployment the caller did not
+        send it to. Logs must not cross that boundary."""
+        configure_auto_action_logs(True)
+        seen: list[str] = []
+
+        async def record(*, action_name, config, **kwargs):
+            seen.append(action_name)
+            return {"ok": True}
+
+        with patch.object(ActionExecutor, "_execute_action", record):
+            await ActionExecutor.execute("do_thing", {}, base_url="https://other-tenant", auth_token="other-token")
+
+        assert seen == ["do_thing"], "the action went to the explicit target, unlogged"
+
+    @pytest.mark.asyncio
+    async def test_it_logs_when_the_explicit_credentials_are_the_ambient_ones(self):
+        """Passing the same values the environment already holds is not a different tenant."""
+        configure_auto_action_logs(True)
+        seen: list[str] = []
+
+        async def record(*, action_name, **kwargs):
+            seen.append(action_name)
+            return {"ok": True}
+
+        with patch.object(ActionExecutor, "_execute_action", record):
+            await ActionExecutor.execute("do_thing", {}, base_url="https://example.invalid", auth_token="token")
+
+        assert seen == ["emit_log", "do_thing", "emit_log"]

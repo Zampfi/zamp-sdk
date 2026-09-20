@@ -323,17 +323,25 @@ class ActionExecutor:
         return result
 
     @staticmethod
-    def _can_emit(channel_context: ChannelContext | None) -> bool:
-        """Whether this process can send a block at all.
+    def _can_emit(config: SdkConfig, channel_context: ChannelContext | None) -> bool:
+        """Whether a block for this call can be shown, and shown in the right place.
 
-        An emit is its own API call, dispatched with no arguments, so it reads the credentials
-        from the environment and needs a channel to appear in. Someone driving the SDK from
-        their own program has neither: they passed credentials to ``execute`` directly and are
-        not inside a Zamp run. There is nowhere to put a block, so the call goes unlogged
-        rather than failing an emit for every action.
+        An emit is its own API call, dispatched with no arguments, so it resolves credentials
+        from the environment and needs a channel to appear in. Two things follow.
+
+        A process with neither — someone driving the SDK from their own program, who passed
+        credentials to ``execute`` and is not inside a Zamp run — has nowhere to put a block, so
+        the call goes unlogged rather than failing an emit for every action.
+
+        And the environment has to be the *same* deployment the action went to. A caller can
+        point ``execute`` at one tenant while the ambient credentials name another; the emit
+        would follow the ambient ones and carry this action's input and result there. Compared
+        rather than merely required, so logs cannot cross that boundary.
         """
         return (
-            channel_context is not None and bool(os.environ.get(ENV_BASE_URL)) and bool(os.environ.get(ENV_AUTH_TOKEN))
+            channel_context is not None
+            and config.base_url == os.environ.get(ENV_BASE_URL)
+            and config.auth_token == os.environ.get(ENV_AUTH_TOKEN)
         )
 
     @classmethod
@@ -361,7 +369,7 @@ class ActionExecutor:
         channel_context = resolve_channel_context()
         block_id = (
             await open_action_log(action_name, params, summary=summary, log_action=log_action)
-            if cls._can_emit(channel_context)
+            if cls._can_emit(config, channel_context)
             else None
         )
         try:
