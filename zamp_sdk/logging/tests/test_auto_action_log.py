@@ -18,6 +18,7 @@ from zamp_sdk.logging.auto import (
     close_action_log,
     fail_action_log,
     open_action_log,
+    unwrap_result,
 )
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
 from zamp_sdk.logging.log_control import configure_auto_action_logs
@@ -246,3 +247,40 @@ class TestTheEmitPathCannotRecurse:
             await close_action_log(block_id, "do_thing", {"ok": True})
 
         assert dispatched == [EMIT_LOG_ACTION_NAME, EMIT_LOG_ACTION_NAME]
+
+
+class TestTheResultShown:
+    """A gateway call arrives wrapped in a transport envelope; only the answer is shown."""
+
+    @pytest.mark.parametrize(
+        ("returned", "shown"),
+        [
+            (
+                {"id": "external-action-executor-0d95", "status": "COMPLETED", "result": {"datasets": []}},
+                {"datasets": []},
+            ),
+            # The API route already unwraps, so its value passes through untouched.
+            ({"datasets": []}, {"datasets": []}),
+            # A failed call reports failure as a value, not an exception, so this runs on the
+            # success path — show the reason rather than the None it left in ``result``.
+            (
+                {"id": "x", "status": "FAILED", "result": None, "error": "Action not found"},
+                "Action not found",
+            ),
+            # Not an envelope: an action whose own output has a result key keeps all of it.
+            ({"result": 1, "status": "ok"}, {"result": 1, "status": "ok"}),
+            ("a string", "a string"),
+            (None, None),
+        ],
+    )
+    def test_the_envelope_is_stripped_but_nothing_else_is(self, returned, shown):
+        assert unwrap_result(returned) == shown
+
+    @pytest.mark.asyncio
+    async def test_the_block_is_closed_with_the_unwrapped_result(self):
+        envelope = {"id": "x", "status": "COMPLETED", "result": {"rows": 3}}
+
+        with patch("zamp_sdk.logging.auto.emit_tool_result", new=AsyncMock()) as emit:
+            await close_action_log("block-1", "agent_db_query", envelope)
+
+        assert emit.await_args.args[1] == {"rows": 3}, "the id and status are plumbing"

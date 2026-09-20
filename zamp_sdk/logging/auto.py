@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from zamp_sdk.logger import get_logger
-from zamp_sdk.logging.constants import NON_LOGGABLE_ACTIONS
+from zamp_sdk.logging.constants import ACTION_ENVELOPE_KEYS, NON_LOGGABLE_ACTIONS
 from zamp_sdk.logging.log_control import auto_action_logs_enabled
 from zamp_sdk.logging.logging import emit_tool_result, emit_tool_use
 
@@ -81,8 +81,28 @@ async def open_action_log(
 
 
 async def close_action_log(block_id: Optional[str], action_name: str, result: Any) -> None:
-    """Complete the call's block with what it returned. Never raises."""
-    await _close(block_id, action_name, result)
+    """Complete the call's block with what the action returned. Never raises."""
+    await _close(block_id, action_name, unwrap_result(result))
+
+
+def unwrap_result(result: Any) -> Any:
+    """What the action actually answered, with the gateway's transport envelope taken off.
+
+    A gateway call comes back as ``{"id", "status", "result", "error"}``. The id and status
+    describe the delivery rather than the answer, and showing them buries the answer under two
+    lines of plumbing. The API path already returns the inner value, so stripping it here also
+    makes the two routes display alike.
+
+    A failed call shows its ``error``, because the gateway reports failure as a *value* — it
+    returns ``status="FAILED", result=None`` instead of raising, so this runs on the success
+    path and reading ``result`` alone would show ``None`` and lose the reason.
+
+    Anything that is not an envelope is returned untouched, which covers the API route and every
+    action that simply returns a value.
+    """
+    if not isinstance(result, dict) or not ACTION_ENVELOPE_KEYS.issubset(result):
+        return result
+    return result.get("error") or result["result"]
 
 
 async def fail_action_log(block_id: Optional[str], action_name: str, error: BaseException) -> None:

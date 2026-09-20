@@ -42,7 +42,7 @@ _config: ContextVar[Optional[LoggingConfig]] = ContextVar("zamp_logging_config",
 
 
 def _parse_level(value: object) -> LogLevel:
-    """A :class:`LogLevel` from a level or its name, e.g. ``LogLevel.DEBUG`` or ``"debug"``.
+    """A :class:`LogLevel` from one, or from its name in any casing (``"debug"``, ``"DEBUG"``).
 
     Raises on anything else: this only ever reads what a script typed into
     ``configure_logging``, and a value that means nothing is a typo worth saying so about —
@@ -52,10 +52,10 @@ def _parse_level(value: object) -> LogLevel:
         return value
     if isinstance(value, str):
         try:
-            return LogLevel[value.strip().upper()]
-        except KeyError:
+            return LogLevel(value.strip().lower())
+        except ValueError:
             pass
-    valid = ", ".join(level.name.lower() for level in LogLevel)
+    valid = ", ".join(LogLevel)
     raise ValueError(f"{value!r} is not a known log level (expected one of: {valid})")
 
 
@@ -122,8 +122,8 @@ def _env_level() -> Optional[LogLevel]:
     ``configure_logging``: that is someone typing and worth correcting, this is the platform's
     and not worth failing a run over.
     """
-    raw = os.environ.get(ENV_LOG_LEVEL, "").strip().upper()
-    return LogLevel[raw] if raw in LogLevel.__members__ else None
+    raw = os.environ.get(ENV_LOG_LEVEL, "").strip().lower()
+    return LogLevel(raw) if raw in set(LogLevel) else None
 
 
 def configure_logging(
@@ -138,8 +138,9 @@ def configure_logging(
     :func:`configure_auto_action_logs` — so silencing yourself never silences those.
 
     Args:
-        level: Minimum level to emit, as a :class:`LogLevel` or its name (``"debug"``).
-            Defaults to ``INFO``, at which ``emit_debug`` is silent. Raises on an unknown name.
+        level: Minimum level to emit — a :class:`LogLevel` or simply ``"debug"`` / ``"info"``
+            / ``"error"``. Defaults to ``"info"``, at which ``emit_debug`` is silent. Raises on
+            an unknown name.
         enabled: ``False`` silences every one of your own emits, whatever their level.
 
     Both arguments are optional; omitting one leaves it as it was.
@@ -171,7 +172,7 @@ def should_emit(level: LogLevel) -> bool:
     Reads the config once: this runs on every one of the script's log lines.
     """
     config = current_logging_config()
-    return config.enabled and level >= config.level
+    return config.enabled and level.severity >= config.level.severity
 
 
 def auto_action_logs_enabled() -> bool:

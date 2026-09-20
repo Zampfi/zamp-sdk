@@ -32,8 +32,9 @@ class LoggingConfig(BaseModel):
     level: LogLevel = Field(
         default=DEFAULT_LEVEL,
         description=(
-            "Lowest level of the script's own lines to show. At the default, ``emit_debug`` is "
-            "silent — the line an author can leave in the code and only see when they look."
+            "Lowest level of the script's own lines to show: 'debug', 'info' or 'error'. At "
+            "the default, 'info', ``emit_debug`` is silent — the line an author can leave in "
+            "the code and only see when they go looking for it."
         ),
     )
     enabled: bool = Field(

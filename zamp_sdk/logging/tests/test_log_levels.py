@@ -226,3 +226,35 @@ class TestTheConfigTravelsWithTheRun:
         it off."""
         monkeypatch.setenv("ZAMP_AUTO_ACTION_LOGS", raw)
         assert log_control.current_logging_config().auto_action_logs is expected
+
+
+class TestWhatCountsAsALevel:
+    """A level is the word for it, but older forms still resolve — upgrading the SDK must not
+    make a config that already exists invalid."""
+
+    @pytest.mark.parametrize(
+        ("given", "expected"),
+        [
+            ("info", LogLevel.INFO),
+            ("INFO", LogLevel.INFO),
+            (" Debug ", LogLevel.DEBUG),
+            (LogLevel.ERROR, LogLevel.ERROR),
+            # Levels used to be the stdlib numbers; a config written then still parses.
+            (10, LogLevel.DEBUG),
+            (20, LogLevel.INFO),
+            (40, LogLevel.ERROR),
+        ],
+    )
+    def test_it_resolves(self, given, expected):
+        assert LogLevel(given) is expected
+        assert LoggingConfig(level=given).level is expected
+
+    @pytest.mark.parametrize("given", ["nope", "warning", 30, 1, True, None])
+    def test_something_that_is_not_a_level_is_rejected(self, given):
+        """Including 30 — WARNING does not exist yet, and silently picking a neighbour would
+        hide the fact that the line will never be emitted at the level its author meant."""
+        with pytest.raises(ValueError):
+            LogLevel(given)
+
+    def test_the_serialized_form_is_the_word(self):
+        assert LoggingConfig().model_dump(mode="json")["level"] == "info"

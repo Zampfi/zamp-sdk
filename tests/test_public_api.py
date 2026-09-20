@@ -58,7 +58,10 @@ class TestPublicApi:
             emit_info,
         )
 
-        assert LogLevel.DEBUG < LogLevel.INFO < LogLevel.ERROR
+        # A level is the word for it, so a skill writes "debug" rather than looking up 10.
+        assert [str(level) for level in LogLevel] == ["debug", "info", "error"]
+        # Ordering is severity, never the strings: alphabetically error would sort below info.
+        assert LogLevel.DEBUG.severity < LogLevel.INFO.severity < LogLevel.ERROR.severity
         assert all(
             callable(fn)
             for fn in (
