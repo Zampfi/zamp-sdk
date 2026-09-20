@@ -13,14 +13,14 @@ import os
 from contextvars import ContextVar
 from typing import Optional
 
-from zamp_sdk.context.env import (
+from zamp_sdk.context import (
     ENV_AUTO_ACTION_LOGS,
     ENV_LOG_ENABLED,
     ENV_LOG_LEVEL,
 )
 from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.constants import LogLevel
-from zamp_sdk.logging.models.config import LoggingConfig
+from zamp_sdk.logging.models import LoggingConfig
 
 logger = get_logger(__name__)
 
