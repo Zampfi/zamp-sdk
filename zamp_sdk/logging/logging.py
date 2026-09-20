@@ -57,24 +57,37 @@ from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 logger = get_logger(__name__)
 
 
-def _capture_text_log(block: ContentBlock, level: LogLevel) -> None:
-    """Record a line the script wrote into the step buffer, so it survives in the log file.
+async def _emit_text_line(content: str, level: LogLevel) -> EmitLogResult:
+    """One of the script's own lines: gate it, record it, send it.
 
-    Only the script's own text. A ``tool_use`` / ``tool_result`` block is left out because the
-    action it describes is already captured as an ``action`` step — recording both is the
-    duplication that made the file unreadable, and it is why dispatching ``emit_log`` is itself
-    excluded from capture.
+    The three steps live here rather than in :func:`emit_log` so that only the named helpers
+    record anything. ``emit_log`` stays the plain escape hatch — it is how a ``tool_use`` /
+    ``tool_result`` block is sent, and those must not reach the file: the action they describe
+    is already an ``action`` step, and restating it around every call is the duplication that
+    made the file unreadable.
 
-    Captured *after* the level gate and *before* the send, so the file holds exactly the lines
-    the run chose to show — including one whose delivery then failed, which is the moment the
-    author's own error text is most worth having.
+    Gating here too, rather than leaving it to ``emit_log``, is what keeps one rule over both
+    surfaces: a line the run chose not to show is a line it does not record either. The second
+    check inside ``emit_log`` still guards anyone calling it directly, and costs one comparison.
+    """
+    if not should_emit(level):
+        return EmitLogResult(ok=True)
+    _capture_text_log(content, level)
+    return await emit_log(TextContentBlock(content=content), level=level)
+
+
+def _capture_text_log(content: str, level: LogLevel) -> None:
+    """Record the line in the step buffer, so it survives in the run's log file.
+
+    Called *before* the send, so a line whose delivery then failed is still recorded — the
+    moment an author's own error text is most worth having.
 
     Never raises: this is bookkeeping wrapped around someone's log line.
     """
-    if not isinstance(block, TextContentBlock) or not capture_active():
+    if not capture_active():
         return
     try:
-        capture_step({"event": "log", "level": str(level), "content": block.content})
+        capture_step({"event": "log", "level": str(level), "content": content})
     except Exception as exc:
         logger.warning("could not capture the log line", error=repr(exc))
 
@@ -109,7 +122,6 @@ async def emit_log(
     """
     if not auto and not should_emit(level):
         return EmitLogResult(ok=True)
-    _capture_text_log(block, level)
     try:
         # Auto-stamp parent_block_id from the running tool's id so emitted blocks
         # group under the correct parent when parallel tool calls interleave.
@@ -151,13 +163,13 @@ async def emit_text(content: str) -> EmitLogResult:
     than an alias so its structured log line still reads ``emit_text``.
     """
     logger.info("emit_text", content=content)
-    return await emit_log(TextContentBlock(content=content), level=LogLevel.INFO)
+    return await _emit_text_line(content, LogLevel.INFO)
 
 
 async def emit_info(content: str) -> EmitLogResult:
     """Emit an informational progress line. Shown at the default level."""
     logger.info("emit_info", content=content)
-    return await emit_log(TextContentBlock(content=content), level=LogLevel.INFO)
+    return await _emit_text_line(content, LogLevel.INFO)
 
 
 async def emit_debug(content: str) -> EmitLogResult:
@@ -167,14 +179,14 @@ async def emit_debug(content: str) -> EmitLogResult:
     turns it on with ``configure_logging(level=LogLevel.DEBUG)``.
     """
     logger.debug("emit_debug", content=content)
-    return await emit_log(TextContentBlock(content=content), level=LogLevel.DEBUG)
+    return await _emit_text_line(content, LogLevel.DEBUG)
 
 
 async def emit_error(content: str) -> EmitLogResult:
     """Emit a failure line. Above every configurable threshold, so it is shown unless
     logging is switched off entirely with ``configure_logging(enabled=False)``."""
     logger.warning("emit_error", content=content)
-    return await emit_log(TextContentBlock(content=content), level=LogLevel.ERROR)
+    return await _emit_text_line(content, LogLevel.ERROR)
 
 
 async def emit_tool_use(

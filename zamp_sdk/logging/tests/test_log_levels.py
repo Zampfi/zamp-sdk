@@ -9,11 +9,13 @@ import pytest
 from zamp_sdk import (
     LoggingConfig,
     LogLevel,
+    TextContentBlock,
     bind_logging_config,
     configure_logging,
     emit_debug,
     emit_error,
     emit_info,
+    emit_log,
     emit_text,
     emit_tool_result,
     emit_tool_use,
@@ -308,6 +310,14 @@ class TestWhatReachesTheLogFile:
         await emit_error("Vendor API returned 502")
 
         assert [e["content"] for e in drain_log_capture()] == ["Vendor API returned 502"]
+
+    @pytest.mark.asyncio
+    async def test_emit_log_on_its_own_records_nothing(self, execute):
+        """Only the named helpers record. ``emit_log`` is the escape hatch — it is also how a
+        tool block is sent, and those must not reach the file."""
+        await emit_log(TextContentBlock(content="raw escape hatch"))
+
+        assert drain_log_capture() == []
 
     @pytest.mark.asyncio
     async def test_tool_blocks_are_not_captured_here(self, execute):
