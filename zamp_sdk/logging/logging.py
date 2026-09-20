@@ -60,15 +60,9 @@ logger = get_logger(__name__)
 async def _emit_text_line(content: str, level: LogLevel) -> EmitLogResult:
     """One of the script's own lines: gate it, record it, send it.
 
-    The three steps live here rather than in :func:`emit_log` so that only the named helpers
-    record anything. ``emit_log`` stays the plain escape hatch — it is how a ``tool_use`` /
-    ``tool_result`` block is sent, and those must not reach the file: the action they describe
-    is already an ``action`` step, and restating it around every call is the duplication that
-    made the file unreadable.
-
-    Gating here too, rather than leaving it to ``emit_log``, is what keeps one rule over both
-    surfaces: a line the run chose not to show is a line it does not record either. The second
-    check inside ``emit_log`` still guards anyone calling it directly, and costs one comparison.
+    Here rather than in :func:`emit_log` so only the named helpers record — ``emit_log`` also
+    sends tool blocks, and those belong in the file as ``action`` steps, not twice. Gating here
+    too keeps one rule over both surfaces: a line not shown is a line not recorded.
     """
     if not should_emit(level):
         return EmitLogResult(ok=True)
@@ -77,12 +71,9 @@ async def _emit_text_line(content: str, level: LogLevel) -> EmitLogResult:
 
 
 def _capture_text_log(content: str, level: LogLevel) -> None:
-    """Record the line in the step buffer, so it survives in the run's log file.
+    """Record the line in the step buffer so it survives in the run's log file.
 
-    Called *before* the send, so a line whose delivery then failed is still recorded — the
-    moment an author's own error text is most worth having.
-
-    Never raises: this is bookkeeping wrapped around someone's log line.
+    Before the send, so a line whose delivery failed is still recorded. Never raises.
     """
     if not capture_active():
         return

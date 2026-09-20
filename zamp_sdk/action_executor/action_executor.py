@@ -98,9 +98,8 @@ class ActionExecutor:
                 action_start_to_close_timeout=action_start_to_close_timeout,
             )
         except Exception as exc:
-            # Captured, not just shown. A reader of the step log is looking for the call that
-            # went wrong, which is exactly the one a capture-after-dispatch placement leaves out.
-            # The live block was already closed as failed by the route that opened it.
+            # Captured before the re-raise: the failed call is the one a reader of the log is
+            # looking for. The block was already closed as failed by the route that opened it.
             cls._capture_action_step(action_name, params, None, error=exc)
             raise
         cls._capture_action_step(action_name, params, result)
@@ -118,18 +117,13 @@ class ActionExecutor:
 
     @staticmethod
     def _unwrap_envelope(result: Any) -> Any:
-        """The answer inside the gateway's transport envelope.
+        """The answer inside the gateway's ``{"id", "status", "result", "error"}``.
 
-        The gateway returns ``{"id", "status", "result", "error"}``, where the id and status
-        describe the delivery rather than the answer and bury it under two lines of plumbing.
-        A failure shows its ``error``: the gateway reports one as a *value*, so reading
-        ``result`` alone would show ``None`` and lose the reason.
+        A failure shows its ``error`` — the gateway reports one as a *value*, so ``result``
+        alone would be ``None`` and lose the reason.
 
-        Display only — the envelope still reaches authored code untouched, because deployed
-        workflows read ``status`` and ``result`` off it themselves.
-
-        The key check is a guard, not a decision: only the gateway route calls this, so a
-        response of an unexpected shape is shown whole rather than reduced to nothing.
+        Display only: the envelope still reaches authored code untouched. The key check is a
+        guard, so a response of an unexpected shape is shown whole rather than emptied.
         """
         if isinstance(result, dict) and ACTION_ENVELOPE_KEYS.issubset(result):
             return result.get("error") or result["result"]
@@ -154,9 +148,8 @@ class ActionExecutor:
     ) -> Any:
         """Run the action down the route already resolved for it.
 
-        Each route logs, or does not, for itself. The two that reach the platform show the call
-        in the live message; a local call is plumbing on the worker that already owns the
-        action, so it has no logging code at all rather than a flag saying not to.
+        Each route logs, or does not, for itself: a local call is plumbing on the worker that
+        owns the action, so it has no logging code rather than a flag saying not to.
         """
         if route is Route.GATEWAY and gateway is not None:
             return await cls._execute_via_gateway(
@@ -338,8 +331,8 @@ class ActionExecutor:
     ) -> Any:
         """Call the platform over HTTP, showing the call in the live message.
 
-        No unwrapping here: this route already returns the action's own answer, and a terminal
-        failure raises rather than coming back as a value.
+        No unwrapping: this route returns the action's own answer, and a terminal failure
+        raises rather than coming back as a value.
         """
         config = cls._resolve_config(base_url, auth_token)
         # Attach the caller's channel context once here so the platform can inject it

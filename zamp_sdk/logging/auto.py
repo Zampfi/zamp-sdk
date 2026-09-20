@@ -1,23 +1,10 @@
-"""The SDK's own logging of action calls — everything it emits on the script's behalf.
+"""The blocks the SDK emits for an action call, so a script need not mirror its own calls.
 
-``ActionExecutor.execute`` opens a log before it dispatches and closes it after, so a script no
-longer has to mirror its own action calls into the live message. All of the policy lives here
-rather than at the call site: which routes log and which actions never do.
+The block id is the only state: ``None`` means the call was not logged, so the closing half
+has nothing to do and cannot leave a half-shown pair behind.
 
-Three plain functions, no object and no context manager. This sits inside every action call, in
-a sandbox script and in a code-executor workflow, so the path stays as short as it can be: when
-logging is off, :func:`open_action_log` returns ``None`` after one cheap check and allocates
-nothing at all.
-
-The block id is the only state, and handing it between the two halves makes the pairing correct
-by construction: ``None`` means this call was not logged, so the closing half has nothing to do
-and cannot leave a half-shown pair behind.
-
-This module imports the emit helpers normally. ``action_executor`` cannot: importing anything
-under ``zamp_sdk.logging`` runs this package's ``__init__``, which imports ``logging.py``, which
-imports ``action_executor`` — half-initialised, if that is where the chain started. So the one
-import that has to stay inside a function is ``execute``'s import of these helpers, by which
-time every module is loaded.
+Plain functions, no context manager — this sits inside every action call, so when logging is
+off :func:`open_action_log` returns after one cheap check.
 """
 
 from __future__ import annotations
@@ -33,14 +20,10 @@ logger = get_logger(__name__)
 
 
 def _should_log(action_name: str, log_action: Optional[bool]) -> bool:
-    """Whether this action call gets an auto-log.
+    """Whether this call gets a block. Only the routes that log ask.
 
-    Only asked by the routes that log at all — a local in-process call never reaches here, so
-    there is no route to weigh.
-
-    The first check is correctness, not preference, so nothing overrides it: dispatching
-    ``emit_log`` is how a log line is *sent*, so logging that call would call it again. After
-    that an explicit ``log_action`` settles it, and otherwise the run's own setting does.
+    The first check is correctness, not preference: dispatching ``emit_log`` is how a line is
+    *sent*, so logging that call would call it again.
     """
     if action_name in NON_LOGGABLE_ACTIONS:
         return False
@@ -56,23 +39,12 @@ async def open_action_log(
     summary: Optional[str] = None,
     log_action: Optional[bool] = None,
 ) -> Optional[str]:
-    """Show the call as running, and return the block id that will close it.
+    """Show the call as running; return the id that closes it, or ``None`` if it was not shown.
 
-    Args:
-        action_name: The action being dispatched; the block's name.
-        params: The action's input, shown as the block's input.
-        summary: The caller's own description of the call, used as the block's display title.
-            Without one the platform falls back to the action's configured display name.
-        log_action: An explicit per-call override, winning over the run's own setting. The
-            non-loggable actions still win over it — that is a correctness rule, not a taste.
+    ``summary`` becomes the block's title; without one the platform falls back to the action's
+    configured display name. ``log_action`` overrides the run's setting for this call.
 
-    Returns:
-        The block id, or ``None`` when this call is not logged **or the opening emit did not
-        land** — so a block that never appeared is never closed. Hand it to
-        :func:`close_action_log` or :func:`fail_action_log`.
-
-    Never raises. Logging is telemetry wrapped around somebody's real work, and a failure to
-    describe that work must not become a failure to do it.
+    Never raises — a failure to describe the work must not become a failure to do it.
     """
     if not _should_log(action_name, log_action):
         return None
@@ -82,10 +54,8 @@ async def open_action_log(
         logger.warning("could not open the action log", action_name=action_name, error=repr(exc))
         return None
     if not result.ok:
-        # An emit reports a delivery failure as a value rather than raising, so this is the
-        # only place it shows. Returning None keeps the pair honest: if the opening block
-        # never reached the message, a closing one would render as a result with nothing
-        # above it.
+        # Delivery failure comes back as a value, not a raise. None keeps the pair honest: a
+        # closing block under one that never appeared would render as a result with no call.
         logger.warning(
             "the action log did not open; not closing it either",
             action_name=action_name,
@@ -96,21 +66,17 @@ async def open_action_log(
 
 
 async def close_action_log(block_id: Optional[str], action_name: str, result: Any) -> None:
-    """Complete the call's block with what the caller decided to show. Never raises.
+    """Complete the block with what the caller decided to show. Never raises.
 
-    Takes the value as given. What a result means — whether it is wrapped, whether it is a
-    failure reported as data — depends on the route the call took, which is the dispatcher's
-    knowledge, not this module's.
+    Takes the value as given: what a result means depends on the route, which is the
+    dispatcher's knowledge, not this module's.
     """
     await _close(block_id, action_name, result)
 
 
 async def fail_action_log(block_id: Optional[str], action_name: str, error: BaseException) -> None:
-    """Complete the call's block with the failure, so it does not sit there running.
-
-    An open block renders as running forever, which reads as a hung system rather than a call
-    that failed. Never raises.
-    """
+    """Close the block as failed. An open one renders as running forever, which reads as a hung
+    system rather than a call that failed. Never raises."""
     await _close(block_id, action_name, f"FAILED: {error}")
 
 

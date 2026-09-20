@@ -19,13 +19,9 @@ ENV_TOOL_CALL_ID = "ZAMP_TOOL_CALL_ID"
 ENV_RUN_ID = "ZAMP_RUN_ID"
 ENV_EXECUTION_HOST = "ZAMP_SDK_EXECUTION_HOST"
 
-# This run's LoggingConfig, a field per variable in the same style as the channel context above.
-# They carry the platform's logging decision to a process that has no workflow input to put it
-# on; a code-executor run is handed the same model on its input instead.
-#
-# Unlike the channel variables, these are read independently rather than all-or-none: a partial
-# channel context is no context at all, whereas a logging config missing a field simply keeps
-# that field's default.
+# This run's LoggingConfig, one variable per field, for a process with no workflow input to
+# carry it on. Read independently rather than all-or-none like the channel variables above: a
+# missing field just keeps its default.
 ENV_LOG_LEVEL = "ZAMP_LOG_LEVEL"
 ENV_LOG_ENABLED = "ZAMP_LOG_ENABLED"
 ENV_AUTO_ACTION_LOGS = "ZAMP_AUTO_ACTION_LOGS"

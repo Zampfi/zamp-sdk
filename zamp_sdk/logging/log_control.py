@@ -1,22 +1,10 @@
-"""Policy and state for what the SDK logs: the levels and the two switches.
+"""What the SDK logs: one :class:`LoggingConfig`, and the two switches over it.
 
-Two gates, deliberately separate and separately named:
+:func:`configure_logging` governs only what the script emits; :func:`configure_auto_action_logs`
+only what the SDK emits for it. Neither switch reaches the other's state — silencing your own
+lines must not silence the platform's.
 
-* **The user gate** (:func:`configure_logging`) governs only what the script itself emits —
-  ``emit_text`` / ``emit_info`` / ``emit_debug`` / ``emit_error`` / ``emit_log``.
-* **The auto gate** (:func:`configure_auto_action_logs`) governs only what the SDK emits on the
-  script's behalf — the per-action tool-call blocks and ``datasets.stream``'s summary.
-
-Silencing your own logs must never silence the platform's, and vice versa, so neither switch
-reaches the other's state.
-
-One :class:`LoggingConfig` is all the state there is, and it travels with the run rather than
-being assembled from ambient values: a host binds it (the code executor, from its workflow
-input), a script can replace it through ``configure_logging`` / ``configure_auto_action_logs``,
-and a plain process with neither falls back to the environment.
-This module imports nothing from ``zamp_sdk.logging``'s other modules or from
-``zamp_sdk.action_executor``, so both can reach it without the import cycle described in that
-package's ``auto`` module. Constants live in ``zamp_sdk.logging.constants``.
+Imports nothing from this package's other modules, so both can reach it without a cycle.
 """
 
 from __future__ import annotations
@@ -36,17 +24,13 @@ from zamp_sdk.logging.models.config import LoggingConfig
 
 logger = get_logger(__name__)
 
-# This run's rules. The host binds it (the code executor, from its workflow input); a script can
-# replace it through ``configure_logging``. None means nobody has, so the environment decides.
+# This run's rules. None means nobody bound any, so the environment decides.
 _config: ContextVar[Optional[LoggingConfig]] = ContextVar("zamp_logging_config", default=None)
 
 
 def _parse_level(value: object) -> LogLevel:
-    """A :class:`LogLevel` from one, or from its name in any casing (``"debug"``, ``"DEBUG"``).
-
-    Raises on anything else: this only ever reads what a script typed into
-    ``configure_logging``, and a value that means nothing is a typo worth saying so about —
-    silently ignoring it would leave the author wondering why their level did not apply.
+    """A level from one, or its name in any casing. Raises on anything else: this reads what a
+    script typed, and a silently ignored typo leaves the author wondering why it did not apply.
     """
     if isinstance(value, LogLevel):
         return value
@@ -60,16 +44,11 @@ def _parse_level(value: object) -> LogLevel:
 
 
 def bind_logging_config(config: Optional[LoggingConfig]) -> None:
-    """Set the rules for this run, from a host that was handed them.
+    """Set the rules for this run, from a host that was handed them on its input.
 
-    The code executor calls this at the start of every run with the config on its input, which
-    is what keeps the rules identical across a replay and stops one run's settings reaching the
-    next on a long-lived worker.
-
-    ``None`` is accepted and means the run carries no config — a workflow that started before
-    the field existed, replaying now. The defaults apply, and they are bound *explicitly* rather
-    than left to fall through to the environment: an environment read inside a workflow is the
-    non-determinism this whole arrangement exists to avoid.
+    Keeps them identical across a replay, and stops one run's settings reaching the next on a
+    long-lived worker. ``None`` binds the defaults *explicitly* rather than falling through to
+    the environment — an environment read inside a workflow is the non-determinism this avoids.
     """
     _config.set(config or LoggingConfig())
 
@@ -81,16 +60,9 @@ def current_logging_config() -> LoggingConfig:
 
 
 def _config_from_env() -> LoggingConfig:
-    """The config for a process nobody bound one into — a sandbox script.
-
-    The same model a workflow gets, assembled from the environment because a plain process has
-    no input to carry it on. A workflow that *was* bound a config never reaches here, which is
-    what keeps it from reading the environment at all.
-
-    Each variable is read on its own: an unset or unreadable one leaves that field at its
-    default rather than discarding the rest. Nothing here raises — the platform sets these, and
-    a script should not die because a logging preference was malformed.
-    """
+    """The config for a process nobody bound one into — a sandbox script, which has no input to
+    carry it on. Each variable is read on its own, so one bad value costs that field, not the
+    rest. Never raises: a malformed preference must not kill a script."""
     updates: dict[str, object] = {}
     if (level := _env_level()) is not None:
         updates["level"] = level
@@ -102,11 +74,7 @@ def _config_from_env() -> LoggingConfig:
 
 
 def _env_flag(name: str) -> Optional[bool]:
-    """A boolean environment variable, or None when unset or unrecognised.
-
-    Compared rather than cast: an environment variable only carries strings, so ``bool("false")``
-    would be True.
-    """
+    """A boolean variable, or None. Compared rather than cast — ``bool("false")`` is True."""
     raw = os.environ.get(name, "").strip().lower()
     if raw in ("1", "true"):
         return True
@@ -116,11 +84,8 @@ def _env_flag(name: str) -> Optional[bool]:
 
 
 def _env_level() -> Optional[LogLevel]:
-    """The level from the environment, or None when unset or unrecognised.
-
-    Unrecognised resolves to None rather than raising, unlike a level a script passes to
-    ``configure_logging``: that is someone typing and worth correcting, this is the platform's
-    and not worth failing a run over.
+    """The level from the environment, or None. Unrecognised is ignored rather than raised on:
+    unlike a level a script typed, this one is the platform's and not worth failing a run over.
     """
     raw = os.environ.get(ENV_LOG_LEVEL, "").strip().lower()
     return LogLevel(raw) if raw in set(LogLevel) else None
@@ -131,19 +96,14 @@ def configure_logging(
     level: object = None,
     enabled: Optional[bool] = None,
 ) -> None:
-    """Configure what **this script's own** log lines do.
-
-    Affects ``emit_text`` / ``emit_info`` / ``emit_debug`` / ``emit_error`` / ``emit_log`` and
-    nothing else. The platform's automatic per-action logs are a separate switch —
-    :func:`configure_auto_action_logs` — so silencing yourself never silences those.
+    """Configure what **this script's own** log lines do. Omitting an argument leaves it as it was.
 
     Args:
-        level: Minimum level to emit — a :class:`LogLevel` or simply ``"debug"`` / ``"info"``
-            / ``"error"``. Defaults to ``"info"``, at which ``emit_debug`` is silent. Raises on
-            an unknown name.
-        enabled: ``False`` silences every one of your own emits, whatever their level.
+        level: Lowest level to emit — ``"debug"`` / ``"info"`` / ``"error"``. Raises on an
+            unknown name.
+        enabled: ``False`` silences all of your own lines, whatever their level.
 
-    Both arguments are optional; omitting one leaves it as it was.
+    The SDK's automatic per-action logs are a separate switch, so this never touches them.
     """
     updates: dict[str, object] = {}
     if level is not None:
@@ -157,28 +117,19 @@ def configure_logging(
 def configure_auto_action_logs(enabled: bool) -> None:
     """Turn the SDK's automatic per-action logging on or off for this script.
 
-    Governs the tool-call blocks the SDK emits for you, and ``datasets.stream``'s summary. Your
-    own ``emit_*`` calls are unaffected — those are :func:`configure_logging`.
-
-    Wins over whatever the run was started with, so a script can opt in where the platform has
-    not enabled it.
+    Wins over whatever the run was started with. Your own ``emit_*`` calls are unaffected —
+    those are :func:`configure_logging`.
     """
     _config.set(current_logging_config().model_copy(update={"auto_action_logs": bool(enabled)}))
 
 
 def should_emit(level: LogLevel) -> bool:
-    """Whether a log line of ``level`` written by the script itself is shown.
-
-    Reads the config once: this runs on every one of the script's log lines.
-    """
+    """Whether a line of ``level`` written by the script is shown. Runs on every one."""
     config = current_logging_config()
     return config.enabled and level.severity >= config.level.severity
 
 
 def auto_action_logs_enabled() -> bool:
-    """Whether the SDK should log action calls on the script's behalf.
-
-    Default off: the feature is enabled per environment during rollout, so that upgrading the
-    SDK on its own changes nothing about what a running script produces.
-    """
+    """Whether the SDK logs action calls for the script. Off by default, so upgrading the SDK
+    alone changes nothing about what a running script produces."""
     return current_logging_config().auto_action_logs
