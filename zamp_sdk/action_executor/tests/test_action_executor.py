@@ -17,6 +17,7 @@ from zamp_sdk.action_executor.utils import HttpClientError
 from zamp_sdk.capture import drain_log_capture, start_log_capture
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
+
 # The API path is the default, so reaching it needs no host declaration.
 _API_ENV: dict[str, str] = {}
 _HUB_ENV = {"ZAMP_SDK_EXECUTION_HOST": "actions_hub"}

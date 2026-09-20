@@ -48,7 +48,7 @@ class TestPreEmitLogsCarryVersion:
         # early log line must still carry the SDK version.
         execute = AsyncMock(return_value={"ok": True})
         with capture_logs() as logs:
-            with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+            with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
                 await emit_text("step done")
 
         progress = [entry for entry in logs if entry.get("event") == "emit_text"]

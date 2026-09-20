@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from zamp_sdk.action_executor.constants import (
     IN_PROGRESS_STATUSES,
+    LOGGED_ROUTES,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
@@ -16,6 +17,7 @@ from zamp_sdk.action_executor.constants import (
     POST_RETRY_TIMEOUT_SECONDS,
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
+    Route,
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
@@ -23,6 +25,12 @@ from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import ExecutionHost, current_execution_host, resolve_channel_context
 from zamp_sdk.logger import get_logger
+from zamp_sdk.logging.auto import (
+    close_action_log,
+    fail_action_log,
+    open_action_log,
+)
+from zamp_sdk.logging.constants import NON_LOGGABLE_ACTIONS
 
 logger = get_logger(__name__)
 
@@ -60,41 +68,110 @@ class ActionExecutor:
         execution_mode: ExecutionMode | None = None,
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
+        log_action: bool | None = None,
     ) -> Any:
-        if current_execution_host() is ExecutionHost.ACTIONS_HUB:
-            gateway = cls._get_action_gateway()
-            if gateway is not None and not await cls._is_registered_locally(action_name):
-                result = await gateway(
-                    action_name,
-                    params,
-                    summary=summary,
-                    return_type=return_type,
-                    action_retry_policy=action_retry_policy,
-                    action_start_to_close_timeout=action_start_to_close_timeout,
-                )
-            else:
-                result = await cls._execute_via_actions_hub(
-                    action_name=action_name,
-                    params=params,
-                    summary=summary,
-                    return_type=return_type,
-                    execution_mode=execution_mode,
-                    action_retry_policy=action_retry_policy,
-                    action_start_to_close_timeout=action_start_to_close_timeout,
-                )
-        else:
-            result = await cls._execute_via_api(
+        """Run one platform action and return its result.
+
+        ``summary`` doubles as the display title of the log block this call produces — the
+        one place to put a human-readable "what this call is doing".
+
+        ``log_action`` overrides whether that block is emitted at all, winning over every
+        other consideration. Leave it unset: the SDK logs API and gateway calls by default
+        and stays quiet when the script logs the call itself.
+        """
+        # Resolved before dispatch, not inside it, so one place names every route and one
+        # place decides which of them log.
+        route, gateway = await cls._resolve_route(action_name)
+
+        block_id = await open_action_log(
+            action_name,
+            params,
+            summary=summary,
+            should_log=route in LOGGED_ROUTES,
+            log_action=log_action,
+        )
+        try:
+            result = await cls._dispatch(
+                route=route,
+                gateway=gateway,
                 action_name=action_name,
                 params=params,
                 base_url=base_url,
                 auth_token=auth_token,
                 summary=summary,
                 return_type=return_type,
+                execution_mode=execution_mode,
                 action_retry_policy=action_retry_policy,
                 action_start_to_close_timeout=action_start_to_close_timeout,
             )
+        except Exception as exc:
+            # The failure is captured as well as shown. A reader of the step log is looking for
+            # the call that went wrong, which is exactly the one the old capture-after-dispatch
+            # placement left out.
+            cls._capture_action_step(action_name, params, None, error=exc)
+            await fail_action_log(block_id, action_name, exc)
+            raise
+        await close_action_log(block_id, action_name, result)
+
         cls._capture_action_step(action_name, params, result)
         return result
+
+    @classmethod
+    async def _resolve_route(cls, action_name: str) -> tuple[Route, Callable[..., Any] | None]:
+        """Which of the three dispatch paths this action takes, and the gateway if it needs one."""
+        if current_execution_host() is not ExecutionHost.ACTIONS_HUB:
+            return Route.API, None
+        gateway = cls._get_action_gateway()
+        if gateway is not None and not await cls._is_registered_locally(action_name):
+            return Route.GATEWAY, gateway
+        return Route.LOCAL_AH, None
+
+    @classmethod
+    async def _dispatch(
+        cls,
+        *,
+        route: Route,
+        gateway: Callable[..., Any] | None,
+        action_name: str,
+        params: dict[str, Any],
+        base_url: str | None,
+        auth_token: str | None,
+        summary: str | None,
+        return_type: type | None,
+        execution_mode: ExecutionMode | None,
+        action_retry_policy: RetryPolicy | None,
+        action_start_to_close_timeout: timedelta | None,
+    ) -> Any:
+        """Run the action down the route already resolved for it."""
+        if route is Route.GATEWAY and gateway is not None:
+            return await gateway(
+                action_name,
+                params,
+                summary=summary,
+                return_type=return_type,
+                action_retry_policy=action_retry_policy,
+                action_start_to_close_timeout=action_start_to_close_timeout,
+            )
+        if route is Route.LOCAL_AH:
+            return await cls._execute_via_actions_hub(
+                action_name=action_name,
+                params=params,
+                summary=summary,
+                return_type=return_type,
+                execution_mode=execution_mode,
+                action_retry_policy=action_retry_policy,
+                action_start_to_close_timeout=action_start_to_close_timeout,
+            )
+        return await cls._execute_via_api(
+            action_name=action_name,
+            params=params,
+            base_url=base_url,
+            auth_token=auth_token,
+            summary=summary,
+            return_type=return_type,
+            action_retry_policy=action_retry_policy,
+            action_start_to_close_timeout=action_start_to_close_timeout,
+        )
 
     @staticmethod
     def _as_string(value: Any) -> str:
@@ -144,10 +221,19 @@ class ActionExecutor:
         return cls._stringify_bad_values(value)
 
     @classmethod
-    def _capture_action_step(cls, action_name: str, params: dict[str, Any], result: Any) -> None:
-        """Append this action call (name + input + output) to the in-execution step
-        buffer so the host runtime can surface every step it ran. A no-op unless capture
-        is active (e.g. never inside a sandbox); emit_log suppresses this for its own call.
+    def _capture_action_step(
+        cls,
+        action_name: str,
+        params: dict[str, Any],
+        result: Any,
+        *,
+        error: BaseException | None = None,
+    ) -> None:
+        """Append this action call to the in-execution step buffer so the host runtime can
+        surface every step it ran: name + input, then ``output`` or, when the call raised,
+        ``error``. A failed call is the one a reader of the log is looking for, so it is
+        recorded rather than omitted. A no-op unless capture is active (e.g. never inside a
+        sandbox); emit_log suppresses this for its own call.
 
         The host drains the buffer and may serialize it, so both halves have to be
         JSON-safe. They are normally captured as-is; only if one isn't do we replace the
@@ -157,21 +243,27 @@ class ActionExecutor:
         reaching here is no proof they can be serialized. The whole value is checked with a
         single cheap ``json.dumps`` first, so the happy path stays one call.
 
+        An action in :data:`NON_LOGGABLE_ACTIONS` records nothing: sending a log *is* calling
+        one, so it is how the run reports itself rather than a step of the run's work, and the
+        same reasoning that keeps it out of the live message keeps it out of the file.
+
         Nothing here may raise into the caller. The action has already succeeded and its
         result is about to be returned; a value that misbehaves while being inspected (a
         mapping whose ``items()`` raises, a ``__str__`` that throws) must cost the log line,
         not the call."""
         try:
-            if not capture_active():
+            if action_name in NON_LOGGABLE_ACTIONS or not capture_active():
                 return
-            capture_step(
-                {
-                    "event": "action",
-                    "name": action_name,
-                    "input": cls._json_safe(params, half="input", action_name=action_name),
-                    "output": cls._json_safe(result, half="output", action_name=action_name),
-                }
-            )
+            entry: dict[str, Any] = {
+                "event": "action",
+                "name": action_name,
+                "input": cls._json_safe(params, half="input", action_name=action_name),
+            }
+            if error is not None:
+                entry["error"] = cls._as_string(error)
+            else:
+                entry["output"] = cls._json_safe(result, half="output", action_name=action_name)
+            capture_step(entry)
         except Exception as exc:
             logger.warning(
                 "could not capture the action step; the action itself is unaffected",
