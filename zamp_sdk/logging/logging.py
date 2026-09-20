@@ -57,12 +57,15 @@ from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 logger = get_logger(__name__)
 
 
-async def _emit_text_line(content: str, level: LogLevel) -> EmitLogResult:
-    """One of the script's own lines: gate it, record it, send it.
+async def _emit_recorded_line(content: str, level: LogLevel) -> EmitLogResult:
+    """A line the run keeps: recorded in the step buffer as well as shown.
 
-    Here rather than in :func:`emit_log` so only the named helpers record — ``emit_log`` also
-    sends tool blocks, and those belong in the file as ``action`` steps, not twice. Gating here
-    too keeps one rule over both surfaces: a line not shown is a line not recorded.
+    Recording here rather than in :func:`emit_log` is what keeps tool blocks out of the file —
+    the action they describe is already an ``action`` entry — and what leaves ``emit_text``
+    display-only, since it does not come through here.
+
+    Gating here as well as in ``emit_log`` costs one comparison and means a line the run chose
+    not to show is a line it does not record either.
     """
     if not should_emit(level):
         return EmitLogResult(ok=True)
@@ -147,37 +150,39 @@ async def emit_log(
 
 
 async def emit_text(content: str) -> EmitLogResult:
-    """Emit a progress/milestone text log into the running agent message.
+    """Show a progress line in the running agent message, without keeping it.
 
-    Unchanged: an ``INFO`` line, exactly as before levels existed. :func:`emit_info` is the
-    same call under the name that says which level it is. Kept as its own function rather
-    than an alias so its structured log line still reads ``emit_text``.
+    The one emit that is display-only: it is shown and not written to the run's log file.
+    Use it for the running commentary — "step 3 of 12" — and :func:`emit_info` for a line
+    worth reading back afterwards.
     """
     logger.info("emit_text", content=content)
-    return await _emit_text_line(content, LogLevel.INFO)
+    return await emit_log(TextContentBlock(content=content), level=LogLevel.INFO)
 
 
 async def emit_info(content: str) -> EmitLogResult:
-    """Emit an informational progress line. Shown at the default level."""
+    """Emit an informational line. Shown at the default level, and kept in the run's log file."""
     logger.info("emit_info", content=content)
-    return await _emit_text_line(content, LogLevel.INFO)
+    return await _emit_recorded_line(content, LogLevel.INFO)
 
 
 async def emit_debug(content: str) -> EmitLogResult:
-    """Emit a diagnostic line, hidden unless the level is lowered to ``DEBUG``.
+    """Emit a diagnostic line, hidden unless the level is lowered to ``"debug"``.
 
-    The line you can leave in the code permanently: silent by default, there when someone
-    turns it on with ``configure_logging(level=LogLevel.DEBUG)``.
+    The line you can leave in permanently: silent by default, shown and kept in the run's log
+    file when someone turns it on.
     """
     logger.debug("emit_debug", content=content)
-    return await _emit_text_line(content, LogLevel.DEBUG)
+    return await _emit_recorded_line(content, LogLevel.DEBUG)
 
 
 async def emit_error(content: str) -> EmitLogResult:
-    """Emit a failure line. Above every configurable threshold, so it is shown unless
-    logging is switched off entirely with ``configure_logging(enabled=False)``."""
+    """Emit a failure line, shown and kept in the run's log file.
+
+    Above every configurable threshold, so it survives unless logging is switched off entirely.
+    """
     logger.warning("emit_error", content=content)
-    return await _emit_text_line(content, LogLevel.ERROR)
+    return await _emit_recorded_line(content, LogLevel.ERROR)
 
 
 async def _emit_tool_use_block(

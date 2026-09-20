@@ -284,12 +284,10 @@ class TestLogCapture:
             tid = await emit_tool_use("MyTool", display_title="Doing", input={"x": 1})
             await emit_tool_result(tid, {"ok": True}, name="MyTool")
 
-        # Text is kept — it is the author's own account, and the file is where it has to
-        # survive. Tool blocks are not: the action they describe is already an ``action``
-        # entry, and restating it around every call is what bloated the file.
-        assert [{k: v for k, v in entry.items() if k != "sdk_version"} for entry in drain_log_capture()] == [
-            {"event": "log", "level": "info", "content": "hello"}
-        ]
+        # Nothing: emit_text is display-only, and a tool block's action is already captured
+        # as its own ``action`` entry. emit_info / emit_debug / emit_error are what reach the
+        # file — see test_log_levels.py.
+        assert drain_log_capture() == []
 
     def test_captures_action_call(self):
         start_log_capture()
@@ -318,9 +316,9 @@ class TestLogCapture:
         with patch("zamp_sdk.action_executor.ActionExecutor.execute", fake_execute):
             await emit_text("hi")
 
-        # The line itself is captured; the *dispatch* that delivered it is not. Otherwise
-        # every log line would also appear as an ``action`` step calling ``emit_log``.
-        assert [entry["event"] for entry in drain_log_capture()] == ["log"]
+        # Nothing: emit_text does not record, and the dispatch that delivered it is skipped
+        # by name — otherwise every line would also show up as an action calling emit_log.
+        assert drain_log_capture() == []
 
     def test_capture_is_noop_without_start(self):
         # No start_log_capture() -> capture is a no-op (blocks still stream live elsewhere).

@@ -277,9 +277,10 @@ class TestWhatReachesTheLogFile:
         drain_log_capture()
 
     @pytest.mark.asyncio
-    async def test_the_lines_the_run_showed_are_the_lines_it_records(self, execute):
-        """One rule, not two: the level gate decides what is shown, and the file mirrors it —
-        so ``emit_debug`` is absent here for the same reason it is absent from the message."""
+    async def test_it_records_the_levelled_lines_and_not_the_progress_ones(self, execute):
+        """``emit_text`` is shown and dropped — it is commentary for whoever is watching, and
+        the file is read afterwards. ``emit_debug`` is absent for a different reason: the level
+        gate, which governs both surfaces alike."""
         await emit_text("Step 1 of 3")
         await emit_info("Matched 87 of 90 rows")
         await emit_debug("cursor=abc123")
@@ -288,10 +289,16 @@ class TestWhatReachesTheLogFile:
         captured = [(e["level"], e["content"]) for e in drain_log_capture()]
 
         assert captured == [
-            ("info", "Step 1 of 3"),
             ("info", "Matched 87 of 90 rows"),
             ("error", "Vendor API returned 502"),
         ]
+
+    @pytest.mark.asyncio
+    async def test_emit_text_is_shown_but_not_kept(self, execute):
+        await emit_text("Step 1 of 3")
+
+        assert execute.await_count == 1, "it still reaches the live message"
+        assert drain_log_capture() == [], "and leaves nothing in the file"
 
     @pytest.mark.asyncio
     async def test_lowering_the_level_adds_the_debug_line(self, execute):
