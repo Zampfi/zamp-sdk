@@ -87,7 +87,7 @@ class ActionExecutor:
             action_name,
             params,
             summary=summary,
-            should_log=route in LOGGED_ROUTES,
+            logged_route=route in LOGGED_ROUTES,
             log_action=log_action,
         )
         try:
@@ -111,7 +111,7 @@ class ActionExecutor:
             cls._capture_action_step(action_name, params, None, error=exc)
             await fail_action_log(block_id, action_name, exc)
             raise
-        await close_action_log(block_id, action_name, result)
+        await close_action_log(block_id, action_name, result, envelope=route is Route.GATEWAY)
 
         cls._capture_action_step(action_name, params, result)
         return result

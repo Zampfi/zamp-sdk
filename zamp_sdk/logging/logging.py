@@ -189,14 +189,14 @@ async def emit_error(content: str) -> EmitLogResult:
     return await _emit_text_line(content, LogLevel.ERROR)
 
 
-async def emit_tool_use(
+async def _emit_tool_use_block(
     name: str,
     *,
     display_title: Optional[str] = None,
     input: Optional[dict] = None,
     id: Optional[str] = None,
     auto: bool = False,
-) -> str:
+) -> tuple[str, EmitLogResult]:
     """Emit a ``tool_use`` log block (mirrors an action call as "running").
 
     Pair with :func:`emit_tool_result` using the returned id. Use this whenever
@@ -226,7 +226,7 @@ async def emit_tool_use(
         display_title=display_title,
         input_json=input_json,
     )
-    await emit_log(
+    result = await emit_log(
         ToolUseContentBlock(
             id=tool_id,
             name=name,
@@ -235,6 +235,23 @@ async def emit_tool_use(
         ),
         auto=auto,
     )
+    return tool_id, result
+
+
+async def emit_tool_use(
+    name: str,
+    *,
+    display_title: Optional[str] = None,
+    input: Optional[dict] = None,
+    id: Optional[str] = None,
+    auto: bool = False,
+) -> str:
+    """Emit a ``tool_use`` block and return its id. See :func:`_emit_tool_use_block`.
+
+    Always returns the id, even when delivery failed — the caller has an id to pair with either
+    way. The SDK's own auto-logger needs to know, so it uses the private form.
+    """
+    tool_id, _ = await _emit_tool_use_block(name, display_title=display_title, input=input, id=id, auto=auto)
     return tool_id
 
 

@@ -16,6 +16,7 @@ from zamp_sdk import configure_auto_action_logs
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.capture import drain_log_capture, start_log_capture
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
+from zamp_sdk.logging.models import EmitLogResult
 from zamp_sdk.version import __version__
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
@@ -86,11 +87,11 @@ class TestTheEmittedBlocks:
         configure_auto_action_logs(True)
         with (
             patch.object(ActionExecutor, "_dispatch", new_callable=AsyncMock) as run,
-            patch("zamp_sdk.logging.auto.emit_tool_use", new_callable=AsyncMock) as use,
+            patch("zamp_sdk.logging.auto._emit_tool_use_block", new_callable=AsyncMock) as use,
             patch("zamp_sdk.logging.auto.emit_tool_result", new_callable=AsyncMock) as result,
         ):
             run.return_value = {"ok": True}
-            use.return_value = "emit_1"
+            use.return_value = ("emit_1", EmitLogResult(ok=True))
             await ActionExecutor.execute("do_thing", {"a": 1}, summary="Doing the thing")
 
         assert use.await_count == 1
@@ -127,7 +128,7 @@ class TestTheEmittedBlocks:
         with (
             patch.object(ActionExecutor, "_dispatch", new_callable=AsyncMock) as run,
             patch(
-                "zamp_sdk.logging.auto.emit_tool_use",
+                "zamp_sdk.logging.auto._emit_tool_use_block",
                 new=AsyncMock(side_effect=RuntimeError("emit broke")),
             ),
         ):

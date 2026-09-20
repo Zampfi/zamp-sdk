@@ -27,22 +27,26 @@ from typing import Any, Optional
 from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.constants import ACTION_ENVELOPE_KEYS, NON_LOGGABLE_ACTIONS
 from zamp_sdk.logging.log_control import auto_action_logs_enabled
-from zamp_sdk.logging.logging import emit_tool_result, emit_tool_use
+from zamp_sdk.logging.logging import _emit_tool_use_block, emit_tool_result
 
 logger = get_logger(__name__)
 
 
-def _should_log(action_name: str, log_action: Optional[bool]) -> bool:
+def _should_log(action_name: str, log_action: Optional[bool], logged_route: bool) -> bool:
     """Whether this action call gets an auto-log.
 
     The first check is correctness, not preference, so nothing overrides it: dispatching
     ``emit_log`` is how a log line is *sent*, so logging that call would call it again.
+
+    Everything after it is preference, and an explicit ``log_action`` settles it — including on
+    a route that is not logged by default. ``logged_route`` is that default, not a veto: an
+    in-process call is plumbing *unless the caller says otherwise*.
     """
     if action_name in NON_LOGGABLE_ACTIONS:
         return False
     if log_action is not None:
         return log_action
-    return auto_action_logs_enabled()
+    return logged_route and auto_action_logs_enabled()
 
 
 async def open_action_log(
@@ -50,7 +54,7 @@ async def open_action_log(
     params: dict[str, Any],
     *,
     summary: Optional[str] = None,
-    should_log: bool = True,
+    logged_route: bool = True,
     log_action: Optional[bool] = None,
 ) -> Optional[str]:
     """Show the call as running, and return the block id that will close it.
@@ -60,38 +64,69 @@ async def open_action_log(
         params: The action's input, shown as the block's input.
         summary: The caller's own description of the call, used as the block's display title.
             Without one the platform falls back to the action's configured display name.
-        should_log: False for a route that is never logged — an in-process call on the worker
-            that already owns the action is plumbing, not a tool call the user is waiting on.
-        log_action: An explicit per-call override, winning over every other consideration.
+        logged_route: Whether the route this call took is one the SDK logs by default. False
+            for an in-process call on the worker that already owns the action — plumbing, not a
+            tool call the user is waiting on. A default, not a veto: ``log_action`` overrides it.
+        log_action: An explicit per-call override, winning over every other consideration
+            except the non-loggable actions, which are a correctness rule.
 
     Returns:
-        The block id, or ``None`` when this call is not logged — including when the emit itself
-        failed. Hand it to :func:`close_action_log` or :func:`fail_action_log`.
+        The block id, or ``None`` when this call is not logged **or the opening emit did not
+        land** — so a block that never appeared is never closed. Hand it to
+        :func:`close_action_log` or :func:`fail_action_log`.
 
     Never raises. Logging is telemetry wrapped around somebody's real work, and a failure to
     describe that work must not become a failure to do it.
     """
-    if not (should_log and _should_log(action_name, log_action)):
+    if not _should_log(action_name, log_action, logged_route):
         return None
     try:
-        return await emit_tool_use(action_name, display_title=summary, input=params, auto=True)
+        block_id, result = await _emit_tool_use_block(action_name, display_title=summary, input=params, auto=True)
     except Exception as exc:
         logger.warning("could not open the action log", action_name=action_name, error=repr(exc))
         return None
+    if not result.ok:
+        # An emit reports a delivery failure as a value rather than raising, so this is the
+        # only place it shows. Returning None keeps the pair honest: if the opening block
+        # never reached the message, a closing one would render as a result with nothing
+        # above it.
+        logger.warning(
+            "the action log did not open; not closing it either",
+            action_name=action_name,
+            error=result.error,
+        )
+        return None
+    return block_id
 
 
-async def close_action_log(block_id: Optional[str], action_name: str, result: Any) -> None:
-    """Complete the call's block with what the action returned. Never raises."""
-    await _close(block_id, action_name, unwrap_result(result))
+async def close_action_log(
+    block_id: Optional[str],
+    action_name: str,
+    result: Any,
+    *,
+    envelope: bool = False,
+) -> None:
+    """Complete the call's block with what the action returned. Never raises.
+
+    ``envelope`` says the value came back wrapped by the gateway. The caller knows which route
+    it took, so it is told rather than guessed at — a result is not inspected to see whether it
+    *looks* like an envelope, which would mistake an action whose own output happens to carry
+    those keys.
+    """
+    await _close(block_id, action_name, unwrap_result(result) if envelope else result)
 
 
 def unwrap_result(result: Any) -> Any:
     """What the action actually answered, with the gateway's transport envelope taken off.
 
-    A gateway call comes back as ``{"id", "status", "result", "error"}``. The id and status
-    describe the delivery rather than the answer, and showing them buries the answer under two
-    lines of plumbing. The API path already returns the inner value, so stripping it here also
-    makes the two routes display alike.
+    Only ever called for a gateway result, which comes back as
+    ``{"id", "status", "result", "error"}``. The id and status describe the delivery rather than
+    the answer, and showing them buries the answer under two lines of plumbing. The API path
+    already returns the inner value, so stripping it here makes the two routes display alike.
+
+    The key check is a guard, not the decision — the route already settled that. It is here so
+    a gateway response that is not shaped as expected is passed through whole rather than
+    silently reduced to nothing.
 
     A failed call shows its ``error``, because the gateway reports failure as a *value* — it
     returns ``status="FAILED", result=None`` instead of raising, so this runs on the success

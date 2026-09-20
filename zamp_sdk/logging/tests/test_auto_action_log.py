@@ -22,6 +22,7 @@ from zamp_sdk.logging.auto import (
 )
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
 from zamp_sdk.logging.log_control import configure_auto_action_logs
+from zamp_sdk.logging.models import EmitLogResult
 
 
 class _Emits:
@@ -31,10 +32,12 @@ class _Emits:
         self.uses: list[tuple] = []
         self.results: list[tuple] = []
         self.texts: list[str] = []
+        self.delivers = True
 
     async def tool_use(self, name, *, display_title=None, input=None, id=None, auto=False):
+        """Mirrors ``_emit_tool_use_block``: the id plus whether the emit actually landed."""
         self.uses.append((name, display_title, input, auto))
-        return f"emit_{len(self.uses)}"
+        return f"emit_{len(self.uses)}", EmitLogResult(ok=self.delivers)
 
     async def tool_result(self, block_id, content, *, name=None, auto=False):
         self.results.append((block_id, content, name, auto))
@@ -59,17 +62,17 @@ def emits():
     """
     recorder = _Emits()
     with (
-        patch("zamp_sdk.logging.auto.emit_tool_use", recorder.tool_use),
+        patch("zamp_sdk.logging.auto._emit_tool_use_block", recorder.tool_use),
         patch("zamp_sdk.logging.auto.emit_tool_result", recorder.tool_result),
         patch("zamp_sdk.logging.logging.emit_text", recorder.text),
     ):
         yield recorder
 
 
-async def _run(action="do_thing", *, params=None, summary=None, should_log=True, log_action=None):
+async def _run(action="do_thing", *, params=None, summary=None, logged_route=True, log_action=None):
     """One successful action call, logged the way ``execute`` logs it."""
     block_id = await open_action_log(
-        action, params or {}, summary=summary, should_log=should_log, log_action=log_action
+        action, params or {}, summary=summary, logged_route=logged_route, log_action=log_action
     )
     await close_action_log(block_id, action, {"ok": True})
     return block_id
@@ -101,7 +104,7 @@ class TestWhenItLogs:
 
     @pytest.mark.asyncio
     async def test_does_not_log_a_local_actions_hub_call(self, emits):
-        await _run(should_log=False)
+        await _run(logged_route=False)
         assert emits.uses == []
 
     @pytest.mark.asyncio
@@ -157,7 +160,7 @@ class TestPairing:
     async def test_a_call_that_was_not_logged_emits_neither_half(self, emits):
         """Half-suppression is worse than none: a result would dangle against an id that was
         never announced. The None block id is what rules that out."""
-        block_id = await open_action_log("do_thing", {}, should_log=False)
+        block_id = await open_action_log("do_thing", {}, logged_route=False)
         assert block_id is None
 
         await fail_action_log(block_id, "do_thing", RuntimeError("boom"))
@@ -171,7 +174,7 @@ class TestPairing:
         """Logging is telemetry wrapped around somebody's real work. It may lose the line; it
         may not lose the work."""
         with patch(
-            "zamp_sdk.logging.auto.emit_tool_use",
+            "zamp_sdk.logging.auto._emit_tool_use_block",
             new=AsyncMock(side_effect=RuntimeError("emit broke")),
         ):
             block_id = await open_action_log("do_thing", {})
@@ -277,10 +280,21 @@ class TestTheResultShown:
         assert unwrap_result(returned) == shown
 
     @pytest.mark.asyncio
-    async def test_the_block_is_closed_with_the_unwrapped_result(self):
+    async def test_a_gateway_result_is_closed_unwrapped(self):
         envelope = {"id": "x", "status": "COMPLETED", "result": {"rows": 3}}
 
         with patch("zamp_sdk.logging.auto.emit_tool_result", new=AsyncMock()) as emit:
-            await close_action_log("block-1", "agent_db_query", envelope)
+            await close_action_log("block-1", "agent_db_query", envelope, envelope=True)
 
         assert emit.await_args.args[1] == {"rows": 3}, "the id and status are plumbing"
+
+    @pytest.mark.asyncio
+    async def test_any_other_route_is_closed_with_what_it_returned(self):
+        """The caller says which route it took; the value is never sniffed. An action whose own
+        output happens to carry those keys is left whole."""
+        looks_like_one = {"id": "row-7", "status": "active", "result": "kept"}
+
+        with patch("zamp_sdk.logging.auto.emit_tool_result", new=AsyncMock()) as emit:
+            await close_action_log("block-1", "read_row", looks_like_one)
+
+        assert emit.await_args.args[1] == looks_like_one
