@@ -35,6 +35,7 @@ import json
 import os
 from typing import Any, Optional
 
+from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import (
     ENV_TOOL_CALL_ID,
     ExecutionHost,
@@ -54,6 +55,28 @@ from zamp_sdk.logging.models import (
 from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 
 logger = get_logger(__name__)
+
+
+def _capture_text_log(block: ContentBlock, level: LogLevel) -> None:
+    """Record a line the script wrote into the step buffer, so it survives in the log file.
+
+    Only the script's own text. A ``tool_use`` / ``tool_result`` block is left out because the
+    action it describes is already captured as an ``action`` step — recording both is the
+    duplication that made the file unreadable, and it is why dispatching ``emit_log`` is itself
+    excluded from capture.
+
+    Captured *after* the level gate and *before* the send, so the file holds exactly the lines
+    the run chose to show — including one whose delivery then failed, which is the moment the
+    author's own error text is most worth having.
+
+    Never raises: this is bookkeeping wrapped around someone's log line.
+    """
+    if not isinstance(block, TextContentBlock) or not capture_active():
+        return
+    try:
+        capture_step({"event": "log", "level": str(level), "content": block.content})
+    except Exception as exc:
+        logger.warning("could not capture the log line", error=repr(exc))
 
 
 def _current_tool_call_id() -> Optional[str]:
@@ -86,6 +109,7 @@ async def emit_log(
     """
     if not auto and not should_emit(level):
         return EmitLogResult(ok=True)
+    _capture_text_log(block, level)
     try:
         # Auto-stamp parent_block_id from the running tool's id so emitted blocks
         # group under the correct parent when parallel tool calls interleave.

@@ -15,8 +15,11 @@ from zamp_sdk import (
     emit_error,
     emit_info,
     emit_text,
+    emit_tool_result,
+    emit_tool_use,
 )
 from zamp_sdk.action_executor import ActionExecutor
+from zamp_sdk.capture import drain_log_capture, start_log_capture
 from zamp_sdk.logging import log_control
 
 
@@ -258,3 +261,59 @@ class TestWhatCountsAsALevel:
 
     def test_the_serialized_form_is_the_word(self):
         assert LoggingConfig().model_dump(mode="json")["level"] == "info"
+
+
+class TestWhatReachesTheLogFile:
+    """The script's own lines are captured into the step buffer, so the run's file keeps the
+    author's own account of what happened — most of all the errors — alongside the action steps.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _capturing(self):
+        start_log_capture()
+        yield
+        drain_log_capture()
+
+    @pytest.mark.asyncio
+    async def test_the_lines_the_run_showed_are_the_lines_it_records(self, execute):
+        """One rule, not two: the level gate decides what is shown, and the file mirrors it —
+        so ``emit_debug`` is absent here for the same reason it is absent from the message."""
+        await emit_text("Step 1 of 3")
+        await emit_info("Matched 87 of 90 rows")
+        await emit_debug("cursor=abc123")
+        await emit_error("Vendor API returned 502")
+
+        captured = [(e["level"], e["content"]) for e in drain_log_capture()]
+
+        assert captured == [
+            ("info", "Step 1 of 3"),
+            ("info", "Matched 87 of 90 rows"),
+            ("error", "Vendor API returned 502"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_lowering_the_level_adds_the_debug_line(self, execute):
+        configure_logging(level=LogLevel.DEBUG)
+
+        await emit_debug("cursor=abc123")
+
+        assert [e["content"] for e in drain_log_capture()] == ["cursor=abc123"]
+
+    @pytest.mark.asyncio
+    async def test_a_line_whose_delivery_failed_is_still_recorded(self, execute):
+        """Captured before the send. A line that could not be delivered is exactly the one
+        worth having in the file, and an author's error text most of all."""
+        execute.side_effect = RuntimeError("no channel")
+
+        await emit_error("Vendor API returned 502")
+
+        assert [e["content"] for e in drain_log_capture()] == ["Vendor API returned 502"]
+
+    @pytest.mark.asyncio
+    async def test_tool_blocks_are_not_captured_here(self, execute):
+        """The action they describe is already an ``action`` step; recording both is the
+        duplication that made the file unreadable."""
+        block_id = await emit_tool_use("do_thing", input={"a": 1})
+        await emit_tool_result(block_id, {"ok": True}, name="do_thing")
+
+        assert drain_log_capture() == []

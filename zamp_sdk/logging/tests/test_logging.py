@@ -263,9 +263,9 @@ class TestBlockShapes:
 
 
 class TestLogCapture:
-    """The capture buffer records clean, logger-style steps: emitted blocks (compact,
-    not full serialized blocks) and every ActionExecutor call (name + input + output),
-    so a runtime can return every step the script ran."""
+    """The capture buffer records clean, logger-style steps: every ActionExecutor call
+    (name + input + output) and the script's own text lines, so a runtime can return every
+    step the script ran and the author's account of it."""
 
     @pytest.fixture(autouse=True)
     def _reset_buffer(self):
@@ -284,10 +284,12 @@ class TestLogCapture:
             tid = await emit_tool_use("MyTool", display_title="Doing", input={"x": 1})
             await emit_tool_result(tid, {"ok": True}, name="MyTool")
 
-        # Emitted blocks are NOT mirrored into the step buffer. They are already visible in
-        # the live agent message, and the buffer becomes the run's log file — where a copy of
-        # every block would restate the action entries around it and bloat the file.
-        assert drain_log_capture() == []
+        # Text is kept — it is the author's own account, and the file is where it has to
+        # survive. Tool blocks are not: the action they describe is already an ``action``
+        # entry, and restating it around every call is what bloated the file.
+        assert [{k: v for k, v in entry.items() if k != "sdk_version"} for entry in drain_log_capture()] == [
+            {"event": "log", "level": "info", "content": "hello"}
+        ]
 
     def test_captures_action_call(self):
         start_log_capture()
@@ -316,8 +318,9 @@ class TestLogCapture:
         with patch("zamp_sdk.action_executor.ActionExecutor.execute", fake_execute):
             await emit_text("hi")
 
-        # Nothing at all: the block is not mirrored, and the emit_log action is skipped by name.
-        assert drain_log_capture() == []
+        # The line itself is captured; the *dispatch* that delivered it is not. Otherwise
+        # every log line would also appear as an ``action`` step calling ``emit_log``.
+        assert [entry["event"] for entry in drain_log_capture()] == ["log"]
 
     def test_capture_is_noop_without_start(self):
         # No start_log_capture() -> capture is a no-op (blocks still stream live elsewhere).
