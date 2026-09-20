@@ -23,7 +23,14 @@ from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_ex
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 from zamp_sdk.capture import capture_active, capture_step
-from zamp_sdk.context import ExecutionHost, current_execution_host, resolve_channel_context
+from zamp_sdk.context import (
+    ENV_AUTH_TOKEN,
+    ENV_BASE_URL,
+    ChannelContext,
+    ExecutionHost,
+    current_execution_host,
+    resolve_channel_context,
+)
 from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.auto import (
     close_action_log,
@@ -315,6 +322,20 @@ class ActionExecutor:
         await close_action_log(block_id, action_name, cls._unwrap_envelope(result))
         return result
 
+    @staticmethod
+    def _can_emit(channel_context: ChannelContext | None) -> bool:
+        """Whether this process can send a block at all.
+
+        An emit is its own API call, dispatched with no arguments, so it reads the credentials
+        from the environment and needs a channel to appear in. Someone driving the SDK from
+        their own program has neither: they passed credentials to ``execute`` directly and are
+        not inside a Zamp run. There is nowhere to put a block, so the call goes unlogged
+        rather than failing an emit for every action.
+        """
+        return (
+            channel_context is not None and bool(os.environ.get(ENV_BASE_URL)) and bool(os.environ.get(ENV_AUTH_TOKEN))
+        )
+
     @classmethod
     async def _execute_via_api(
         cls,
@@ -338,7 +359,11 @@ class ActionExecutor:
         # Attach the caller's channel context once here so the platform can inject it
         # into the action's params — individual actions don't each have to send it.
         channel_context = resolve_channel_context()
-        block_id = await open_action_log(action_name, params, summary=summary, log_action=log_action)
+        block_id = (
+            await open_action_log(action_name, params, summary=summary, log_action=log_action)
+            if cls._can_emit(channel_context)
+            else None
+        )
         try:
             result = await cls._execute_action(
                 action_name=action_name,

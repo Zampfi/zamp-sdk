@@ -25,3 +25,8 @@ ENV_EXECUTION_HOST = "ZAMP_SDK_EXECUTION_HOST"
 ENV_LOG_LEVEL = "ZAMP_LOG_LEVEL"
 ENV_LOG_ENABLED = "ZAMP_LOG_ENABLED"
 ENV_AUTO_ACTION_LOGS = "ZAMP_AUTO_ACTION_LOGS"
+
+# Credentials for the API route. An emit reads them itself, so they have to be exported rather
+# than passed, and a process without them cannot log its action calls.
+ENV_BASE_URL = "ZAMP_BASE_URL"
+ENV_AUTH_TOKEN = "ZAMP_AUTH_TOKEN"

@@ -6,7 +6,9 @@ from zamp_sdk.context.channel_context import (
     current_channel_context,
 )
 from zamp_sdk.context.env import (
+    ENV_AUTH_TOKEN,
     ENV_AUTO_ACTION_LOGS,
+    ENV_BASE_URL,
     ENV_CHANNEL_ID,
     ENV_CHANNEL_TYPE,
     ENV_EXECUTION_HOST,
@@ -24,7 +26,9 @@ __all__ = [
     "ChannelContext",
     "ChannelType",
     "ExecutionHost",
+    "ENV_AUTH_TOKEN",
     "ENV_AUTO_ACTION_LOGS",
+    "ENV_BASE_URL",
     "ENV_CHANNEL_ID",
     "ENV_CHANNEL_TYPE",
     "ENV_EXECUTION_HOST",

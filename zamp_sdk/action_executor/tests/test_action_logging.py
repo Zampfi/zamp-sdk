@@ -40,11 +40,17 @@ def _tool_use_blocks(run) -> list:
 
 
 @pytest.fixture(autouse=True)
-def _api_credentials(monkeypatch):
-    """The API route resolves its config before it opens a block, so these have to be present
-    even where the call itself is stubbed out."""
+def _runtime_env(monkeypatch):
+    """What the runtime gives a sandbox process: credentials for the call, and a channel for
+    the blocks. The API route logs nothing without both."""
     monkeypatch.setenv("ZAMP_BASE_URL", "https://example.invalid")
     monkeypatch.setenv("ZAMP_AUTH_TOKEN", "token")
+    monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
+    monkeypatch.setenv("ZAMP_CHANNEL_ID", "11111111-1111-1111-1111-111111111111")
+    monkeypatch.setenv("ZAMP_STREAMING_ID", "s")
+    monkeypatch.setenv("ZAMP_MESSAGE_ID", "m")
+    monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "t")
+    monkeypatch.setenv("ZAMP_RUN_ID", "r")
 
 
 class TestFailureCapture:
@@ -222,3 +228,47 @@ class TestWhatTheBlockShows:
     @pytest.mark.parametrize("value", ["a string", None, 42])
     def test_a_non_dict_passes_through(self, value):
         assert ActionExecutor._unwrap_envelope(value) == value
+
+
+class TestTheApiRouteNeedsARuntime:
+    """An emit is its own API call: it reads credentials from the environment and needs a
+    channel to appear in. Someone driving the SDK from their own program has neither, so the
+    call goes unlogged rather than failing an emit for every action."""
+
+    @pytest.mark.asyncio
+    async def test_it_logs_when_the_runtime_gave_it_both(self):
+        configure_auto_action_logs(True)
+        seen: list[str] = []
+
+        async def record(*, action_name, **kwargs):
+            seen.append(action_name)
+            return {"ok": True}
+
+        with patch.object(ActionExecutor, "_execute_action", record):
+            await ActionExecutor.execute("do_thing", {})
+
+        assert seen == ["emit_log", "do_thing", "emit_log"]
+
+    @pytest.mark.parametrize(
+        "missing",
+        [
+            pytest.param(["ZAMP_CHANNEL_ID"], id="no channel"),
+            pytest.param(["ZAMP_BASE_URL"], id="no base url"),
+            pytest.param(["ZAMP_AUTH_TOKEN"], id="no auth token"),
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_it_stays_quiet_without_them(self, monkeypatch, missing):
+        configure_auto_action_logs(True)
+        for name in missing:
+            monkeypatch.delenv(name, raising=False)
+        seen: list[str] = []
+
+        async def record(*, action_name, **kwargs):
+            seen.append(action_name)
+            return {"ok": True}
+
+        with patch.object(ActionExecutor, "_execute_action", record):
+            await ActionExecutor.execute("do_thing", {}, base_url="https://api.example", auth_token="tok")
+
+        assert seen == ["do_thing"], "the action still runs; only its log is skipped"
