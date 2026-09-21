@@ -14,6 +14,7 @@ import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants import Route
+from zamp_sdk.action_executor.routing import resolve_route
 from zamp_sdk.logging import log_control
 from zamp_sdk.logging.auto import (
     close_action_log,
@@ -180,10 +181,10 @@ class TestRouting:
     @pytest.mark.asyncio
     async def test_api_host_routes_to_the_api(self):
         with patch(
-            "zamp_sdk.action_executor.action_executor.current_execution_host",
+            "zamp_sdk.action_executor.routing.current_execution_host",
             return_value=__import__("zamp_sdk.context", fromlist=["ExecutionHost"]).ExecutionHost.API,
         ):
-            route, gateway = await ActionExecutor._resolve_route("do_thing")
+            route, gateway = await resolve_route("do_thing")
         assert route is Route.API
         assert gateway is None
 

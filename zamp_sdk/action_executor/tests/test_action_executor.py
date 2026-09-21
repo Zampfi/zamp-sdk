@@ -12,7 +12,7 @@ from zamp_sdk.action_executor.constants.polling import (
     POST_RETRY_MAX_INTERVAL_SECONDS,
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
-from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClientError
 from zamp_sdk.capture import drain_log_capture, start_log_capture
 
@@ -143,14 +143,14 @@ class TestExecuteDispatch:
             assert result == "api-result"
             api_mock.assert_awaited_once()
             ah_mock.assert_not_called()
-            kwargs = api_mock.call_args.kwargs
-            assert kwargs["base_url"] == base_url
-            assert kwargs["auth_token"] == auth_token
+            request = api_mock.call_args.args[0]
+            assert request.base_url == base_url
+            assert request.auth_token == auth_token
 
     async def test_declared_hub_uses_actions_hub_path(self, base_url, auth_token):
         with (
             patch.dict("os.environ", _HUB_ENV, clear=True),
-            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
+            patch("zamp_sdk.action_executor.routing.get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
@@ -165,8 +165,7 @@ class TestExecuteDispatch:
             assert result == "hub-result"
             ah_mock.assert_awaited_once()
             api_mock.assert_not_called()
-            kwargs = ah_mock.call_args.kwargs
-            assert kwargs["execution_mode"] is ExecutionMode.ASYNC
+            assert ah_mock.call_args.args[0].execution_mode is ExecutionMode.ASYNC
 
     async def test_a_stray_legacy_inside_sandbox_var_changes_nothing(self):
         """The SDK no longer reads INSIDE_SANDBOX anywhere. A runtime that still injects it
@@ -174,7 +173,7 @@ class TestExecuteDispatch:
         any other caller — not by that variable being honoured."""
         with (
             patch.dict("os.environ", {"INSIDE_SANDBOX": "true"}, clear=True),
-            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
+            patch("zamp_sdk.action_executor.routing.get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api_mock,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
@@ -203,7 +202,7 @@ class TestExecuteDispatch:
     async def test_the_host_value_is_case_and_space_insensitive(self, value):
         with (
             patch.dict("os.environ", {"ZAMP_SDK_EXECUTION_HOST": value}, clear=True),
-            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
+            patch("zamp_sdk.action_executor.routing.get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as ah_mock,
         ):
             ah_mock.return_value = "hub"
@@ -253,13 +252,13 @@ class TestExecuteViaActionsHub:
             ),
         ):
             result = await ActionExecutor._execute_via_actions_hub(
-                action_name="send",
-                params={"x": 1},
-                summary="s",
-                return_type=None,
-                execution_mode=ExecutionMode.SYNC,
-                action_retry_policy=None,
-                action_start_to_close_timeout=timedelta(seconds=30),
+                ActionRequest(
+                    action_name="send",
+                    params={"x": 1},
+                    summary="s",
+                    execution_mode=ExecutionMode.SYNC,
+                    action_start_to_close_timeout=timedelta(seconds=30),
+                )
             )
 
             assert result == "ok"
@@ -307,13 +306,12 @@ class TestExecuteViaActionsHub:
         ):
             retry = RetryPolicy.default()
             await ActionExecutor._execute_via_actions_hub(
-                action_name="a",
-                params={},
-                summary=None,
-                return_type=None,
-                execution_mode=ExecutionMode.INLINE,
-                action_retry_policy=retry,
-                action_start_to_close_timeout=None,
+                ActionRequest(
+                    action_name="a",
+                    params={},
+                    execution_mode=ExecutionMode.INLINE,
+                    action_retry_policy=retry,
+                )
             )
 
         assert constructed["maximum_attempts"] == retry.maximum_attempts
@@ -1134,7 +1132,7 @@ class TestCaptureIsFailSafe:
         every part of the capture is broken."""
         sentinel = {"invoice": "INV-1"}
 
-        async def dispatch(**kwargs):
+        async def dispatch(request):
             return sentinel
 
         monkeypatch.setattr(ActionExecutor, "_execute_via_api", staticmethod(dispatch))
@@ -1146,7 +1144,7 @@ class TestCaptureIsFailSafe:
     async def test_execute_still_propagates_a_real_action_failure(self, monkeypatch):
         """The guard must not swallow the action's own error - only the capture's."""
 
-        async def dispatch(**kwargs):
+        async def dispatch(request):
             raise HttpClientError("upstream down")
 
         monkeypatch.setattr(ActionExecutor, "_execute_via_api", staticmethod(dispatch))

@@ -284,7 +284,7 @@ class TestDispatchByHost:
     async def test_actions_hub_host_with_no_gateway_dispatches_in_process(self, monkeypatch):
         monkeypatch.setenv(_HOST, "actions_hub")
         with (
-            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
+            patch("zamp_sdk.action_executor.routing.get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_via_api", new_callable=AsyncMock) as api,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as hub,
         ):
@@ -298,8 +298,8 @@ class TestDispatchByHost:
         monkeypatch.setenv(_HOST, "actions_hub")
         gateway = AsyncMock(return_value="gateway")
         with (
-            patch.object(ActionExecutor, "_get_action_gateway", return_value=gateway),
-            patch.object(ActionExecutor, "_is_registered_locally", new_callable=AsyncMock) as local,
+            patch("zamp_sdk.action_executor.routing.get_action_gateway", return_value=gateway),
+            patch("zamp_sdk.action_executor.routing.is_registered_locally", new_callable=AsyncMock) as local,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as hub,
         ):
             local.return_value = False
@@ -313,8 +313,8 @@ class TestDispatchByHost:
         monkeypatch.setenv(_HOST, "actions_hub")
         gateway = AsyncMock(return_value="gateway")
         with (
-            patch.object(ActionExecutor, "_get_action_gateway", return_value=gateway),
-            patch.object(ActionExecutor, "_is_registered_locally", new_callable=AsyncMock) as local,
+            patch("zamp_sdk.action_executor.routing.get_action_gateway", return_value=gateway),
+            patch("zamp_sdk.action_executor.routing.is_registered_locally", new_callable=AsyncMock) as local,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as hub,
         ):
             local.return_value = True
@@ -365,7 +365,7 @@ class TestPayloadsEndToEnd:
         bind_channel_context(_bound())
 
         with (
-            patch.object(ActionExecutor, "_get_action_gateway", return_value=None),
+            patch("zamp_sdk.action_executor.routing.get_action_gateway", return_value=None),
             patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as post,
             patch.object(ActionExecutor, "_execute_via_actions_hub", new_callable=AsyncMock) as hub,
         ):

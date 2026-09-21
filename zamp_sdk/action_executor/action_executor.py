@@ -20,15 +20,14 @@ from zamp_sdk.action_executor.constants import (
     Route,
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
-from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.routing import resolve_route
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import (
     ENV_AUTH_TOKEN,
     ENV_BASE_URL,
     ChannelContext,
-    ExecutionHost,
-    current_execution_host,
     resolve_channel_context,
 )
 from zamp_sdk.logger import get_logger
@@ -94,22 +93,21 @@ class ActionExecutor:
         """
         # Resolved before dispatch, not inside it, so one place names every route and one
         # place decides which of them log.
-        route, gateway = await cls._resolve_route(action_name)
+        request = ActionRequest(
+            action_name=action_name,
+            params=params,
+            base_url=base_url,
+            auth_token=auth_token,
+            summary=summary,
+            return_type=return_type,
+            execution_mode=execution_mode,
+            action_retry_policy=action_retry_policy,
+            action_start_to_close_timeout=action_start_to_close_timeout,
+            log_action=log_action,
+        )
+        route, gateway = await resolve_route(action_name)
         try:
-            result = await cls._dispatch(
-                route=route,
-                gateway=gateway,
-                log_action=log_action,
-                action_name=action_name,
-                params=params,
-                base_url=base_url,
-                auth_token=auth_token,
-                summary=summary,
-                return_type=return_type,
-                execution_mode=execution_mode,
-                action_retry_policy=action_retry_policy,
-                action_start_to_close_timeout=action_start_to_close_timeout,
-            )
+            result = await cls._dispatch(request, route, gateway)
         except Exception as exc:
             # Captured before the re-raise: the failed call is the one a reader of the log is
             # looking for. The block was already closed as failed by the route that opened it.
@@ -117,16 +115,6 @@ class ActionExecutor:
             raise
         cls._capture_action_step(action_name, params, result)
         return result
-
-    @classmethod
-    async def _resolve_route(cls, action_name: str) -> tuple[Route, Callable[..., Any] | None]:
-        """Which of the three dispatch paths this action takes, and the gateway if it needs one."""
-        if current_execution_host() is not ExecutionHost.ACTIONS_HUB:
-            return Route.API, None
-        gateway = cls._get_action_gateway()
-        if gateway is not None and not await cls._is_registered_locally(action_name):
-            return Route.GATEWAY, gateway
-        return Route.LOCAL_AH, None
 
     @staticmethod
     def _unwrap_envelope(result: Any) -> Any:
@@ -143,59 +131,17 @@ class ActionExecutor:
         return result
 
     @classmethod
-    async def _dispatch(
-        cls,
-        *,
-        route: Route,
-        gateway: Callable[..., Any] | None,
-        log_action: bool | None,
-        action_name: str,
-        params: dict[str, Any],
-        base_url: str | None,
-        auth_token: str | None,
-        summary: str | None,
-        return_type: type | None,
-        execution_mode: ExecutionMode | None,
-        action_retry_policy: RetryPolicy | None,
-        action_start_to_close_timeout: timedelta | None,
-    ) -> Any:
+    async def _dispatch(cls, request: ActionRequest, route: Route, gateway: Callable[..., Any] | None) -> Any:
         """Run the action down the route already resolved for it.
 
         Each route logs, or does not, for itself: a local call is plumbing on the worker that
         owns the action, so it has no logging code rather than a flag saying not to.
         """
         if route is Route.GATEWAY and gateway is not None:
-            return await cls._execute_via_gateway(
-                gateway,
-                action_name=action_name,
-                params=params,
-                summary=summary,
-                log_action=log_action,
-                return_type=return_type,
-                action_retry_policy=action_retry_policy,
-                action_start_to_close_timeout=action_start_to_close_timeout,
-            )
+            return await cls._execute_via_gateway(request, gateway)
         if route is Route.LOCAL_AH:
-            return await cls._execute_via_actions_hub(
-                action_name=action_name,
-                params=params,
-                summary=summary,
-                return_type=return_type,
-                execution_mode=execution_mode,
-                action_retry_policy=action_retry_policy,
-                action_start_to_close_timeout=action_start_to_close_timeout,
-            )
-        return await cls._execute_via_api(
-            action_name=action_name,
-            params=params,
-            base_url=base_url,
-            auth_token=auth_token,
-            summary=summary,
-            log_action=log_action,
-            return_type=return_type,
-            action_retry_policy=action_retry_policy,
-            action_start_to_close_timeout=action_start_to_close_timeout,
-        )
+            return await cls._execute_via_actions_hub(request)
+        return await cls._execute_via_api(request)
 
     @staticmethod
     def _as_string(value: Any) -> str:
@@ -296,36 +242,30 @@ class ActionExecutor:
             )
 
     @classmethod
-    async def _execute_via_gateway(
-        cls,
-        gateway: Callable[..., Any],
-        *,
-        action_name: str,
-        params: dict[str, Any],
-        summary: str | None,
-        log_action: bool | None,
-        return_type: type | None,
-        action_retry_policy: RetryPolicy | None,
-        action_start_to_close_timeout: timedelta | None,
-    ) -> Any:
+    async def _execute_via_gateway(cls, request: ActionRequest, gateway: Callable[..., Any]) -> Any:
         """Hand the action to the host's gateway, showing the call in the live message.
 
         Returns the gateway's envelope unchanged — only the block is unwrapped.
         """
-        block_id = await open_action_log(action_name, params, summary=summary, log_action=log_action)
+        block_id = await open_action_log(
+            request.action_name,
+            request.params,
+            summary=request.summary,
+            log_action=request.log_action,
+        )
         try:
             result = await gateway(
-                action_name,
-                params,
-                summary=summary,
-                return_type=return_type,
-                action_retry_policy=action_retry_policy,
-                action_start_to_close_timeout=action_start_to_close_timeout,
+                request.action_name,
+                request.params,
+                summary=request.summary,
+                return_type=request.return_type,
+                action_retry_policy=request.action_retry_policy,
+                action_start_to_close_timeout=request.action_start_to_close_timeout,
             )
         except Exception as exc:
-            await fail_action_log(block_id, action_name, exc)
+            await fail_action_log(block_id, request.action_name, exc)
             raise
-        await close_action_log(block_id, action_name, cls._unwrap_envelope(result))
+        await close_action_log(block_id, request.action_name, cls._unwrap_envelope(result))
         return result
 
     @staticmethod
@@ -355,95 +295,62 @@ class ActionExecutor:
         )
 
     @classmethod
-    async def _execute_via_api(
-        cls,
-        action_name: str,
-        params: dict[str, Any],
-        *,
-        base_url: str | None,
-        auth_token: str | None,
-        summary: str | None,
-        log_action: bool | None,
-        return_type: type | None,
-        action_retry_policy: RetryPolicy | None,
-        action_start_to_close_timeout: timedelta | None,
-    ) -> Any:
+    async def _execute_via_api(cls, request: ActionRequest) -> Any:
         """Call the platform over HTTP, showing the call in the live message.
 
         No unwrapping: this route returns the action's own answer, and a terminal failure
         raises rather than coming back as a value.
         """
-        config = cls._resolve_config(base_url, auth_token)
+        config = cls._resolve_config(request.base_url, request.auth_token)
         # Attach the caller's channel context once here so the platform can inject it
         # into the action's params — individual actions don't each have to send it.
         channel_context = resolve_channel_context()
         block_id = (
-            await open_action_log(action_name, params, summary=summary, log_action=log_action)
+            await open_action_log(
+                request.action_name,
+                request.params,
+                summary=request.summary,
+                log_action=request.log_action,
+            )
             if cls._can_emit(config, channel_context)
             else None
         )
         try:
             result = await cls._execute_action(
-                action_name=action_name,
-                params=params,
+                action_name=request.action_name,
+                params=request.params,
                 config=config,
                 channel_context=channel_context.model_dump(mode="json") if channel_context is not None else None,
-                return_type=return_type,
-                summary=summary,
-                action_retry_policy=action_retry_policy,
-                action_start_to_close_timeout=action_start_to_close_timeout,
+                return_type=request.return_type,
+                summary=request.summary,
+                action_retry_policy=request.action_retry_policy,
+                action_start_to_close_timeout=request.action_start_to_close_timeout,
             )
         except Exception as exc:
-            await fail_action_log(block_id, action_name, exc)
+            await fail_action_log(block_id, request.action_name, exc)
             raise
-        await close_action_log(block_id, action_name, result)
+        await close_action_log(block_id, request.action_name, result)
         return result
 
     @classmethod
-    async def _execute_via_actions_hub(
-        cls,
-        action_name: str,
-        params: dict[str, Any],
-        *,
-        summary: str | None,
-        return_type: type | None,
-        execution_mode: ExecutionMode | None,
-        action_retry_policy: RetryPolicy | None,
-        action_start_to_close_timeout: timedelta | None,
-    ) -> Any:
+    async def _execute_via_actions_hub(cls, request: ActionRequest) -> Any:
+        """Run the action in-process on the worker that owns it. Never logged: plumbing."""
         from zamp_public_workflow_sdk.actions_hub import ActionsHub
         from zamp_public_workflow_sdk.actions_hub.models.core_models import (
             RetryPolicy as AHRetryPolicy,
         )
 
-        ah_mode = resolve_ah_execution_mode(execution_mode)
-        effective_retry_policy = action_retry_policy if action_retry_policy is not None else RetryPolicy.default()
-        ah_retry_policy = AHRetryPolicy(**effective_retry_policy.model_dump())
+        ah_mode = resolve_ah_execution_mode(request.execution_mode)
+        policy = request.action_retry_policy if request.action_retry_policy is not None else RetryPolicy.default()
 
         return await ActionsHub.execute_action(
-            action_name,
-            params,
-            summary=summary,
+            request.action_name,
+            request.params,
+            summary=request.summary,
             execution_mode=ah_mode,
-            action_retry_policy=ah_retry_policy,
-            action_start_to_close_timeout=action_start_to_close_timeout,
+            action_retry_policy=AHRetryPolicy(**policy.model_dump()),
+            action_start_to_close_timeout=request.action_start_to_close_timeout,
         )
-
-    @classmethod
-    def _get_action_gateway(cls) -> Callable[..., Any] | None:
-        """Return the action gateway registered on ActionsHub, or None if none is."""
-        from zamp_public_workflow_sdk.actions_hub import ActionsHub
-
-        return ActionsHub.get_action_gateway()
-
-    @classmethod
-    async def _is_registered_locally(cls, action_name: str) -> bool:
-        """Whether the action resolves to an action registered in this environment."""
-        from zamp_public_workflow_sdk.actions_hub import ActionsHub
-        from zamp_public_workflow_sdk.actions_hub.models.core_models import ActionFilter
-
-        actions = await ActionsHub.get_available_actions(ActionFilter(name=action_name))
-        return len(actions) > 0
 
     @classmethod
     async def _execute_action(
