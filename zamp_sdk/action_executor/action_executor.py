@@ -336,11 +336,15 @@ class ActionExecutor:
         And the environment has to be the *same* deployment the action went to. A caller can
         point ``execute`` at one tenant while the ambient credentials name another; the emit
         would follow the ambient ones and carry this action's input and result there. Compared
-        rather than merely required, so logs cannot cross that boundary.
+        rather than merely required, so logs cannot cross that boundary — but compared the way
+        the URL is *used*, with the trailing slash stripped as ``_build_url`` strips it, so a
+        formatting difference does not read as a different deployment and quietly stop logging.
         """
+        ambient_url = (os.environ.get(ENV_BASE_URL) or "").rstrip("/")
         return (
             channel_context is not None
-            and config.base_url == os.environ.get(ENV_BASE_URL)
+            and bool(ambient_url)
+            and config.base_url.rstrip("/") == ambient_url
             and config.auth_token == os.environ.get(ENV_AUTH_TOKEN)
         )
 

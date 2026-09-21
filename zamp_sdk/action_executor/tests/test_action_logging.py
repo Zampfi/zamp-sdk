@@ -16,7 +16,9 @@ import pytest
 
 from zamp_sdk import configure_auto_action_logs
 from zamp_sdk.action_executor.action_executor import ActionExecutor
+from zamp_sdk.action_executor.models import SdkConfig
 from zamp_sdk.capture import drain_log_capture, start_log_capture
+from zamp_sdk.context import resolve_channel_context
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
 from zamp_sdk.logging.models import EmitLogResult
 from zamp_sdk.version import __version__
@@ -37,6 +39,10 @@ def _tool_use_blocks(run) -> list:
         if block.get("type") == "tool_use":
             titles.append(block.get("display_title"))
     return titles
+
+
+def _channel_context():
+    return resolve_channel_context()
 
 
 @pytest.fixture(autouse=True)
@@ -289,6 +295,26 @@ class TestTheApiRouteNeedsARuntime:
             await ActionExecutor.execute("do_thing", {}, base_url="https://other-tenant", auth_token="other-token")
 
         assert seen == ["do_thing"], "the action went to the explicit target, unlogged"
+
+    @pytest.mark.parametrize(
+        ("exported", "passed"),
+        [
+            ("https://example.invalid/", "https://example.invalid"),
+            ("https://example.invalid", "https://example.invalid/"),
+        ],
+    )
+    def test_a_trailing_slash_is_not_a_different_deployment(self, monkeypatch, exported, passed):
+        """``_build_url`` strips it, so the two address the same place. Comparing them raw
+        would read a formatting difference as another tenant and quietly stop logging."""
+        monkeypatch.setenv("ZAMP_BASE_URL", exported)
+
+        assert ActionExecutor._can_emit(SdkConfig(base_url=passed, auth_token="token"), _channel_context())
+
+    def test_an_unset_base_url_is_not_a_match(self, monkeypatch):
+        """Stripping must not turn two empties into agreement."""
+        monkeypatch.delenv("ZAMP_BASE_URL", raising=False)
+
+        assert not ActionExecutor._can_emit(SdkConfig(base_url="", auth_token="token"), _channel_context())
 
     @pytest.mark.asyncio
     async def test_it_logs_when_the_explicit_credentials_are_the_ambient_ones(self):
