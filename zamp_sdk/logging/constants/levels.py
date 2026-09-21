@@ -15,12 +15,8 @@ class LogLevel(StrEnum):
 
     @classmethod
     def _missing_(cls, value: object) -> "LogLevel | None":
-        """Also accept any casing, and the stdlib numbers levels used to be, so upgrading the
-        SDK cannot invalidate a config already written or recorded in a workflow's history."""
-        if isinstance(value, bool):
-            return None
-        if isinstance(value, int):
-            return next((lvl for lvl, rank in LOG_LEVEL_SEVERITY.items() if rank == value), None)
+        """Accept any casing. A level is usually typed into a skill's JSON, where ``"INFO"`` is
+        not a mistake worth failing a run over."""
         if isinstance(value, str):
             return cls.__members__.get(value.strip().upper())
         return None
