@@ -82,9 +82,15 @@ class ActionExecutor:
         ``summary`` doubles as the display title of the log block this call produces — the
         one place to put a human-readable "what this call is doing".
 
-        ``log_action`` overrides whether that block is emitted at all, winning over every
-        other consideration. Leave it unset: the SDK logs API and gateway calls by default
-        and stays quiet when the script logs the call itself.
+        ``log_action`` decides whether this one call is logged. Three states, not two:
+
+        * ``None`` (default) — follow the run's ``auto_action_logs`` setting.
+        * ``True`` — log this call even where the run has logging off.
+        * ``False`` — do not log this call even where the run has it on.
+
+        ``None`` is why it is not a plain ``bool``: "I did not say" has to stay distinct from
+        "I said no", or a caller could never log one call without configuring the whole run.
+        A local in-process call is never logged either way, and ``emit_log`` never is.
         """
         # Resolved before dispatch, not inside it, so one place names every route and one
         # place decides which of them log.
