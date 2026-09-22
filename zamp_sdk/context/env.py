@@ -18,3 +18,15 @@ ENV_MESSAGE_ID = "ZAMP_MESSAGE_ID"
 ENV_TOOL_CALL_ID = "ZAMP_TOOL_CALL_ID"
 ENV_RUN_ID = "ZAMP_RUN_ID"
 ENV_EXECUTION_HOST = "ZAMP_SDK_EXECUTION_HOST"
+
+# This run's LoggingConfig, one variable per field, for a process with no workflow input to
+# carry it on. Read independently rather than all-or-none like the channel variables above: a
+# missing field just keeps its default.
+ENV_LOG_LEVEL = "ZAMP_LOG_LEVEL"
+ENV_LOG_ENABLED = "ZAMP_LOG_ENABLED"
+ENV_AUTO_ACTION_LOGS = "ZAMP_AUTO_ACTION_LOGS"
+
+# Credentials for the API route. An emit reads them itself, so they have to be exported rather
+# than passed, and a process without them cannot log its action calls.
+ENV_BASE_URL = "ZAMP_BASE_URL"
+ENV_AUTH_TOKEN = "ZAMP_AUTH_TOKEN"

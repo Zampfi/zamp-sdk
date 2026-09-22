@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Any, Callable
 
 from zamp_sdk.action_executor.constants import (
+    ACTION_ENVELOPE_KEYS,
     IN_PROGRESS_STATUSES,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
@@ -16,13 +17,26 @@ from zamp_sdk.action_executor.constants import (
     POST_RETRY_TIMEOUT_SECONDS,
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
+    Route,
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
-from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.routing import resolve_route
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 from zamp_sdk.capture import capture_active, capture_step
-from zamp_sdk.context import ExecutionHost, current_execution_host, resolve_channel_context
+from zamp_sdk.context import (
+    ENV_AUTH_TOKEN,
+    ENV_BASE_URL,
+    ChannelContext,
+    resolve_channel_context,
+)
 from zamp_sdk.logger import get_logger
+from zamp_sdk.logging.auto import (
+    close_action_log,
+    fail_action_log,
+    open_action_log,
+)
+from zamp_sdk.logging.constants import NON_LOGGABLE_ACTIONS
 
 logger = get_logger(__name__)
 
@@ -60,41 +74,74 @@ class ActionExecutor:
         execution_mode: ExecutionMode | None = None,
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
+        log_action: bool | None = None,
     ) -> Any:
-        if current_execution_host() is ExecutionHost.ACTIONS_HUB:
-            gateway = cls._get_action_gateway()
-            if gateway is not None and not await cls._is_registered_locally(action_name):
-                result = await gateway(
-                    action_name,
-                    params,
-                    summary=summary,
-                    return_type=return_type,
-                    action_retry_policy=action_retry_policy,
-                    action_start_to_close_timeout=action_start_to_close_timeout,
-                )
-            else:
-                result = await cls._execute_via_actions_hub(
-                    action_name=action_name,
-                    params=params,
-                    summary=summary,
-                    return_type=return_type,
-                    execution_mode=execution_mode,
-                    action_retry_policy=action_retry_policy,
-                    action_start_to_close_timeout=action_start_to_close_timeout,
-                )
-        else:
-            result = await cls._execute_via_api(
-                action_name=action_name,
-                params=params,
-                base_url=base_url,
-                auth_token=auth_token,
-                summary=summary,
-                return_type=return_type,
-                action_retry_policy=action_retry_policy,
-                action_start_to_close_timeout=action_start_to_close_timeout,
-            )
+        """Run one platform action and return its result.
+
+        ``summary`` doubles as the display title of the log block this call produces — the
+        one place to put a human-readable "what this call is doing".
+
+        ``log_action`` decides whether this one call is logged. Three states, not two:
+
+        * ``None`` (default) — follow the run's ``auto_action_logs`` setting.
+        * ``True`` — log this call even where the run has logging off.
+        * ``False`` — do not log this call even where the run has it on.
+
+        ``None`` is why it is not a plain ``bool``: "I did not say" has to stay distinct from
+        "I said no", or a caller could never log one call without configuring the whole run.
+        A local in-process call is never logged either way, and ``emit_log`` never is.
+        """
+        # Resolved before dispatch, not inside it, so one place names every route and one
+        # place decides which of them log.
+        request = ActionRequest(
+            action_name=action_name,
+            params=params,
+            base_url=base_url,
+            auth_token=auth_token,
+            summary=summary,
+            return_type=return_type,
+            execution_mode=execution_mode,
+            action_retry_policy=action_retry_policy,
+            action_start_to_close_timeout=action_start_to_close_timeout,
+            log_action=log_action,
+        )
+        route, gateway = await resolve_route(action_name)
+        try:
+            result = await cls._dispatch(request, route, gateway)
+        except Exception as exc:
+            # Captured before the re-raise: the failed call is the one a reader of the log is
+            # looking for. The block was already closed as failed by the route that opened it.
+            cls._capture_action_step(action_name, params, None, error=exc)
+            raise
         cls._capture_action_step(action_name, params, result)
         return result
+
+    @staticmethod
+    def _unwrap_envelope(result: Any) -> Any:
+        """The answer inside the gateway's ``{"id", "status", "result", "error"}``.
+
+        A failure shows its ``error`` — the gateway reports one as a *value*, so ``result``
+        alone would be ``None`` and lose the reason.
+
+        Display only: the envelope still reaches authored code untouched. The key check is a
+        guard, so a response of an unexpected shape is shown whole rather than emptied.
+        """
+        if isinstance(result, dict) and ACTION_ENVELOPE_KEYS.issubset(result):
+            return result.get("error") or result["result"]
+        return result
+
+    @classmethod
+    async def _dispatch(cls, request: ActionRequest, route: Route, gateway: Callable[..., Any] | None) -> Any:
+        """Run the action down the route already resolved for it.
+
+        Each route logs, or does not, for itself: a local call is plumbing on the worker that
+        owns the action, so it has no logging code rather than a flag saying not to.
+        """
+        if route is Route.GATEWAY and gateway is not None:
+            return await cls._execute_via_gateway(request, gateway)
+        if route is Route.LOCAL_AH:
+            return await cls._execute_via_actions_hub(request)
+        return await cls._execute_via_api(request)
 
     @staticmethod
     def _as_string(value: Any) -> str:
@@ -144,10 +191,19 @@ class ActionExecutor:
         return cls._stringify_bad_values(value)
 
     @classmethod
-    def _capture_action_step(cls, action_name: str, params: dict[str, Any], result: Any) -> None:
-        """Append this action call (name + input + output) to the in-execution step
-        buffer so the host runtime can surface every step it ran. A no-op unless capture
-        is active (e.g. never inside a sandbox); emit_log suppresses this for its own call.
+    def _capture_action_step(
+        cls,
+        action_name: str,
+        params: dict[str, Any],
+        result: Any,
+        *,
+        error: BaseException | None = None,
+    ) -> None:
+        """Append this action call to the in-execution step buffer so the host runtime can
+        surface every step it ran: name + input, then ``output`` or, when the call raised,
+        ``error``. A failed call is the one a reader of the log is looking for, so it is
+        recorded rather than omitted. A no-op unless capture is active (e.g. never inside a
+        sandbox); emit_log suppresses this for its own call.
 
         The host drains the buffer and may serialize it, so both halves have to be
         JSON-safe. They are normally captured as-is; only if one isn't do we replace the
@@ -157,21 +213,27 @@ class ActionExecutor:
         reaching here is no proof they can be serialized. The whole value is checked with a
         single cheap ``json.dumps`` first, so the happy path stays one call.
 
+        An action in :data:`NON_LOGGABLE_ACTIONS` records nothing: sending a log *is* calling
+        one, so it is how the run reports itself rather than a step of the run's work, and the
+        same reasoning that keeps it out of the live message keeps it out of the file.
+
         Nothing here may raise into the caller. The action has already succeeded and its
         result is about to be returned; a value that misbehaves while being inspected (a
         mapping whose ``items()`` raises, a ``__str__`` that throws) must cost the log line,
         not the call."""
         try:
-            if not capture_active():
+            if action_name in NON_LOGGABLE_ACTIONS or not capture_active():
                 return
-            capture_step(
-                {
-                    "event": "action",
-                    "name": action_name,
-                    "input": cls._json_safe(params, half="input", action_name=action_name),
-                    "output": cls._json_safe(result, half="output", action_name=action_name),
-                }
-            )
+            entry: dict[str, Any] = {
+                "event": "action",
+                "name": action_name,
+                "input": cls._json_safe(params, half="input", action_name=action_name),
+            }
+            if error is not None:
+                entry["error"] = cls._as_string(error)
+            else:
+                entry["output"] = cls._json_safe(result, half="output", action_name=action_name)
+            capture_step(entry)
         except Exception as exc:
             logger.warning(
                 "could not capture the action step; the action itself is unaffected",
@@ -180,78 +242,115 @@ class ActionExecutor:
             )
 
     @classmethod
-    async def _execute_via_api(
-        cls,
-        action_name: str,
-        params: dict[str, Any],
-        *,
-        base_url: str | None,
-        auth_token: str | None,
-        summary: str | None,
-        return_type: type | None,
-        action_retry_policy: RetryPolicy | None,
-        action_start_to_close_timeout: timedelta | None,
-    ) -> Any:
-        config = cls._resolve_config(base_url, auth_token)
-        # Attach the caller's channel context once here so the platform can inject it
-        # into the action's params — individual actions don't each have to send it.
-        channel_context = resolve_channel_context()
-        return await cls._execute_action(
-            action_name=action_name,
-            params=params,
-            config=config,
-            channel_context=channel_context.model_dump(mode="json") if channel_context is not None else None,
-            return_type=return_type,
-            summary=summary,
-            action_retry_policy=action_retry_policy,
-            action_start_to_close_timeout=action_start_to_close_timeout,
+    async def _execute_via_gateway(cls, request: ActionRequest, gateway: Callable[..., Any]) -> Any:
+        """Hand the action to the host's gateway, showing the call in the live message.
+
+        Returns the gateway's envelope unchanged — only the block is unwrapped.
+        """
+        block_id = await open_action_log(
+            request.action_name,
+            request.params,
+            summary=request.summary,
+            log_action=request.log_action,
+        )
+        try:
+            result = await gateway(
+                request.action_name,
+                request.params,
+                summary=request.summary,
+                return_type=request.return_type,
+                action_retry_policy=request.action_retry_policy,
+                action_start_to_close_timeout=request.action_start_to_close_timeout,
+            )
+        except Exception as exc:
+            await fail_action_log(block_id, request.action_name, exc)
+            raise
+        await close_action_log(block_id, request.action_name, cls._unwrap_envelope(result))
+        return result
+
+    @staticmethod
+    def _can_emit(config: SdkConfig, channel_context: ChannelContext | None) -> bool:
+        """Whether a block for this call can be shown, and shown in the right place.
+
+        An emit is its own API call, dispatched with no arguments, so it resolves credentials
+        from the environment and needs a channel to appear in. Two things follow.
+
+        A process with neither — someone driving the SDK from their own program, who passed
+        credentials to ``execute`` and is not inside a Zamp run — has nowhere to put a block, so
+        the call goes unlogged rather than failing an emit for every action.
+
+        And the environment has to be the *same* deployment the action went to. A caller can
+        point ``execute`` at one tenant while the ambient credentials name another; the emit
+        would follow the ambient ones and carry this action's input and result there. Compared
+        rather than merely required, so logs cannot cross that boundary — but compared the way
+        the URL is *used*, with the trailing slash stripped as ``_build_url`` strips it, so a
+        formatting difference does not read as a different deployment and quietly stop logging.
+        """
+        ambient_url = (os.environ.get(ENV_BASE_URL) or "").rstrip("/")
+        return (
+            channel_context is not None
+            and bool(ambient_url)
+            and config.base_url.rstrip("/") == ambient_url
+            and config.auth_token == os.environ.get(ENV_AUTH_TOKEN)
         )
 
     @classmethod
-    async def _execute_via_actions_hub(
-        cls,
-        action_name: str,
-        params: dict[str, Any],
-        *,
-        summary: str | None,
-        return_type: type | None,
-        execution_mode: ExecutionMode | None,
-        action_retry_policy: RetryPolicy | None,
-        action_start_to_close_timeout: timedelta | None,
-    ) -> Any:
+    async def _execute_via_api(cls, request: ActionRequest) -> Any:
+        """Call the platform over HTTP, showing the call in the live message.
+
+        No unwrapping: this route returns the action's own answer, and a terminal failure
+        raises rather than coming back as a value.
+        """
+        config = cls._resolve_config(request.base_url, request.auth_token)
+        # Attach the caller's channel context once here so the platform can inject it
+        # into the action's params — individual actions don't each have to send it.
+        channel_context = resolve_channel_context()
+        block_id = (
+            await open_action_log(
+                request.action_name,
+                request.params,
+                summary=request.summary,
+                log_action=request.log_action,
+            )
+            if cls._can_emit(config, channel_context)
+            else None
+        )
+        try:
+            result = await cls._execute_action(
+                action_name=request.action_name,
+                params=request.params,
+                config=config,
+                channel_context=channel_context.model_dump(mode="json") if channel_context is not None else None,
+                return_type=request.return_type,
+                summary=request.summary,
+                action_retry_policy=request.action_retry_policy,
+                action_start_to_close_timeout=request.action_start_to_close_timeout,
+            )
+        except Exception as exc:
+            await fail_action_log(block_id, request.action_name, exc)
+            raise
+        await close_action_log(block_id, request.action_name, result)
+        return result
+
+    @classmethod
+    async def _execute_via_actions_hub(cls, request: ActionRequest) -> Any:
+        """Run the action in-process on the worker that owns it. Never logged: plumbing."""
         from zamp_public_workflow_sdk.actions_hub import ActionsHub
         from zamp_public_workflow_sdk.actions_hub.models.core_models import (
             RetryPolicy as AHRetryPolicy,
         )
 
-        ah_mode = resolve_ah_execution_mode(execution_mode)
-        effective_retry_policy = action_retry_policy if action_retry_policy is not None else RetryPolicy.default()
-        ah_retry_policy = AHRetryPolicy(**effective_retry_policy.model_dump())
+        ah_mode = resolve_ah_execution_mode(request.execution_mode)
+        policy = request.action_retry_policy if request.action_retry_policy is not None else RetryPolicy.default()
 
         return await ActionsHub.execute_action(
-            action_name,
-            params,
-            summary=summary,
+            request.action_name,
+            request.params,
+            summary=request.summary,
             execution_mode=ah_mode,
-            action_retry_policy=ah_retry_policy,
-            action_start_to_close_timeout=action_start_to_close_timeout,
+            action_retry_policy=AHRetryPolicy(**policy.model_dump()),
+            action_start_to_close_timeout=request.action_start_to_close_timeout,
         )
-
-    @classmethod
-    def _get_action_gateway(cls) -> Callable[..., Any] | None:
-        """Return the action gateway registered on ActionsHub, or None if none is."""
-        from zamp_public_workflow_sdk.actions_hub import ActionsHub
-
-        return ActionsHub.get_action_gateway()
-
-    @classmethod
-    async def _is_registered_locally(cls, action_name: str) -> bool:
-        """Whether the action resolves to an action registered in this environment."""
-        from zamp_public_workflow_sdk.actions_hub import ActionsHub
-        from zamp_public_workflow_sdk.actions_hub.models.core_models import ActionFilter
-
-        actions = await ActionsHub.get_available_actions(ActionFilter(name=action_name))
-        return len(actions) > 0
 
     @classmethod
     async def _execute_action(

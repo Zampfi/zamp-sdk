@@ -17,7 +17,7 @@ from zamp_sdk import (
     start_log_capture,
 )
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.capture import capture_active, capture_step, suppress_step_capture
+from zamp_sdk.capture import capture_active
 from zamp_sdk.logging.constants import EMIT_ID_PREFIX
 from zamp_sdk.logging.utils import new_emit_id, stringify_tool_result
 from zamp_sdk.version import __version__
@@ -86,7 +86,7 @@ class TestEmitLogText:
         monkeypatch.setenv("ZAMP_CHANNEL_ID", "conv-1")
 
         execute = AsyncMock(return_value={"success": True})
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             result = await emit_log(TextContentBlock(content="• **Progress** — building..."))
 
         assert isinstance(result, EmitLogResult)
@@ -109,7 +109,7 @@ class TestEmitLogText:
         execute = AsyncMock(return_value=None)
         block = TextContentBlock(content="hello")
 
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             await emit_log(block)
 
         # Auto-stamped on the block itself...
@@ -123,7 +123,7 @@ class TestEmitLogText:
         execute = AsyncMock(return_value=None)
         block = TextContentBlock(content="hi", parent_block_id="caller_supplied")
 
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             await emit_log(block)
 
         assert block.parent_block_id == "caller_supplied"
@@ -134,7 +134,7 @@ class TestEmitLogErrors:
     @pytest.mark.asyncio
     async def test_error_never_raises(self):
         execute = AsyncMock(side_effect=RuntimeError("boom"))
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             result = await emit_log(TextContentBlock(content="hello"))
 
         assert result.ok is False
@@ -146,7 +146,7 @@ class TestEmitText:
     @pytest.mark.asyncio
     async def test_wraps_string_as_text_block(self):
         execute = AsyncMock(return_value={"ok": 1})
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             result = await emit_text("step done")
 
         assert result.ok is True
@@ -159,7 +159,7 @@ class TestEmitToolUse:
     @pytest.mark.asyncio
     async def test_returns_minted_id_with_prefix(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             returned = await emit_tool_use(
                 "GMAIL_SEND",
                 display_title="Sending daily report",
@@ -177,7 +177,7 @@ class TestEmitToolUse:
     @pytest.mark.asyncio
     async def test_respects_caller_supplied_id(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             returned = await emit_tool_use("X", id="my-custom-id")
 
         assert returned == "my-custom-id"
@@ -186,7 +186,7 @@ class TestEmitToolUse:
     @pytest.mark.asyncio
     async def test_no_input_means_no_input_json(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             await emit_tool_use("X")
 
         assert execute.call_args.args[1]["block"]["input_json"] is None
@@ -194,7 +194,7 @@ class TestEmitToolUse:
     @pytest.mark.asyncio
     async def test_id_returned_even_when_emit_fails(self):
         execute = AsyncMock(side_effect=RuntimeError("network down"))
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             # Caller must still be able to pair the eventual tool_result, so
             # the helper swallows the failure and returns the id anyway.
             returned = await emit_tool_use("X")
@@ -206,7 +206,7 @@ class TestEmitToolResult:
     @pytest.mark.asyncio
     async def test_pairs_id_and_stringifies_dict(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             result = await emit_tool_result("emit_xyz", {"sent": True, "count": 3}, name="GMAIL_SEND")
 
         assert result.ok is True
@@ -219,7 +219,7 @@ class TestEmitToolResult:
     @pytest.mark.asyncio
     async def test_none_content_becomes_success_marker(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             await emit_tool_result("emit_xyz", None)
 
         assert execute.call_args.args[1]["block"]["content"] == "Success (no output)"
@@ -227,7 +227,7 @@ class TestEmitToolResult:
     @pytest.mark.asyncio
     async def test_string_content_passes_through(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             await emit_tool_result("emit_xyz", "raw text payload")
 
         assert execute.call_args.args[1]["block"]["content"] == "raw text payload"
@@ -237,7 +237,7 @@ class TestEmitToolUseResultPairing:
     @pytest.mark.asyncio
     async def test_full_pair_share_id(self):
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             tool_id = await emit_tool_use("GMAIL_SEND", input={"to": "a@b.com"})
             res = await emit_tool_result(tool_id, "sent", name="GMAIL_SEND")
 
@@ -263,9 +263,9 @@ class TestBlockShapes:
 
 
 class TestLogCapture:
-    """The capture buffer records clean, logger-style steps: emitted blocks (compact,
-    not full serialized blocks) and every ActionExecutor call (name + input + output),
-    so a runtime can return every step the script ran."""
+    """The capture buffer records clean, logger-style steps: every ActionExecutor call
+    (name + input + output) and the script's own text lines, so a runtime can return every
+    step the script ran and the author's account of it."""
 
     @pytest.fixture(autouse=True)
     def _reset_buffer(self):
@@ -279,32 +279,15 @@ class TestLogCapture:
     async def test_captures_clean_block_entries(self, monkeypatch):
         start_log_capture()
         execute = AsyncMock(return_value=None)
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             await emit_text("hello")
             tid = await emit_tool_use("MyTool", display_title="Doing", input={"x": 1})
             await emit_tool_result(tid, {"ok": True}, name="MyTool")
 
-        steps = drain_log_capture()
-        # Every entry carries the SDK version (like the logger).
-        assert all(s["sdk_version"] == __version__ for s in steps)
-        assert steps[0] == {
-            "sdk_version": __version__,
-            "event": "emit_text",
-            "content": "hello",
-        }
-        assert steps[1] == {
-            "sdk_version": __version__,
-            "event": "emit_tool_use",
-            "id": tid,
-            "name": "MyTool",
-            "display_title": "Doing",
-            "input_json": json.dumps({"x": 1}),
-        }
-        assert steps[2]["event"] == "emit_tool_result"
-        assert steps[2]["id"] == tid
-        # Compact — not the full serialized block.
-        assert "parent_block_id" not in steps[0]
-        assert "type" not in steps[0]
+        # Nothing: emit_text is display-only, and a tool block's action is already captured
+        # as its own ``action`` entry. emit_info / emit_debug / emit_error are what reach the
+        # file — see test_log_levels.py.
+        assert drain_log_capture() == []
 
     def test_captures_action_call(self):
         start_log_capture()
@@ -320,8 +303,9 @@ class TestLogCapture:
         ]
 
     @pytest.mark.asyncio
-    async def test_emit_log_suppresses_its_own_action_capture(self, monkeypatch):
-        # emit_log captures its block; the emit_log action call must NOT also be captured.
+    async def test_the_emit_action_is_not_captured(self, monkeypatch):
+        """An emit is how a log is sent, not a step of the run's work. Kept out by name now,
+        rather than by suppressing capture around the call."""
         start_log_capture()
 
         async def fake_execute(name, params, **kwargs):
@@ -329,19 +313,12 @@ class TestLogCapture:
             ActionExecutor._capture_action_step(name, params, None)
             return None
 
-        with patch("zamp_sdk.logging.logging.ActionExecutor.execute", fake_execute):
+        with patch("zamp_sdk.action_executor.ActionExecutor.execute", fake_execute):
             await emit_text("hi")
 
-        # Only the block; the action was suppressed inside emit_log.
-        assert [s["event"] for s in drain_log_capture()] == ["emit_text"]
-
-    def test_suppress_step_capture(self):
-        start_log_capture()
-        capture_step({"event": "a"})
-        with suppress_step_capture():
-            capture_step({"event": "b"})  # suppressed
-        capture_step({"event": "c"})
-        assert [s["event"] for s in drain_log_capture()] == ["a", "c"]
+        # Nothing: emit_text does not record, and the dispatch that delivered it is skipped
+        # by name — otherwise every line would also show up as an action calling emit_log.
+        assert drain_log_capture() == []
 
     def test_capture_is_noop_without_start(self):
         # No start_log_capture() -> capture is a no-op (blocks still stream live elsewhere).
@@ -353,28 +330,11 @@ class TestLogCapture:
         assert capture_active() is False  # nothing started
         start_log_capture()
         assert capture_active() is True
-        with suppress_step_capture():
-            assert capture_active() is False  # suppressed
-        assert capture_active() is True
 
 
 class TestEmitLogIsFailSafe:
     """Capture is telemetry on the way to the platform, so nothing in it may change the
     outcome of the emit, and ``emit_log`` documents that it never raises."""
-
-    @pytest.mark.asyncio
-    async def test_a_broken_capture_does_not_stop_the_emit(self):
-        start_log_capture()
-        with (
-            patch("zamp_sdk.logging.logging._clean_block_entry", side_effect=RuntimeError("capture broke")),
-            patch.object(ActionExecutor, "execute", new_callable=AsyncMock) as execute,
-        ):
-            execute.return_value = {"delivered": True}
-            result = await emit_log(TextContentBlock(content="hello"))
-
-        assert execute.await_count == 1  # the block still went out
-        assert result.ok is True
-        assert drain_log_capture() == []  # the entry is what was lost
 
     @pytest.mark.asyncio
     async def test_a_block_that_cannot_be_serialized_comes_back_as_a_result_not_a_raise(self):
@@ -398,50 +358,12 @@ class TestEmitLogIsFailSafe:
         assert result.error == "ctx broke"
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("dependency", ["capture_active", "capture_step", "_clean_block_entry"])
-    async def test_any_broken_capture_dependency_still_emits(self, dependency):
-        """Each part of the capture is broken in turn — a guard that only covers the paths we
-        thought of is not a guard."""
-        start_log_capture()
-        with (
-            patch(f"zamp_sdk.logging.logging.{dependency}", side_effect=RuntimeError("boom")),
-            patch.object(ActionExecutor, "execute", new_callable=AsyncMock) as execute,
-        ):
-            execute.return_value = {"delivered": True}
-            result = await emit_log(TextContentBlock(content="hi"))
-
-        assert execute.await_count == 1
-        assert result.ok is True
-        assert result.error is None
-
-    @pytest.mark.asyncio
-    async def test_a_capture_failure_is_reported_separately_from_an_emit_failure(self):
-        """The two must not be conflated: a broken capture logs its own warning and leaves
-        ok=True, while a failed dispatch is what sets ok=False."""
-        start_log_capture()
-        with (
-            patch("zamp_sdk.logging.logging._clean_block_entry", side_effect=RuntimeError("capture broke")),
-            patch("zamp_sdk.logging.logging.logger") as logger,
-            patch.object(ActionExecutor, "execute", new_callable=AsyncMock) as execute,
-        ):
-            execute.return_value = {"delivered": True}
-            result = await emit_log(TextContentBlock(content="hi"))
-
-        assert result.ok is True
-        messages = [call.args[0] for call in logger.warning.call_args_list]
-        assert "could not capture the emitted block" in messages
-        assert "emit_log failed" not in messages
-
-    @pytest.mark.asyncio
-    async def test_a_failed_dispatch_still_leaves_the_block_in_the_buffer(self):
-        """Capture happens before the call on purpose: a transient delivery failure must not
-        erase what the script was trying to report."""
-        start_log_capture()
+    async def test_a_failed_dispatch_is_reported_as_a_result_not_a_raise(self):
+        """A delivery failure is the caller's to ignore, not to catch: emit_log documents that
+        it never raises, so the failure comes back on the result."""
         with patch.object(ActionExecutor, "execute", new_callable=AsyncMock) as execute:
             execute.side_effect = RuntimeError("upstream down")
             result = await emit_log(TextContentBlock(content="processing row 3"))
 
         assert result.ok is False
-        steps = drain_log_capture()
-        assert [s["event"] for s in steps] == ["emit_text"]
-        assert steps[0]["content"] == "processing row 3"
+        assert result.error == "upstream down"
