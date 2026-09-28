@@ -27,13 +27,25 @@ class ChannelType(str, Enum):
     TASK = "task"
 
 
+class ToolExecutionMode(str, Enum):
+    """How the tool call this context belongs to runs.
+
+    ``SYNC`` is the agent's own turn. ``ASYNC`` is a background tool call: the channel is
+    still the conversation or task it works for, and ``message_id`` is the call's own
+    message."""
+
+    SYNC = "sync"
+    ASYNC = "async"
+
+
 class ChannelContext(BaseModel):
     """Streaming/agent-context variables the platform propagates per execution.
 
     Attached to an action request as its ``channel_context``; the platform forces the
-    verified copy into the action's params from there. Every field is required — a
-    partial context is not a weaker context, it is no context, which is why the
-    runtime injects all six ``ZAMP_*`` variables or none.
+    verified copy into the action's params from there. The six channel fields are
+    required — a partial context is not a weaker context, it is no context, which is why
+    the runtime injects all six ``ZAMP_*`` variables or none. ``tool_execution_mode`` is
+    not one of them: it defaults to ``SYNC``, so a context without it is a foreground one.
     """
 
     channel_type: ChannelType = Field(description="Channel type — conversation or task")
@@ -42,6 +54,10 @@ class ChannelContext(BaseModel):
     message_id: str
     tool_call_id: str
     run_id: str
+    tool_execution_mode: ToolExecutionMode = Field(
+        default=ToolExecutionMode.SYNC,
+        description="sync for the agent's own turn, async inside a background tool call",
+    )
 
 
 _bound_context: ContextVar[Optional[ChannelContext]] = ContextVar("zamp_channel_context", default=None)

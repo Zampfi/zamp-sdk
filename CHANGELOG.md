@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.4.0
+
+- **`ChannelContext.tool_execution_mode` — whether a tool call runs in the agent's turn or in the
+  background.** `ToolExecutionMode.SYNC` (the default) or `ToolExecutionMode.ASYNC`. Inside a
+  background tool call the channel is still the conversation or task it works for, and
+  `message_id` is the call's own message; the platform sets the mode and validates it wherever a
+  context enters, so a caller cannot claim it.
+  - **Backwards compatible both ways.** A context without the field is a sync one, so every
+    existing caller and payload is unchanged; an older SDK that sees the field ignores it.
+  - In a sandbox it arrives as the optional `ZAMP_TOOL_EXECUTION_MODE` variable, read by
+    `resolve_context` when set. It is not one of the six channel variables that are all-or-none.
+
 ## 1.3.0
 
 - **Actions run in the caller's branch.** A script running inside a branch now keeps its action

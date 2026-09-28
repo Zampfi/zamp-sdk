@@ -3,6 +3,7 @@ from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.context import (
     ChannelContext,
     ChannelType,
+    ToolExecutionMode,
     bind_channel_context,
     clear_channel_context,
     current_channel_context,
@@ -57,6 +58,7 @@ __all__ = [
     "BaseWorkflow",
     "ChannelContext",
     "ChannelType",
+    "ToolExecutionMode",
     "ContentBlock",
     "ContentBlockType",
     "EmitLogResult",
