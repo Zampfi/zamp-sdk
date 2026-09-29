@@ -5,8 +5,10 @@ from typing import Any, Optional
 
 from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
 from zamp_sdk.context.env import (
+    ENV_BRANCH_ID,
     ENV_CHANNEL_ID,
     ENV_CHANNEL_TYPE,
+    ENV_DB_BRANCH_MODE,
     ENV_MESSAGE_ID,
     ENV_RUN_ID,
     ENV_STREAMING_ID,
@@ -29,6 +31,20 @@ def resolve_context() -> dict[str, Any]:
         "message_id": os.environ.get(ENV_MESSAGE_ID),
         "tool_call_id": os.environ.get(ENV_TOOL_CALL_ID),
         "run_id": os.environ.get(ENV_RUN_ID),
+    }
+    return {k: v for k, v in ctx.items() if v}
+
+
+def current_branch_context() -> dict[str, str]:
+    """The branch this process runs in, as injected by the runtime: ``branch_id`` and
+    ``db_branch_mode``, each present only when set (empty outside a branch).
+
+    Env-only on purpose: in-process (``ACTIONS_HUB``) callers already run under a workflow
+    whose metadata context carries the branch, so there is nothing to forward from here.
+    """
+    ctx = {
+        "branch_id": os.environ.get(ENV_BRANCH_ID),
+        "db_branch_mode": os.environ.get(ENV_DB_BRANCH_MODE),
     }
     return {k: v for k, v in ctx.items() if v}
 

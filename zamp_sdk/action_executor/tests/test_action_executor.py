@@ -352,6 +352,29 @@ class TestExecuteAction:
             assert body["params"] == {"to": "a@b.com"}
             assert body["is_external_action"] is True
 
+    async def test_sends_branch_headers_when_in_a_branch(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BRANCH_ID", "feature-x")
+        monkeypatch.setenv("ZAMP_DB_BRANCH_MODE", "test")
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-123"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client) as client_cls:
+            await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
+        headers = client_cls.call_args.kwargs["default_headers"]
+        assert headers["X-BRANCH-ID"] == "feature-x"
+        assert headers["X-DB-BRANCH-MODE"] == "test"
+        assert headers["Authorization"] == "Bearer tok"
+
+    async def test_sends_no_branch_headers_outside_a_branch(self, monkeypatch):
+        monkeypatch.delenv("ZAMP_BRANCH_ID", raising=False)
+        monkeypatch.delenv("ZAMP_DB_BRANCH_MODE", raising=False)
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-123"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client) as client_cls:
+            await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
+        assert client_cls.call_args.kwargs["default_headers"] == {"Authorization": "Bearer tok"}
+
     async def test_includes_channel_context_in_body_when_provided(self):
         mock_client = AsyncMock()
         mock_client.post.return_value = {"id": "action-123"}

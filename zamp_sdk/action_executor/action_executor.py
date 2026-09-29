@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from zamp_sdk.action_executor.constants import (
     ACTION_ENVELOPE_KEYS,
+    BRANCH_HEADERS,
     IN_PROGRESS_STATUSES,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
@@ -28,6 +29,7 @@ from zamp_sdk.context import (
     ENV_AUTH_TOKEN,
     ENV_BASE_URL,
     ChannelContext,
+    current_branch_context,
     resolve_channel_context,
 )
 from zamp_sdk.logger import get_logger
@@ -368,7 +370,11 @@ class ActionExecutor:
         """Post to ``{config.base_url}/actions`` and poll until a terminal state."""
         client = HttpClient(
             base_url=config.base_url,
-            default_headers={"Authorization": f"Bearer {config.auth_token}"},
+            default_headers={
+                "Authorization": f"Bearer {config.auth_token}",
+                # The platform runs the action in this branch (DB, files, spawned tasks).
+                **{BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()},
+            },
         )
 
         # Always send the SDK's retry policy so the server doesn't fall back to

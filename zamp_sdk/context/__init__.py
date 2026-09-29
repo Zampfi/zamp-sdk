@@ -9,8 +9,10 @@ from zamp_sdk.context.env import (
     ENV_AUTH_TOKEN,
     ENV_AUTO_ACTION_LOGS,
     ENV_BASE_URL,
+    ENV_BRANCH_ID,
     ENV_CHANNEL_ID,
     ENV_CHANNEL_TYPE,
+    ENV_DB_BRANCH_MODE,
     ENV_EXECUTION_HOST,
     ENV_LOG_ENABLED,
     ENV_LOG_LEVEL,
@@ -20,7 +22,7 @@ from zamp_sdk.context.env import (
     ENV_TOOL_CALL_ID,
 )
 from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
-from zamp_sdk.context.resolve import resolve_channel_context, resolve_context
+from zamp_sdk.context.resolve import current_branch_context, resolve_channel_context, resolve_context
 
 __all__ = [
     "ChannelContext",
@@ -29,8 +31,10 @@ __all__ = [
     "ENV_AUTH_TOKEN",
     "ENV_AUTO_ACTION_LOGS",
     "ENV_BASE_URL",
+    "ENV_BRANCH_ID",
     "ENV_CHANNEL_ID",
     "ENV_CHANNEL_TYPE",
+    "ENV_DB_BRANCH_MODE",
     "ENV_EXECUTION_HOST",
     "ENV_LOG_ENABLED",
     "ENV_LOG_LEVEL",
@@ -40,6 +44,7 @@ __all__ = [
     "ENV_TOOL_CALL_ID",
     "bind_channel_context",
     "clear_channel_context",
+    "current_branch_context",
     "current_channel_context",
     "current_execution_host",
     "resolve_channel_context",
