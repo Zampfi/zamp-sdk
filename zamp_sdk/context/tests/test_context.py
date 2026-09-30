@@ -8,6 +8,7 @@ from zamp_sdk.context import (
     ChannelType,
     bind_channel_context,
     clear_channel_context,
+    current_branch_context,
     resolve_channel_context,
     resolve_context,
 )
@@ -23,8 +24,36 @@ def _clear_zamp_env(monkeypatch):
         "ZAMP_MESSAGE_ID",
         "ZAMP_TOOL_CALL_ID",
         "ZAMP_RUN_ID",
+        "ZAMP_BRANCH_ID",
+        "ZAMP_DB_BRANCH_MODE",
+        "ZAMP_ENVIRONMENT",
     ):
         monkeypatch.delenv(var, raising=False)
+
+
+class TestCurrentBranchContext:
+    def test_reads_injected_branch(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BRANCH_ID", "feature-x")
+        monkeypatch.setenv("ZAMP_DB_BRANCH_MODE", "test")
+        assert current_branch_context() == {"branch_id": "feature-x", "db_branch_mode": "test"}
+
+    def test_empty_outside_a_branch(self):
+        assert current_branch_context() == {}
+
+    def test_includes_environment_in_a_branch(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BRANCH_ID", "feature-x")
+        monkeypatch.setenv("ZAMP_ENVIRONMENT", "test")
+        assert current_branch_context() == {"branch_id": "feature-x", "environment": "test"}
+
+    def test_mode_and_environment_ignored_without_a_branch(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_DB_BRANCH_MODE", "test")
+        monkeypatch.setenv("ZAMP_ENVIRONMENT", "test")
+        assert current_branch_context() == {}
+
+    def test_drops_blank_values(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BRANCH_ID", "feature-x")
+        monkeypatch.setenv("ZAMP_DB_BRANCH_MODE", "")
+        assert current_branch_context() == {"branch_id": "feature-x"}
 
 
 class TestResolveContext:

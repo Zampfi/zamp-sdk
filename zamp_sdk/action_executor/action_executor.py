@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from zamp_sdk.action_executor.constants import (
     ACTION_ENVELOPE_KEYS,
+    BRANCH_HEADERS,
     IN_PROGRESS_STATUSES,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
@@ -28,6 +29,7 @@ from zamp_sdk.context import (
     ENV_AUTH_TOKEN,
     ENV_BASE_URL,
     ChannelContext,
+    current_branch_context,
     resolve_channel_context,
 )
 from zamp_sdk.logger import get_logger
@@ -286,13 +288,22 @@ class ActionExecutor:
         the URL is *used*, with the trailing slash stripped as ``_build_url`` strips it, so a
         formatting difference does not read as a different deployment and quietly stop logging.
         """
-        ambient_url = (os.environ.get(ENV_BASE_URL) or "").rstrip("/")
         return (
             channel_context is not None
-            and bool(ambient_url)
-            and config.base_url.rstrip("/") == ambient_url
+            and ActionExecutor._is_ambient_deployment(config)
             and config.auth_token == os.environ.get(ENV_AUTH_TOKEN)
         )
+
+    @staticmethod
+    def _is_ambient_deployment(config: SdkConfig) -> bool:
+        """Whether ``config`` targets the deployment the runtime's environment names.
+
+        Ambient context (the channel for logs, the branch for actions) belongs to that one
+        deployment and must not follow a call pointed at another. The deployment is the URL:
+        a different token on the same deployment is still the same deployment.
+        """
+        ambient_url = (os.environ.get(ENV_BASE_URL) or "").rstrip("/")
+        return bool(ambient_url) and config.base_url.rstrip("/") == ambient_url
 
     @classmethod
     async def _execute_via_api(cls, request: ActionRequest) -> Any:
@@ -368,7 +379,16 @@ class ActionExecutor:
         """Post to ``{config.base_url}/actions`` and poll until a terminal state."""
         client = HttpClient(
             base_url=config.base_url,
-            default_headers={"Authorization": f"Bearer {config.auth_token}"},
+            default_headers={
+                "Authorization": f"Bearer {config.auth_token}",
+                # The platform runs the action in this branch (DB, files, spawned tasks) —
+                # only on the deployment that supplied the branch.
+                **(
+                    {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
+                    if cls._is_ambient_deployment(config)
+                    else {}
+                ),
+            },
         )
 
         # Always send the SDK's retry policy so the server doesn't fall back to

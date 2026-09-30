@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.3.0
+
+- **Actions run in the caller's branch.** A script running inside a branch now keeps its action
+  calls — dataset queries, spawned tasks, file actions — in that branch instead of main. The
+  runtime injects `ZAMP_BRANCH_ID` (with `ZAMP_DB_BRANCH_MODE` / `ZAMP_ENVIRONMENT`); the SDK sends
+  them on every API-route call to that deployment as `X-BRANCH-ID` / `X-DB-BRANCH-MODE` /
+  `X-ENVIRONMENT`. Nothing changes outside a branch: mode and environment are only sent with a
+  branch id.
+  - `zamp_sdk.context.current_branch_context()` returns the branch the process runs in
+    (`{"branch_id", "db_branch_mode", "environment"}`, only the keys that are set; empty
+    without a branch).
+  - In-process (ActionsHub) callers need nothing: their workflow's metadata context already
+    carries the branch.
+
 ## 1.2.0
 
 - **The SDK logs action calls itself.** Every action dispatched over the API or the action
