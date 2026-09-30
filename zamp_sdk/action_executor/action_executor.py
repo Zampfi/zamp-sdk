@@ -288,10 +288,18 @@ class ActionExecutor:
         the URL is *used*, with the trailing slash stripped as ``_build_url`` strips it, so a
         formatting difference does not read as a different deployment and quietly stop logging.
         """
+        return channel_context is not None and ActionExecutor._is_ambient_deployment(config)
+
+    @staticmethod
+    def _is_ambient_deployment(config: SdkConfig) -> bool:
+        """Whether ``config`` targets the deployment the runtime's environment names.
+
+        Ambient context (the channel for logs, the branch for actions) belongs to that one
+        deployment and must not follow a call pointed at another tenant.
+        """
         ambient_url = (os.environ.get(ENV_BASE_URL) or "").rstrip("/")
         return (
-            channel_context is not None
-            and bool(ambient_url)
+            bool(ambient_url)
             and config.base_url.rstrip("/") == ambient_url
             and config.auth_token == os.environ.get(ENV_AUTH_TOKEN)
         )
@@ -372,8 +380,13 @@ class ActionExecutor:
             base_url=config.base_url,
             default_headers={
                 "Authorization": f"Bearer {config.auth_token}",
-                # The platform runs the action in this branch (DB, files, spawned tasks).
-                **{BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()},
+                # The platform runs the action in this branch (DB, files, spawned tasks) —
+                # only on the deployment that supplied the branch.
+                **(
+                    {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
+                    if cls._is_ambient_deployment(config)
+                    else {}
+                ),
             },
         )
 
