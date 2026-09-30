@@ -30,9 +30,9 @@ class ChannelType(str, Enum):
 class ToolExecutionMode(str, Enum):
     """How the tool call this context belongs to runs.
 
-    ``SYNC`` is the agent's own turn. ``ASYNC`` is a background tool call: the channel is
-    still the conversation or task it works for, and ``message_id`` is the call's own
-    message."""
+    ``SYNC`` is the agent's own turn. ``ASYNC`` is an async tool call: the channel and
+    ``message_id`` are still the conversation or task message it was started from, and
+    ``tool_call_id`` is the async tool call's id."""
 
     SYNC = "sync"
     ASYNC = "async"
@@ -56,7 +56,7 @@ class ChannelContext(BaseModel):
     run_id: str
     tool_execution_mode: ToolExecutionMode = Field(
         default=ToolExecutionMode.SYNC,
-        description="sync for the agent's own turn, async inside a background tool call",
+        description="sync for the agent's own turn, async inside an async tool call",
     )
 
 
