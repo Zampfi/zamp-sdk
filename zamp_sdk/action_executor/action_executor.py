@@ -288,21 +288,22 @@ class ActionExecutor:
         the URL is *used*, with the trailing slash stripped as ``_build_url`` strips it, so a
         formatting difference does not read as a different deployment and quietly stop logging.
         """
-        return channel_context is not None and ActionExecutor._is_ambient_deployment(config)
+        return (
+            channel_context is not None
+            and ActionExecutor._is_ambient_deployment(config)
+            and config.auth_token == os.environ.get(ENV_AUTH_TOKEN)
+        )
 
     @staticmethod
     def _is_ambient_deployment(config: SdkConfig) -> bool:
         """Whether ``config`` targets the deployment the runtime's environment names.
 
         Ambient context (the channel for logs, the branch for actions) belongs to that one
-        deployment and must not follow a call pointed at another tenant.
+        deployment and must not follow a call pointed at another. The deployment is the URL:
+        a different token on the same deployment is still the same deployment.
         """
         ambient_url = (os.environ.get(ENV_BASE_URL) or "").rstrip("/")
-        return (
-            bool(ambient_url)
-            and config.base_url.rstrip("/") == ambient_url
-            and config.auth_token == os.environ.get(ENV_AUTH_TOKEN)
-        )
+        return bool(ambient_url) and config.base_url.rstrip("/") == ambient_url
 
     @classmethod
     async def _execute_via_api(cls, request: ActionRequest) -> Any:
