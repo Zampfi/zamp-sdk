@@ -3,4 +3,5 @@
 BRANCH_HEADERS = {
     "branch_id": "X-BRANCH-ID",
     "db_branch_mode": "X-DB-BRANCH-MODE",
+    "environment": "X-ENVIRONMENT",
 }

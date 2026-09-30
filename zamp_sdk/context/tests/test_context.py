@@ -26,6 +26,7 @@ def _clear_zamp_env(monkeypatch):
         "ZAMP_RUN_ID",
         "ZAMP_BRANCH_ID",
         "ZAMP_DB_BRANCH_MODE",
+        "ZAMP_ENVIRONMENT",
     ):
         monkeypatch.delenv(var, raising=False)
 
@@ -37,6 +38,16 @@ class TestCurrentBranchContext:
         assert current_branch_context() == {"branch_id": "feature-x", "db_branch_mode": "test"}
 
     def test_empty_outside_a_branch(self):
+        assert current_branch_context() == {}
+
+    def test_includes_environment_in_a_branch(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BRANCH_ID", "feature-x")
+        monkeypatch.setenv("ZAMP_ENVIRONMENT", "test")
+        assert current_branch_context() == {"branch_id": "feature-x", "environment": "test"}
+
+    def test_mode_and_environment_ignored_without_a_branch(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_DB_BRANCH_MODE", "test")
+        monkeypatch.setenv("ZAMP_ENVIRONMENT", "test")
         assert current_branch_context() == {}
 
     def test_drops_blank_values(self, monkeypatch):

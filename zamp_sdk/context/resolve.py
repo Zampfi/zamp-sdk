@@ -9,6 +9,7 @@ from zamp_sdk.context.env import (
     ENV_CHANNEL_ID,
     ENV_CHANNEL_TYPE,
     ENV_DB_BRANCH_MODE,
+    ENV_ENVIRONMENT,
     ENV_MESSAGE_ID,
     ENV_RUN_ID,
     ENV_STREAMING_ID,
@@ -36,15 +37,20 @@ def resolve_context() -> dict[str, Any]:
 
 
 def current_branch_context() -> dict[str, str]:
-    """The branch this process runs in, as injected by the runtime: ``branch_id`` and
-    ``db_branch_mode``, each present only when set (empty outside a branch).
+    """The branch this process runs in, as injected by the runtime: ``branch_id`` plus its
+    ``db_branch_mode`` and resource ``environment``, each present only when set.
+
+    Empty unless a branch is set: mode and environment only mean something inside one.
 
     Env-only on purpose: in-process (``ACTIONS_HUB``) callers already run under a workflow
     whose metadata context carries the branch, so there is nothing to forward from here.
     """
+    if not os.environ.get(ENV_BRANCH_ID):
+        return {}
     ctx = {
         "branch_id": os.environ.get(ENV_BRANCH_ID),
         "db_branch_mode": os.environ.get(ENV_DB_BRANCH_MODE),
+        "environment": os.environ.get(ENV_ENVIRONMENT),
     }
     return {k: v for k, v in ctx.items() if v}
 

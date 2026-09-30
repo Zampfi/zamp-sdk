@@ -23,6 +23,7 @@ ENV_EXECUTION_HOST = "ZAMP_SDK_EXECUTION_HOST"
 # on every API-route action call so the action's DB, files and spawned tasks stay in that branch.
 ENV_BRANCH_ID = "ZAMP_BRANCH_ID"
 ENV_DB_BRANCH_MODE = "ZAMP_DB_BRANCH_MODE"
+ENV_ENVIRONMENT = "ZAMP_ENVIRONMENT"
 
 # This run's LoggingConfig, one variable per field, for a process with no workflow input to
 # carry it on. Read independently rather than all-or-none like the channel variables above: a

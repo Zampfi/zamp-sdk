@@ -357,6 +357,7 @@ class TestExecuteAction:
         monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
         monkeypatch.setenv("ZAMP_BRANCH_ID", "feature-x")
         monkeypatch.setenv("ZAMP_DB_BRANCH_MODE", "test")
+        monkeypatch.setenv("ZAMP_ENVIRONMENT", "test")
         mock_client = AsyncMock()
         mock_client.post.return_value = {"id": "action-123"}
         mock_client.get.return_value = {"status": "COMPLETED", "result": None}
@@ -365,6 +366,7 @@ class TestExecuteAction:
         headers = client_cls.call_args.kwargs["default_headers"]
         assert headers["X-BRANCH-ID"] == "feature-x"
         assert headers["X-DB-BRANCH-MODE"] == "test"
+        assert headers["X-ENVIRONMENT"] == "test"
         assert headers["Authorization"] == "Bearer tok"
 
     async def test_branch_headers_not_sent_to_another_deployment(self, monkeypatch):
