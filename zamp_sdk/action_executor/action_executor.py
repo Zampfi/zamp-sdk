@@ -331,7 +331,13 @@ class ActionExecutor:
                 action_name=request.action_name,
                 params=request.params,
                 config=config,
-                channel_context=channel_context.model_dump(mode="json") if channel_context is not None else None,
+                # exclude_defaults: a sync call sends no tool_execution_mode, so its payload is
+                # the same as before the field existed.
+                channel_context=(
+                    channel_context.model_dump(mode="json", exclude_defaults=True)
+                    if channel_context is not None
+                    else None
+                ),
                 return_type=request.return_type,
                 summary=request.summary,
                 action_retry_policy=request.action_retry_policy,
