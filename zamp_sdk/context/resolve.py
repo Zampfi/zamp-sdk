@@ -14,6 +14,7 @@ from zamp_sdk.context.env import (
     ENV_RUN_ID,
     ENV_STREAMING_ID,
     ENV_TOOL_CALL_ID,
+    ENV_TOOL_EXECUTION_MODE,
 )
 from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
 
@@ -32,6 +33,7 @@ def resolve_context() -> dict[str, Any]:
         "message_id": os.environ.get(ENV_MESSAGE_ID),
         "tool_call_id": os.environ.get(ENV_TOOL_CALL_ID),
         "run_id": os.environ.get(ENV_RUN_ID),
+        "tool_execution_mode": os.environ.get(ENV_TOOL_EXECUTION_MODE),
     }
     return {k: v for k, v in ctx.items() if v}
 

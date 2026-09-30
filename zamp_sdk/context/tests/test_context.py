@@ -6,6 +6,7 @@ from pydantic import ValidationError
 from zamp_sdk.context import (
     ChannelContext,
     ChannelType,
+    ToolExecutionMode,
     bind_channel_context,
     clear_channel_context,
     current_branch_context,
@@ -27,6 +28,7 @@ def _clear_zamp_env(monkeypatch):
         "ZAMP_BRANCH_ID",
         "ZAMP_DB_BRANCH_MODE",
         "ZAMP_ENVIRONMENT",
+        "ZAMP_TOOL_EXECUTION_MODE",
     ):
         monkeypatch.delenv(var, raising=False)
 
@@ -84,6 +86,10 @@ class TestResolveContext:
         monkeypatch.setenv("ZAMP_CHANNEL_ID", "conv-7")
         assert resolve_context() == {"channel_id": "conv-7"}
 
+    def test_reads_tool_execution_mode_when_set(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_TOOL_EXECUTION_MODE", "async")
+        assert resolve_context() == {"tool_execution_mode": "async"}
+
 
 class TestChannelContextModel:
     def _kwargs(self, **overrides) -> dict:
@@ -119,6 +125,27 @@ class TestChannelContextModel:
         with pytest.raises(ValidationError):
             ChannelContext(**self._kwargs(channel_id="not-a-uuid"))
 
+    def test_tool_execution_mode_defaults_to_sync(self):
+        """A context without the field — every foreground one, and any sent by an older
+        platform — is a sync tool call."""
+        assert ChannelContext(**self._kwargs()).tool_execution_mode is ToolExecutionMode.SYNC
+
+    def test_async_tool_execution_mode(self):
+        cc = ChannelContext(**self._kwargs(tool_execution_mode="async"))
+        assert cc.tool_execution_mode is ToolExecutionMode.ASYNC
+
+    def test_invalid_tool_execution_mode_rejected(self):
+        with pytest.raises(ValidationError):
+            ChannelContext(**self._kwargs(tool_execution_mode="later"))
+
+    def test_tool_execution_mode_survives_a_round_trip(self):
+        cc = ChannelContext(**self._kwargs(tool_execution_mode="async"))
+        restored = ChannelContext.model_validate_json(cc.model_dump_json())
+        assert restored.tool_execution_mode is ToolExecutionMode.ASYNC
+
+    def test_tool_execution_mode_values(self):
+        assert {mode.value for mode in ToolExecutionMode} == {"sync", "async"}
+
 
 class TestResolveChannelContext:
     """The channel context the SDK attaches once when calling the platform: a validated
@@ -140,6 +167,19 @@ class TestResolveChannelContext:
         assert cc is not None
         assert cc.channel_id == cid
         assert cc.channel_type is ChannelType.CONVERSATION
+
+    def test_sandbox_env_without_mode_is_sync(self, monkeypatch):
+        self._full_sandbox_env(monkeypatch, str(uuid.uuid4()))
+        cc = resolve_channel_context()
+        assert cc is not None
+        assert cc.tool_execution_mode is ToolExecutionMode.SYNC
+
+    def test_sandbox_env_reads_async_mode(self, monkeypatch):
+        self._full_sandbox_env(monkeypatch, str(uuid.uuid4()))
+        monkeypatch.setenv("ZAMP_TOOL_EXECUTION_MODE", "async")
+        cc = resolve_channel_context()
+        assert cc is not None
+        assert cc.tool_execution_mode is ToolExecutionMode.ASYNC
 
     def test_none_when_channel_id_not_uuid(self, monkeypatch):
         self._full_sandbox_env(monkeypatch, "conv-1")

@@ -834,8 +834,7 @@ class TestChannelContextOnApiCall:
     """The SDK resolves the caller's channel context once and attaches it to the POST
     /actions body, so individual actions don't each have to send it."""
 
-    async def test_sandbox_execute_attaches_channel_context_to_body(self):
-        cid = str(uuid.uuid4())
+    async def _sent_channel_context(self, cid: str, **extra_env: str) -> dict:
         env = {
             "ZAMP_BASE_URL": "https://api.zamp.test",
             "ZAMP_AUTH_TOKEN": "tok",
@@ -845,6 +844,7 @@ class TestChannelContextOnApiCall:
             "ZAMP_MESSAGE_ID": "m",
             "ZAMP_TOOL_CALL_ID": "t",
             "ZAMP_RUN_ID": "r",
+            **extra_env,
         }
         mock_client = AsyncMock()
         mock_client.post.return_value = {"id": "action-1"}
@@ -854,9 +854,25 @@ class TestChannelContextOnApiCall:
             patch(f"{_MODULE}.HttpClient", return_value=mock_client),
         ):
             await ActionExecutor.execute("some_action", {"p": 1})
-        cc = mock_client.post.call_args.kwargs["data"]["channel_context"]
-        assert cc["channel_id"] == cid
-        assert cc["channel_type"] == "conversation"
+        return mock_client.post.call_args.kwargs["data"]["channel_context"]
+
+    async def test_sandbox_execute_attaches_channel_context_to_body(self):
+        """A sync call's context is exactly the six channel fields — the same payload as
+        before ``tool_execution_mode`` existed."""
+        cid = str(uuid.uuid4())
+        cc = await self._sent_channel_context(cid)
+        assert cc == {
+            "channel_type": "conversation",
+            "channel_id": cid,
+            "streaming_id": "s",
+            "message_id": "m",
+            "tool_call_id": "t",
+            "run_id": "r",
+        }
+
+    async def test_async_call_sends_tool_execution_mode(self):
+        cc = await self._sent_channel_context(str(uuid.uuid4()), ZAMP_TOOL_EXECUTION_MODE="async")
+        assert cc["tool_execution_mode"] == "async"
 
     async def test_sandbox_execute_omits_channel_context_when_env_incomplete(self):
         # Only channel type/id in the env (no streaming/message/tool/run) -> no valid

@@ -331,7 +331,11 @@ class ActionExecutor:
                 action_name=request.action_name,
                 params=request.params,
                 config=config,
-                channel_context=channel_context.model_dump(mode="json") if channel_context is not None else None,
+                channel_context=(
+                    channel_context.model_dump(mode="json", exclude_defaults=True)
+                    if channel_context is not None
+                    else None
+                ),
                 return_type=request.return_type,
                 summary=request.summary,
                 action_retry_policy=request.action_retry_policy,
