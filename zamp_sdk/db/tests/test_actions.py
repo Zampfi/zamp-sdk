@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from zamp_sdk.action_executor.utils import RateLimitedError
 from zamp_sdk.db.utils import actions
 from zamp_sdk.db.utils.errors import AgentDbError
 
@@ -45,6 +46,18 @@ class TestErrorTranslation:
                 await actions.call("agent_db_execute_sql", {})
 
         assert exc.value is original
+
+    @pytest.mark.asyncio
+    async def test_a_rate_limit_refusal_keeps_its_status_and_cause(self):
+        """Callers still catch one type, and can tell a 429 from other failures."""
+        refusal = RateLimitedError("over the limit", retry_after=1.0, url="https://api.zamp.test/actions")
+
+        with patch(_EXECUTE, new=AsyncMock(side_effect=refusal)):
+            with pytest.raises(AgentDbError) as exc:
+                await actions.call("agent_db_execute_sql", {})
+
+        assert exc.value.status_code == 429
+        assert exc.value.__cause__ is refusal
 
     @pytest.mark.asyncio
     async def test_a_timeout_propagates_unwrapped(self):
