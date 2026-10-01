@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import random
 from datetime import timedelta
 from typing import Any, Callable
 
@@ -16,6 +17,9 @@ from zamp_sdk.action_executor.constants import (
     POST_RETRY_INITIAL_INTERVAL_SECONDS,
     POST_RETRY_MAX_INTERVAL_SECONDS,
     POST_RETRY_TIMEOUT_SECONDS,
+    RATE_LIMIT_RETRY_BUDGET_SECONDS,
+    RATE_LIMIT_RETRY_MAX_ATTEMPTS,
+    RETRY_JITTER_RATIO,
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
     Route,
@@ -23,7 +27,7 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.routing import resolve_route
-from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
+from zamp_sdk.action_executor.utils import HttpClient, HttpClientError, RateLimitedError
 from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import (
     ENV_AUTH_TOKEN,
@@ -92,6 +96,12 @@ class ActionExecutor:
         ``None`` is why it is not a plain ``bool``: "I did not say" has to stay distinct from
         "I said no", or a caller could never log one call without configuring the whole run.
         A local in-process call is never logged either way, and ``emit_log`` never is.
+
+        A call refused for a rate limit raises :class:`RateLimitedError` once a brief retry has
+        not got it through. A refusal that arrives in-band surfaces exactly as before - a
+        refused agent task returns its ``error``, a refused call in the code executor returns a
+        FAILED envelope - and ``rate_limit_refusal(...)`` recognises it in whatever was
+        returned or raised.
         """
         # Resolved before dispatch, not inside it, so one place names every route and one
         # place decides which of them log.
@@ -432,36 +442,87 @@ class ActionExecutor:
         *,
         retry_timeout: float = POST_RETRY_TIMEOUT_SECONDS,
     ) -> dict:
-        """POST ``body`` to ``endpoint``, retrying transient 5xx with backoff.
+        """POST ``body`` to ``endpoint``, retrying a rate-limit refusal briefly and a transient
+        5xx for longer.
 
-        Uses a time-budget + gentle backoff on its OWN conservative constants
+        A 429 means nothing was started, so sending the create again cannot run the action
+        twice. It is retried while :meth:`_rate_limit_retry_delay` names a wait — at most
+        ``RATE_LIMIT_RETRY_MAX_ATTEMPTS`` POSTs, each wait honouring ``Retry-After``, within
+        ``RATE_LIMIT_RETRY_BUDGET_SECONDS`` of waiting in all — and then the
+        :class:`RateLimitedError` surfaces: the caller is over its limit and has to hear it.
+
+        A 5xx uses a time-budget + gentle backoff on its OWN conservative constants
         (a create endpoint returning 5xx is already failing — retries must not
-        accelerate into it): on a 5xx, keep retrying (backing off) until
+        accelerate into it): keep retrying (backing off, with jitter) until
         ``retry_timeout`` seconds elapse, so a momentary server error doesn't
-        fail the action before it is even created. Non-5xx errors (e.g. 4xx,
+        fail the action before it is even created. Other errors (e.g. 4xx,
         network) propagate immediately.
         """
         interval = POST_RETRY_INITIAL_INTERVAL_SECONDS
         elapsed = 0.0
+        refusals = 0
+        refused_wait = 0.0
 
         while True:
             try:
                 return await client.post(endpoint, data=body)
+            except RateLimitedError as exc:
+                refusals += 1
+                delay = cls._rate_limit_retry_delay(exc, refusals=refusals, waited=refused_wait)
+                if delay is None:
+                    raise
+                logger.warning(
+                    "action POST was rate limited, retrying",
+                    endpoint=endpoint,
+                    limit_class=exc.limit_class,
+                    check=exc.check,
+                    retry_after=exc.retry_after,
+                    attempt=refusals,
+                    retry_in_seconds=delay,
+                )
+                await asyncio.sleep(delay)
+                refused_wait += delay
             except HttpClientError as exc:
                 # Budget exhausted or non-transient: surface the original error.
                 if not cls._is_retryable_5xx(exc) or elapsed >= retry_timeout:
                     raise
+                delay = cls._jittered(interval)
                 logger.warning(
                     "action POST returned 5xx, retrying",
                     endpoint=endpoint,
                     status_code=exc.status_code,
                     elapsed=elapsed,
                     retry_timeout=retry_timeout,
-                    retry_in_seconds=interval,
+                    retry_in_seconds=delay,
                 )
-                await asyncio.sleep(interval)
-                elapsed += interval
+                await asyncio.sleep(delay)
+                elapsed += delay
                 interval = cls._next_post_retry_interval(interval)
+
+    @classmethod
+    def _rate_limit_retry_delay(cls, exc: RateLimitedError, *, refusals: int, waited: float) -> float | None:
+        """How long to wait before sending a refused create again, or ``None`` to stop.
+
+        ``refusals`` counts the 429s so far, this one included, and ``waited`` the seconds
+        already spent waiting on them. ``None`` once the attempts or the wait budget are spent,
+        and when the refusal names no wait: the platform leaves ``Retry-After`` out when a
+        retry could never fit the limit. A wait is never shorter than ``Retry-After``.
+        """
+        if exc.retry_after is None or refusals >= RATE_LIMIT_RETRY_MAX_ATTEMPTS:
+            return None
+        remaining = RATE_LIMIT_RETRY_BUDGET_SECONDS - waited
+        if exc.retry_after > remaining:
+            return None
+        return min(cls._jittered(exc.retry_after), remaining)
+
+    @staticmethod
+    def _jittered(seconds: float) -> float:
+        """``seconds`` stretched by up to ``RETRY_JITTER_RATIO`` at random, never shortened.
+
+        Callers refused or failed at the same moment then come back spread out rather than
+        together, and never sooner than they were told to.
+        """
+        return seconds * (1 + random.uniform(0, RETRY_JITTER_RATIO))
 
     @staticmethod
     def _is_retryable_5xx(exc: HttpClientError) -> bool:
@@ -500,9 +561,23 @@ class ActionExecutor:
 
             try:
                 data = await client.get(f"/actions/{action_id}")
+            except RateLimitedError as exc:
+                # Never terminal: a refused poll says nothing about the action, which is still
+                # running. Wait as told, but not past poll_timeout, and keep polling.
+                wait = max(cls._next_poll_interval(interval), exc.retry_after or 0.0)
+                interval = min(cls._jittered(wait), max(poll_timeout - elapsed, 0.0))
+                logger.warning(
+                    "action poll was rate limited, continuing to poll",
+                    action_id=action_id,
+                    retry_after=exc.retry_after,
+                    elapsed=elapsed,
+                    poll_timeout=poll_timeout,
+                    retry_in_seconds=interval,
+                )
+                continue
             except HttpClientError as exc:
                 # A transient 5xx while polling shouldn't fail the action: keep
-                # polling (with backoff) until the action completes or the
+                # polling (with jittered backoff) until the action completes or the
                 # overall poll_timeout is hit. Non-5xx errors still propagate.
                 if not cls._is_retryable_5xx(exc):
                     raise
@@ -513,7 +588,7 @@ class ActionExecutor:
                     elapsed=elapsed,
                     poll_timeout=poll_timeout,
                 )
-                interval = cls._next_poll_interval(interval)
+                interval = cls._jittered(cls._next_poll_interval(interval))
                 continue
 
             action_status = data["status"]

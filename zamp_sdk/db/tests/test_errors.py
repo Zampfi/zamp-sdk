@@ -12,6 +12,7 @@ error with a parser traceback.
 
 import pytest
 
+from zamp_sdk.action_executor.utils import HttpClientError, RateLimitedError
 from zamp_sdk.db.utils.errors import AgentDbError
 
 
@@ -126,3 +127,41 @@ class TestItIsARuntimeError:
         it means the bridge does not break them on upgrade."""
         with pytest.raises(RuntimeError):
             raise AgentDbError("boom")
+
+
+class TestHttpStatus:
+    """The HTTP status survives the translation, so a caller can tell a 429 from the rest."""
+
+    def test_a_rate_limit_refusal_keeps_its_429(self):
+        refusal = RateLimitedError(
+            "Your organization is using SDK actions faster than its limit (120 per minute).",
+            retry_after=1.0,
+            url="https://api.zamp.test/actions",
+        )
+
+        error = AgentDbError.from_exception(refusal)
+
+        assert error.status_code == 429
+        assert error.sqlstate is None
+        assert "faster than its limit" in error.message
+
+    def test_another_http_error_keeps_its_status(self):
+        error = AgentDbError.from_exception(HttpClientError("HTTP 503 from x", status_code=503))
+
+        assert error.status_code == 503
+
+    def test_a_failure_that_was_not_an_http_error_has_none(self):
+        error = AgentDbError.from_exception(RuntimeError("Action a FAILED: statement 0 failed [sqlstate=23505]: dup"))
+
+        assert error.status_code is None
+        assert error.sqlstate == "23505"
+
+    def test_an_action_that_failed_inside_a_200_has_none(self):
+        """Over the API, the HTTP client raises a failed action as an HttpClientError carrying
+        the 200 of the poll that reported it. The call did not fail as an HTTP error."""
+        error = AgentDbError.from_exception(
+            HttpClientError("statement 0 failed [sqlstate=23505]: dup", status_code=200, response_body="{}")
+        )
+
+        assert error.status_code is None
+        assert error.sqlstate == "23505"

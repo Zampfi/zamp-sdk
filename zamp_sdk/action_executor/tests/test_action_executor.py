@@ -7,13 +7,19 @@ import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants.polling import (
+    POLL_BACKOFF_COEFFICIENT,
+    POLL_INITIAL_INTERVAL_SECONDS,
     POST_RETRY_BACKOFF_COEFFICIENT,
     POST_RETRY_INITIAL_INTERVAL_SECONDS,
     POST_RETRY_MAX_INTERVAL_SECONDS,
+    POST_RETRY_TIMEOUT_SECONDS,
+    RATE_LIMIT_RETRY_BUDGET_SECONDS,
+    RATE_LIMIT_RETRY_MAX_ATTEMPTS,
+    RETRY_JITTER_RATIO,
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
-from zamp_sdk.action_executor.utils import HttpClientError
+from zamp_sdk.action_executor.utils import HttpClientError, RateLimitedError
 from zamp_sdk.capture import drain_log_capture, start_log_capture
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
@@ -25,6 +31,11 @@ _HUB_ENV = {"ZAMP_SDK_EXECUTION_HOST": "actions_hub"}
 
 def _http_error(status_code: int) -> HttpClientError:
     return HttpClientError(f"HTTP {status_code}", status_code=status_code, response_body="boom")
+
+
+def _no_jitter():
+    """Retry waits exactly as the backoff computes them, so a test can assert the sequence."""
+    return patch.object(ActionExecutor, "_jittered", side_effect=lambda seconds: seconds)
 
 
 class TestExecute:
@@ -614,7 +625,10 @@ class TestPostAction:
         client = AsyncMock()
         client.post.side_effect = [_http_error(500), _http_error(503), {"id": "action-ok"}]
 
-        with patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            _no_jitter(),
+        ):
             result = await self._executor()._post_action(client, "/actions", {})
 
         assert result == {"id": "action-ok"}
@@ -662,6 +676,7 @@ class TestPostAction:
 
         with (
             patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            _no_jitter(),
             pytest.raises(HttpClientError),
         ):
             await self._executor()._post_action(client, "/actions", {}, retry_timeout=90.0)
@@ -805,6 +820,21 @@ class TestPollActionResult:
         assert result == {"done": True}
         assert client.get.await_count == 4
 
+    async def test_a_5xx_wait_is_jittered(self):
+        client = AsyncMock()
+        client.get.side_effect = [_http_error(500), {"status": "COMPLETED", "result": {"done": True}}]
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch(f"{_MODULE}.random.uniform", return_value=0.2) as uniform,
+        ):
+            result = await self._executor()._poll_action_result(client, "action-5xx")
+
+        assert result == {"done": True}
+        uniform.assert_called_once_with(0, RETRY_JITTER_RATIO)
+        waits = [c.args[0] for c in mock_sleep.await_args_list]
+        assert waits == [POLL_INITIAL_INTERVAL_SECONDS, POLL_INITIAL_INTERVAL_SECONDS * POLL_BACKOFF_COEFFICIENT * 1.2]
+
     async def test_persistent_5xx_times_out_within_poll_budget(self):
         # If the server never recovers, polling is still bounded by poll_timeout
         # and surfaces a TimeoutError rather than looping forever.
@@ -828,6 +858,232 @@ class TestPollActionResult:
             pytest.raises(HttpClientError, match="HTTP 404"),
         ):
             await self._executor()._poll_action_result(client, "action-4xx")
+
+
+def _refusal(retry_after: float | None = 1.0) -> RateLimitedError:
+    return RateLimitedError(
+        "Your organization is using SDK actions faster than its limit (120 per minute).",
+        retry_after=retry_after,
+        check="org",
+        limit_class="sdk.action",
+        url="https://api.zamp.test/actions",
+    )
+
+
+class TestPostActionRateLimited:
+    """A 429 on create: nothing was started, so it is retried — briefly — and then surfaced."""
+
+    def _executor(self) -> ActionExecutor:
+        return ActionExecutor()
+
+    async def test_retries_a_refusal_after_retry_after(self):
+        client = AsyncMock()
+        client.post.side_effect = [_refusal(retry_after=2.0), {"id": "action-ok"}]
+
+        with patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await self._executor()._post_action(client, "/actions", {})
+
+        assert result == {"id": "action-ok"}
+        assert client.post.await_count == 2
+        (wait,) = [c.args[0] for c in mock_sleep.await_args_list]
+        # Never sooner than Retry-After; stretched by at most the jitter.
+        assert 2.0 <= wait <= 2.0 * (1 + RETRY_JITTER_RATIO)
+
+    async def test_raises_the_refusal_once_the_attempts_are_spent(self):
+        client = AsyncMock()
+        client.post.side_effect = _refusal(retry_after=1.0)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(RateLimitedError) as exc_info,
+        ):
+            await self._executor()._post_action(client, "/actions", {})
+
+        assert client.post.await_count == RATE_LIMIT_RETRY_MAX_ATTEMPTS
+        assert mock_sleep.await_count == RATE_LIMIT_RETRY_MAX_ATTEMPTS - 1
+        assert exc_info.value.limit_class == "sdk.action"
+
+    async def test_does_not_retry_a_refusal_that_names_no_wait(self):
+        """The platform leaves Retry-After out when a retry could never fit the limit."""
+        client = AsyncMock()
+        client.post.side_effect = _refusal(retry_after=None)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(RateLimitedError),
+        ):
+            await self._executor()._post_action(client, "/actions", {})
+
+        assert client.post.await_count == 1
+        mock_sleep.assert_not_awaited()
+
+    async def test_does_not_wait_longer_than_the_budget(self):
+        client = AsyncMock()
+        client.post.side_effect = _refusal(retry_after=RATE_LIMIT_RETRY_BUDGET_SECONDS + 1)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(RateLimitedError),
+        ):
+            await self._executor()._post_action(client, "/actions", {})
+
+        assert client.post.await_count == 1
+        mock_sleep.assert_not_awaited()
+
+    async def test_stops_when_the_next_wait_would_pass_the_budget(self):
+        # The widest jitter makes the first 25 s wait 37.5 s; a second wait of at least
+        # 25 s would pass the 60 s budget, so the refusal surfaces instead.
+        client = AsyncMock()
+        client.post.side_effect = _refusal(retry_after=25.0)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch(f"{_MODULE}.random.uniform", return_value=RETRY_JITTER_RATIO),
+            pytest.raises(RateLimitedError),
+        ):
+            await self._executor()._post_action(client, "/actions", {})
+
+        assert [c.args[0] for c in mock_sleep.await_args_list] == [25.0 * (1 + RETRY_JITTER_RATIO)]
+        assert client.post.await_count == 2
+
+    async def test_a_jittered_wait_is_cut_to_the_budget_left(self):
+        # Two 25 s waits fit in 60 s; the second, jittered to 37.5 s, is cut to the 35 s left.
+        client = AsyncMock()
+        client.post.side_effect = [_refusal(25.0), _refusal(25.0), {"id": "action-ok"}]
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch(f"{_MODULE}.random.uniform", side_effect=[0.0, RETRY_JITTER_RATIO]),
+        ):
+            result = await self._executor()._post_action(client, "/actions", {})
+
+        assert result == {"id": "action-ok"}
+        waits = [c.args[0] for c in mock_sleep.await_args_list]
+        assert waits == [25.0, RATE_LIMIT_RETRY_BUDGET_SECONDS - 25.0]
+
+    async def test_a_refusal_and_a_5xx_are_each_retried(self):
+        client = AsyncMock()
+        client.post.side_effect = [_refusal(1.0), _http_error(502), {"id": "action-ok"}]
+
+        with patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock):
+            result = await self._executor()._post_action(client, "/actions", {})
+
+        assert result == {"id": "action-ok"}
+        assert client.post.await_count == 3
+
+    async def test_execute_action_retries_a_refused_create(self):
+        mock_client = AsyncMock()
+        mock_client.post.side_effect = [_refusal(1.0), {"id": "action-retry"}]
+        mock_client.get.return_value = {"status": "COMPLETED", "result": {"ok": True}}
+
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=mock_client),
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await self._executor()._execute_action(
+                action_name="limited",
+                params={},
+                config=SdkConfig(base_url="https://api.zamp.test", auth_token="tok"),
+            )
+
+        assert result == {"ok": True}
+        assert mock_client.post.await_count == 2
+
+
+class TestPostActionServerErrorBudget:
+    """A 5xx on create is retried for minutes, not an hour, with jittered waits."""
+
+    def _executor(self) -> ActionExecutor:
+        return ActionExecutor()
+
+    async def test_a_5xx_wait_is_jittered(self):
+        client = AsyncMock()
+        client.post.side_effect = [_http_error(500), {"id": "action-ok"}]
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch(f"{_MODULE}.random.uniform", return_value=0.2) as uniform,
+        ):
+            await self._executor()._post_action(client, "/actions", {})
+
+        uniform.assert_called_once_with(0, RETRY_JITTER_RATIO)
+        assert [c.args[0] for c in mock_sleep.await_args_list] == [POST_RETRY_INITIAL_INTERVAL_SECONDS * 1.2]
+
+    async def test_a_persistent_5xx_gives_up_after_five_minutes(self):
+        client = AsyncMock()
+        client.post.side_effect = _http_error(503)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(HttpClientError, match="HTTP 503"),
+        ):
+            await self._executor()._post_action(client, "/actions", {})
+
+        waits = [c.args[0] for c in mock_sleep.await_args_list]
+        assert POST_RETRY_TIMEOUT_SECONDS == 300.0
+        # Every wait but the last starts inside the budget, and the last may run past it.
+        assert sum(waits[:-1]) < POST_RETRY_TIMEOUT_SECONDS <= sum(waits)
+
+
+class TestPollActionResultRateLimited:
+    """A 429 on a poll is never terminal: it says nothing about the action, which is running."""
+
+    def _executor(self) -> ActionExecutor:
+        return ActionExecutor()
+
+    async def test_keeps_polling_through_a_refusal(self):
+        client = AsyncMock()
+        client.get.side_effect = [
+            _refusal(retry_after=3.0),
+            {"status": "RUNNING"},
+            {"status": "COMPLETED", "result": {"done": True}},
+        ]
+
+        with patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            result = await self._executor()._poll_action_result(client, "action-429")
+
+        assert result == {"done": True}
+        assert client.get.await_count == 3
+        wait_after_refusal = mock_sleep.await_args_list[1].args[0]
+        assert 3.0 <= wait_after_refusal <= 3.0 * (1 + RETRY_JITTER_RATIO)
+
+    async def test_a_refusal_without_a_wait_backs_off_and_keeps_polling(self):
+        client = AsyncMock()
+        client.get.side_effect = [_refusal(retry_after=None), {"status": "COMPLETED", "result": {"done": True}}]
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            _no_jitter(),
+        ):
+            result = await self._executor()._poll_action_result(client, "action-429")
+
+        assert result == {"done": True}
+        waits = [c.args[0] for c in mock_sleep.await_args_list]
+        assert waits == [POLL_INITIAL_INTERVAL_SECONDS, POLL_INITIAL_INTERVAL_SECONDS * POLL_BACKOFF_COEFFICIENT]
+
+    async def test_persistent_refusals_end_in_the_usual_timeout(self):
+        client = AsyncMock()
+        client.get.side_effect = _refusal(retry_after=1.0)
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+            patch(f"{_MODULE}.POLL_INITIAL_INTERVAL_SECONDS", 1.0),
+            pytest.raises(TimeoutError, match="did not complete within 5.0s"),
+        ):
+            await self._executor()._poll_action_result(client, "action-429", poll_timeout=5.0)
+
+    async def test_a_long_wait_is_cut_at_the_poll_timeout(self):
+        client = AsyncMock()
+        client.get.side_effect = [_refusal(retry_after=600.0), {"status": "COMPLETED", "result": {"done": True}}]
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            patch(f"{_MODULE}.POLL_INITIAL_INTERVAL_SECONDS", 1.0),
+        ):
+            result = await self._executor()._poll_action_result(client, "action-429", poll_timeout=10.0)
+
+        assert result == {"done": True}
+        assert [c.args[0] for c in mock_sleep.await_args_list] == [1.0, 9.0]
 
 
 class TestChannelContextOnApiCall:
