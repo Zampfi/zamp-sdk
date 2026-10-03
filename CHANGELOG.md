@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.0
+
+- **Actions run against the caller's version pin.** A script started by a version-pinned task
+  now keeps its action calls (file reads, spawned tasks) on the snapshot of main the task was
+  pinned to, instead of whatever is live. The runtime injects `ZAMP_VERSION_ID`; the SDK sends it
+  on every API-route call to that deployment as `X-VERSION-ID`.
+  - **Independent of a branch.** A task pinned on main has no branch, so the version id is sent
+    on its own; `ZAMP_DB_BRANCH_MODE` / `ZAMP_ENVIRONMENT` are still only sent with a branch.
+  - `current_branch_context()` now also returns `version_id` when it is set.
+  - **Backwards compatible both ways.** Without the variable nothing is sent and every existing
+    caller is unchanged; a platform that doesn't know the header ignores it. Like the branch
+    headers, it is only sent to the ambient deployment, never to another one.
+
 ## 1.4.0
 
 - **`ChannelContext.tool_execution_mode` — whether a tool call runs in the agent's turn or in the

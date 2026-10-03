@@ -393,6 +393,32 @@ class TestExecuteAction:
             await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
         assert client_cls.call_args.kwargs["default_headers"]["X-BRANCH-ID"] == "feature-x"
 
+    async def test_sends_version_header_without_a_branch(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
+        monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
+        monkeypatch.delenv("ZAMP_BRANCH_ID", raising=False)
+        monkeypatch.setenv("ZAMP_VERSION_ID", "v-123")
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-123"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client) as client_cls:
+            await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
+        assert client_cls.call_args.kwargs["default_headers"] == {
+            "Authorization": "Bearer tok",
+            "X-VERSION-ID": "v-123",
+        }
+
+    async def test_version_header_not_sent_to_another_deployment(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BASE_URL", "https://ambient.zamp.test")
+        monkeypatch.setenv("ZAMP_AUTH_TOKEN", "ambient-tok")
+        monkeypatch.setenv("ZAMP_VERSION_ID", "v-123")
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-123"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client) as client_cls:
+            await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
+        assert client_cls.call_args.kwargs["default_headers"] == {"Authorization": "Bearer tok"}
+
     async def test_sends_no_branch_headers_outside_a_branch(self, monkeypatch):
         monkeypatch.delenv("ZAMP_BRANCH_ID", raising=False)
         monkeypatch.delenv("ZAMP_DB_BRANCH_MODE", raising=False)

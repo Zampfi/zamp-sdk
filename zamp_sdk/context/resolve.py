@@ -15,6 +15,7 @@ from zamp_sdk.context.env import (
     ENV_STREAMING_ID,
     ENV_TOOL_CALL_ID,
     ENV_TOOL_EXECUTION_MODE,
+    ENV_VERSION_ID,
 )
 from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
 
@@ -39,21 +40,23 @@ def resolve_context() -> dict[str, Any]:
 
 
 def current_branch_context() -> dict[str, str]:
-    """The branch this process runs in, as injected by the runtime: ``branch_id`` plus its
-    ``db_branch_mode`` and resource ``environment``, each present only when set.
+    """The branch and version this process runs in, as injected by the runtime: ``branch_id``
+    plus its ``db_branch_mode`` and resource ``environment``, and the file-versioning pin
+    ``version_id`` — each present only when set.
 
-    Empty unless a branch is set: mode and environment only mean something inside one.
+    Mode and environment only mean something inside a branch, so they are dropped without
+    one. ``version_id`` is independent of the branch: a task pinned on main still reads its
+    pinned snapshot, so it is sent whether or not a branch is set.
 
     Env-only on purpose: in-process (``ACTIONS_HUB``) callers already run under a workflow
-    whose metadata context carries the branch, so there is nothing to forward from here.
+    whose metadata context carries the branch and pin, so there is nothing to forward here.
     """
-    if not os.environ.get(ENV_BRANCH_ID):
-        return {}
-    ctx = {
-        "branch_id": os.environ.get(ENV_BRANCH_ID),
-        "db_branch_mode": os.environ.get(ENV_DB_BRANCH_MODE),
-        "environment": os.environ.get(ENV_ENVIRONMENT),
-    }
+    ctx: dict[str, Optional[str]] = {}
+    if os.environ.get(ENV_BRANCH_ID):
+        ctx["branch_id"] = os.environ.get(ENV_BRANCH_ID)
+        ctx["db_branch_mode"] = os.environ.get(ENV_DB_BRANCH_MODE)
+        ctx["environment"] = os.environ.get(ENV_ENVIRONMENT)
+    ctx["version_id"] = os.environ.get(ENV_VERSION_ID)
     return {k: v for k, v in ctx.items() if v}
 
 
