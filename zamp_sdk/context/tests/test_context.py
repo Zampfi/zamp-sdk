@@ -28,6 +28,7 @@ def _clear_zamp_env(monkeypatch):
         "ZAMP_BRANCH_ID",
         "ZAMP_DB_BRANCH_MODE",
         "ZAMP_ENVIRONMENT",
+        "ZAMP_VERSION_ID",
         "ZAMP_TOOL_EXECUTION_MODE",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -56,6 +57,20 @@ class TestCurrentBranchContext:
         monkeypatch.setenv("ZAMP_BRANCH_ID", "feature-x")
         monkeypatch.setenv("ZAMP_DB_BRANCH_MODE", "")
         assert current_branch_context() == {"branch_id": "feature-x"}
+
+    def test_version_id_sent_without_a_branch(self, monkeypatch):
+        # A task pinned on main has a version but no branch; the pin must still go out.
+        monkeypatch.setenv("ZAMP_VERSION_ID", "v-123")
+        assert current_branch_context() == {"version_id": "v-123"}
+
+    def test_version_id_sent_inside_a_branch(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BRANCH_ID", "feature-x")
+        monkeypatch.setenv("ZAMP_VERSION_ID", "v-123")
+        assert current_branch_context() == {"branch_id": "feature-x", "version_id": "v-123"}
+
+    def test_blank_version_id_dropped(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_VERSION_ID", "")
+        assert current_branch_context() == {}
 
 
 class TestResolveContext:

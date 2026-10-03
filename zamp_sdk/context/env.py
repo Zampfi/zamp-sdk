@@ -25,6 +25,10 @@ ENV_EXECUTION_HOST = "ZAMP_SDK_EXECUTION_HOST"
 ENV_BRANCH_ID = "ZAMP_BRANCH_ID"
 ENV_DB_BRANCH_MODE = "ZAMP_DB_BRANCH_MODE"
 ENV_ENVIRONMENT = "ZAMP_ENVIRONMENT"
+# The file-versioning pin the run reads, injected whenever the task is pinned — with or
+# without a branch. Sent on every API-route action call so the action's file reads see the
+# same snapshot of main as the run that issued it, not whatever main is now.
+ENV_VERSION_ID = "ZAMP_VERSION_ID"
 
 # This run's LoggingConfig, one variable per field, for a process with no workflow input to
 # carry it on. Read independently rather than all-or-none like the channel variables above: a
