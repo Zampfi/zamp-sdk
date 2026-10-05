@@ -7,18 +7,20 @@
   HTTP 429. The SDK now reads that answer: the error's `message` is the platform's own text (who
   is over which limit, how long to wait, not to retry in a loop), and `retry_after` (seconds),
   `check` (`"org"` / `"principal"`) and `limit_class` (`"sdk.action"`, `"sdk.run"`, ...) come
-  from the body and the `Retry-After` header.
+  from the body and the `Retry-After` header. The header is read as seconds or as an HTTP-date,
+  which a proxy in front of the platform may send; a date is counted from now, never negative.
   - **Existing handlers keep working.** It subclasses `HttpClientError` with `status_code`
     429, and its text still starts `HTTP 429 from <url>`, now followed by the platform's text.
 - **Creating an action retries a 429 briefly, then raises it.** A 429 means nothing was started,
-  so sending the create again cannot run the action twice: at most 3 attempts in all, each wait
-  honouring `Retry-After`, within 60 s of waiting in total. No retry when the platform names no
+  so sending the create again cannot run the action twice: at most 3 refused attempts, each wait
+  honouring `Retry-After`, within 60 s of waiting on refusals. No retry when the platform names no
   wait, which it does when a retry could never fit the limit. This covers every action call made
   over the API, the SDK's own log calls included.
 - **A 429 while polling is never terminal.** A refused `GET /actions/{id}` says nothing about the
   action, which is still running: the poll waits as told and carries on, within the same overall
   timeout as before.
-- **A 5xx on create is retried for 5 minutes, not an hour,** and every retry wait (5xx or 429,
+- **A 5xx on create is retried for 5 minutes, not an hour,** on a budget independent of the 429
+  one (a create that meets both can be sent more than 3 times), and every retry wait (5xx or 429,
   create or poll) is stretched by up to 50% at random, never shortened, so callers that failed
   together do not all come back together. Each retry the platform admits counts against the
   org's limit, so an hour of them through an outage spends that budget for nothing.
@@ -31,7 +33,8 @@
   envelope with that error. Those still arrive exactly as before — the SDK does not turn a
   completed action into an exception, or change how a failure surfaces — and
   `rate_limit_refusal()` returns a `RateLimitedError` for any of them, for a raised error that is
-  or was raised from one, or `None`.
+  or was raised from one, or `None`. A result or envelope validated into a `return_type` model
+  is read too, as long as the model keeps its `error` field.
 
 ## 1.4.0
 

@@ -12,5 +12,6 @@ BRANCH_HEADERS = {
 USER_AGENT_HEADER = "User-Agent"
 USER_AGENT = f"zamp-sdk/{__version__}"
 
-# Whole seconds until a refused request may succeed, sent with a 429.
+# Sent with a 429: when a refused request may succeed. The platform sends whole seconds; a
+# proxy in front of it may send an HTTP-date instead.
 RETRY_AFTER_HEADER = "Retry-After"

@@ -447,8 +447,8 @@ class ActionExecutor:
 
         A 429 means nothing was started, so sending the create again cannot run the action
         twice. It is retried while :meth:`_rate_limit_retry_delay` names a wait — at most
-        ``RATE_LIMIT_RETRY_MAX_ATTEMPTS`` POSTs, each wait honouring ``Retry-After``, within
-        ``RATE_LIMIT_RETRY_BUDGET_SECONDS`` of waiting in all — and then the
+        ``RATE_LIMIT_RETRY_MAX_ATTEMPTS`` refused POSTs, each wait honouring ``Retry-After``,
+        within ``RATE_LIMIT_RETRY_BUDGET_SECONDS`` of waiting on refusals — and then the
         :class:`RateLimitedError` surfaces: the caller is over its limit and has to hear it.
 
         A 5xx uses a time-budget + gentle backoff on its OWN conservative constants
@@ -457,6 +457,9 @@ class ActionExecutor:
         ``retry_timeout`` seconds elapse, so a momentary server error doesn't
         fail the action before it is even created. Other errors (e.g. 4xx,
         network) propagate immediately.
+
+        The two budgets are independent: a 5xx neither spends nor resets the refusal budget,
+        and a 429 neither spends nor resets the 5xx one.
         """
         interval = POST_RETRY_INITIAL_INTERVAL_SECONDS
         elapsed = 0.0

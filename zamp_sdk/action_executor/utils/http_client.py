@@ -1,6 +1,8 @@
 import asyncio
 import json
 import math
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Dict, NoReturn, Optional, Union
 
 import aiohttp
@@ -85,14 +87,14 @@ class RateLimitedError(HttpClientError):
 
         Both give the wait, as the same number; the header wins, being the standard. Tolerant: a
         429 from something in front of the platform has no such body and still becomes this
-        error, with whatever it did say.
+        error, with whatever it did say, its ``Retry-After`` read as seconds or as an HTTP-date.
         """
         payload = _json_object(body)
         details = payload.get("details")
         if not isinstance(details, dict):
             details = {}
         message = payload.get("message")
-        retry_after = _seconds(retry_after_header)
+        retry_after = _retry_after_header(retry_after_header)
         if retry_after is None:
             retry_after = _seconds(details.get("retry_after_seconds"))
         return cls(
@@ -114,11 +116,31 @@ def _json_object(text: str) -> Dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _retry_after_header(value: Optional[str]) -> Optional[float]:
+    """The wait a ``Retry-After`` header gives, in seconds; ``None`` when it gives none.
+
+    Either form the standard allows: delta-seconds, which is what the platform sends, or an
+    HTTP-date, which a proxy may send instead. A date is counted from now and is never negative.
+    """
+    seconds = _seconds(value)
+    if seconds is not None or not value:
+        return seconds
+    try:
+        when = parsedate_to_datetime(value)
+    except ValueError:
+        return None
+    if when.tzinfo is None:
+        # A date that names no zone (asctime form, or -0000) is in UTC, as every HTTP-date is.
+        when = when.replace(tzinfo=timezone.utc)
+    return max((when - datetime.now(timezone.utc)).total_seconds(), 0.0)
+
+
 def _seconds(value: Any) -> Optional[float]:
     """A wait in seconds, from a header or a JSON value; ``None`` when it is not one.
 
-    Only ``Retry-After``'s delta-seconds form, which is what the platform sends. Anything that
-    is not a finite, non-negative number reads as no wait given.
+    The delta-seconds form: anything that is not a finite, non-negative number reads as no wait
+    given. A JSON value is only ever this form; a header may also be a date, which
+    :func:`_retry_after_header` reads.
     """
     if value is None or isinstance(value, bool):
         return None

@@ -10,9 +10,11 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import BaseModel
 
 from zamp_sdk import AgentDbError, RateLimitedError, rate_limit_refusal
 from zamp_sdk.action_executor.action_executor import ActionExecutor
+from zamp_sdk.action_executor.models import SdkConfig
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 
 _TASK_REFUSAL = (
@@ -25,6 +27,22 @@ _ACTION_REFUSAL = (
     "This request was NOT started. Wait 1 s before retrying; do not retry in a loop or in parallel. "
     "Otherwise finish without it."
 )
+
+
+class _SpawnResult(BaseModel):
+    """A caller's ``return_type`` for a spawned agent task, keeping the optional ``error``."""
+
+    task_id: str | None = None
+    error: str | None = None
+
+
+class _Envelope(BaseModel):
+    """A caller's ``return_type`` for a code-executor envelope."""
+
+    id: str
+    status: str
+    result: _SpawnResult | None = None
+    error: str | None = None
 
 
 class TestInBandShapes:
@@ -66,6 +84,29 @@ class TestInBandShapes:
 
         assert refusal is not None
         assert refusal.retry_after is None
+
+
+class TestValidatedShapes:
+    """A ``return_type`` turns the result into a model; a model that keeps ``error`` still shows it."""
+
+    def test_a_refused_agent_task_result_validated_into_a_model(self):
+        refusal = rate_limit_refusal(_SpawnResult(error=_TASK_REFUSAL))
+
+        assert refusal is not None
+        assert refusal.retry_after == 24.0
+
+    def test_a_refused_call_in_an_envelope_model(self):
+        envelope = _Envelope(id="wf-1", status="FAILED", error=_ACTION_REFUSAL)
+
+        refusal = rate_limit_refusal(envelope)
+
+        assert refusal is not None
+        assert refusal.retry_after == 1.0
+
+    def test_a_refused_agent_task_nested_in_an_envelope_model(self):
+        envelope = _Envelope(id="wf-2", status="COMPLETED", result=_SpawnResult(error=_TASK_REFUSAL))
+
+        assert rate_limit_refusal(envelope) is not None
 
 
 class TestRaisedShapes:
@@ -146,6 +187,8 @@ class TestNotARefusal:
             {"result": {"error": _TASK_REFUSAL}},
             RuntimeError("Action wf-7 FAILED: boom"),
             AgentDbError("duplicate key", sqlstate="23505"),
+            _SpawnResult(task_id="t-1"),
+            _Envelope(id="wf-8", status="COMPLETED", result=_SpawnResult(task_id="t-2")),
         ],
     )
     def test_is_none(self, value):
@@ -165,6 +208,27 @@ class TestSuccessSemanticsAreUnchanged:
 
         assert returned == result
         assert rate_limit_refusal(returned) is not None
+
+    async def test_a_refusal_validated_into_a_return_type_is_returned_and_recognised(self):
+        client = AsyncMock()
+        client.post.return_value = {"id": "wf-10"}
+        client.get.return_value = {"status": "COMPLETED", "result": {"task_id": None, "error": _TASK_REFUSAL}}
+
+        with (
+            patch("zamp_sdk.action_executor.action_executor.HttpClient", return_value=client),
+            patch("zamp_sdk.action_executor.action_executor.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            returned = await ActionExecutor._execute_action(
+                "ExecuteAgentTaskWorkflow",
+                {},
+                config=SdkConfig(base_url="https://api.zamp.test", auth_token="tok"),
+                return_type=_SpawnResult,
+            )
+
+        assert isinstance(returned, _SpawnResult)
+        refusal = rate_limit_refusal(returned)
+        assert refusal is not None
+        assert refusal.retry_after == 24.0
 
     async def test_a_failed_action_carrying_a_refusal_still_raises_runtime_error(self):
         client = AsyncMock()

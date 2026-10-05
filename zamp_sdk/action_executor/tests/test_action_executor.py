@@ -971,6 +971,43 @@ class TestPostActionRateLimited:
         assert result == {"id": "action-ok"}
         assert client.post.await_count == 3
 
+    async def test_a_mixed_sequence_is_bounded_by_each_budget(self):
+        # A 5xx neither spends nor resets the refusal budget: the third refusal ends the
+        # create although two 5xx came in between.
+        client = AsyncMock()
+        client.post.side_effect = [_refusal(1.0), _http_error(502), _refusal(1.0), _http_error(503), _refusal(1.0)]
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            pytest.raises(RateLimitedError),
+        ):
+            await self._executor()._post_action(client, "/actions", {})
+
+        assert client.post.await_count == 5
+        assert mock_sleep.await_count == 4
+
+    async def test_a_refusal_neither_spends_nor_resets_the_5xx_budget(self):
+        # The 5xx budget outlasts the first 5xx wait but not that wait plus the refusal's: the
+        # second 5xx is still retried, and the third finds the budget spent.
+        client = AsyncMock()
+        client.post.side_effect = [_http_error(502), _refusal(1.0), _http_error(503), _http_error(504)]
+
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+            _no_jitter(),
+            pytest.raises(HttpClientError, match="HTTP 504"),
+        ):
+            await self._executor()._post_action(
+                client, "/actions", {}, retry_timeout=POST_RETRY_INITIAL_INTERVAL_SECONDS + 0.5
+            )
+
+        assert client.post.await_count == 4
+        assert [c.args[0] for c in mock_sleep.await_args_list] == [
+            POST_RETRY_INITIAL_INTERVAL_SECONDS,
+            1.0,
+            POST_RETRY_INITIAL_INTERVAL_SECONDS * POST_RETRY_BACKOFF_COEFFICIENT,
+        ]
+
     async def test_execute_action_retries_a_refused_create(self):
         mock_client = AsyncMock()
         mock_client.post.side_effect = [_refusal(1.0), {"id": "action-retry"}]

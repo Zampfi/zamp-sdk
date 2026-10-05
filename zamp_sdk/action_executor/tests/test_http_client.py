@@ -1,4 +1,6 @@
 import json
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -244,11 +246,28 @@ class TestHttpClientRateLimited:
 
         assert error.retry_after == 5.0
 
-    @pytest.mark.parametrize("header", ["soon", "-1", "nan", "inf", ""])
+    @pytest.mark.parametrize("header", ["soon", "-1", "nan", "inf", "", "Wed, 32 Oct 2015 07:28:00 GMT"])
     async def test_an_unusable_header_falls_back_to_the_body(self, header):
         error = await self._refusal(_response(429, _REFUSAL_BODY, {"Retry-After": header}))
 
         assert error.retry_after == 2.0
+
+    @pytest.mark.parametrize("names_its_zone", [True, False], ids=["gmt", "no-zone"])
+    async def test_an_http_date_header_is_the_seconds_from_now(self, names_its_zone):
+        """A proxy may send ``Retry-After`` as an HTTP-date; one that names no zone is in UTC."""
+        when = datetime.now(timezone.utc) + timedelta(seconds=30)
+        header = format_datetime(when, usegmt=True) if names_its_zone else format_datetime(when.replace(tzinfo=None))
+
+        error = await self._refusal(_response(429, "<html>Too Many Requests</html>", {"Retry-After": header}))
+
+        assert 25.0 <= error.retry_after <= 30.0
+
+    async def test_an_http_date_header_in_the_past_is_no_wait(self):
+        header = "Wed, 21 Oct 2015 07:28:00 GMT"
+
+        error = await self._refusal(_response(429, "<html>Too Many Requests</html>", {"Retry-After": header}))
+
+        assert error.retry_after == 0.0
 
     async def test_no_wait_anywhere_is_none(self):
         """The platform leaves both out when a retry could never fit the limit."""

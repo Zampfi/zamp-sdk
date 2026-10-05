@@ -13,6 +13,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from pydantic import BaseModel
+
 from zamp_sdk.action_executor.constants import ACTION_ENVELOPE_KEYS, RATE_LIMITED_PREFIX
 from zamp_sdk.action_executor.utils import RateLimitedError
 
@@ -34,11 +36,16 @@ def rate_limit_refusal(value: Any) -> RateLimitedError | None:
     * an envelope from the code executor, refused (``FAILED``) or carrying a refused result;
     * the error string itself.
 
+    A result or envelope is a mapping, or the model a ``return_type`` validated it into; a model
+    is read through ``model_dump()``, so it shows a refusal when it keeps the ``error`` field.
+
     An in-band refusal is an error that starts with ``RATE_LIMITED:``. Its ``retry_after`` is
     read from the text when the text names a wait; ``check`` and ``limit_class`` are ``None``.
     """
     if isinstance(value, BaseException):
         return _from_exception(value)
+    if isinstance(value, BaseModel):
+        value = value.model_dump()
     if isinstance(value, Mapping):
         return _from_result(value)
     return _from_error_text(value)

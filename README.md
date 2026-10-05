@@ -237,11 +237,14 @@ The platform limits how fast an organization — and, where a rule says so, one 
 agent — can start each kind of work. A refused call was **not started**, so it is safe to
 send again later, but not in a loop.
 
-- **Creating an action** (`POST /actions`) is tried at most 3 times in all when refused,
-  each wait honouring `Retry-After`, within 60 s of waiting; then `RateLimitedError` is raised.
-  Its `message` is the platform's explanation, `retry_after` the seconds until a retry can
-  succeed (`None` when a retry could never fit the limit), `check` is `"org"` or
-  `"principal"`, and `limit_class` the kind of work (`"sdk.action"`, `"sdk.run"`, ...).
+- **Creating an action** (`POST /actions`) is sent again at most twice after a refusal (the
+  third refusal ends it), each wait honouring `Retry-After`, within 60 s of waiting on
+  refusals; then `RateLimitedError` is raised. Its `message` is the platform's explanation,
+  `retry_after` the seconds until a retry can succeed (`None` when a retry could never fit the
+  limit), `check` is `"org"` or `"principal"`, and `limit_class` the kind of work
+  (`"sdk.action"`, `"sdk.run"`, ...). A 5xx on create is retried on its own 5-minute budget.
+  The two budgets are independent, so a create that meets both can be sent more than 3 times
+  and wait up to about 7 minutes in all.
 - **Polling** a running action is never ended by a 429: the SDK waits as told and keeps
   polling within the action's timeout.
 - **Some refusals arrive in-band**, inside a successful response, and are returned exactly as
@@ -257,6 +260,10 @@ result = await ActionExecutor.execute("ExecuteAgentTaskWorkflow", params)
 if (refusal := rate_limit_refusal(result)) is not None:
     raise refusal  # stop and report it; do not retry in a loop
 ```
+
+A result validated into a `return_type` model is recognised too, as long as the model keeps an
+optional `error` field (`error: str | None = None`). A model without one drops the refusal when
+the result is validated, and nothing can recover it.
 
 ## Development
 

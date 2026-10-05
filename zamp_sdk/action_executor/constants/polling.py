@@ -24,7 +24,9 @@ POST_RETRY_TIMEOUT_SECONDS = 300.0
 
 # --- Rate-limit retry: POST /actions answered 429. Nothing was started, so sending
 # the create again is safe; but the caller is over its limit, so it is retried only
-# briefly before the refusal surfaces. Attempts count the first POST.
+# briefly before the refusal surfaces. Attempts count refused POSTs, a refused first
+# POST included, and the wait budget counts only waits on refusals: this budget and
+# the 5xx one above are independent, and neither spends or resets the other.
 RATE_LIMIT_RETRY_MAX_ATTEMPTS = 3
 RATE_LIMIT_RETRY_BUDGET_SECONDS = 60.0
 
