@@ -100,6 +100,49 @@ class TestReportedFailure:
             assert await actions.call("agent_db_execute_sql", {}) is response
 
 
+class TestGatewayEnvelope:
+    """Under an ActionsHub host the gateway route hands back its envelope untouched,
+    reporting a failure as a value. The bridge must read the result out of it and raise
+    for a failure, as the API route does."""
+
+    @pytest.mark.asyncio
+    async def test_a_completed_envelope_yields_the_action_result(self):
+        result = {"results": [{"rows": [{"id": 1}], "row_count": 1}]}
+        envelope = {"id": "a-1", "status": "COMPLETED", "result": result, "error": None}
+        with patch(_EXECUTE, new=AsyncMock(return_value=envelope)):
+            assert await actions.call("agent_db_execute_sql", {}) == result
+
+    @pytest.mark.asyncio
+    async def test_a_failed_envelope_raises_with_its_error(self):
+        envelope = {
+            "id": "a-1",
+            "status": "FAILED",
+            "result": None,
+            "error": "statement 0 failed [sqlstate=23505]: duplicate key",
+        }
+        with patch(_EXECUTE, new=AsyncMock(return_value=envelope)):
+            with pytest.raises(AgentDbError) as exc:
+                await actions.call("agent_db_execute_sql", {})
+
+        assert exc.value.action_id == "a-1"
+        assert exc.value.action_status == "FAILED"
+        assert exc.value.sqlstate == "23505"
+
+    @pytest.mark.asyncio
+    async def test_a_completed_envelope_reporting_success_false_raises(self):
+        envelope = {
+            "id": "a-1",
+            "status": "COMPLETED",
+            "result": {"results": [], "success": False, "error": "statement 0 failed [sqlstate=42703]"},
+            "error": None,
+        }
+        with patch(_EXECUTE, new=AsyncMock(return_value=envelope)):
+            with pytest.raises(AgentDbError) as exc:
+                await actions.call("agent_db_execute_sql", {})
+
+        assert exc.value.sqlstate == "42703"
+
+
 class TestWhatIsNeverSent:
     @pytest.mark.asyncio
     async def test_no_retry_or_timeout_overrides(self):
