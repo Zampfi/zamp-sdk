@@ -3,7 +3,9 @@
 Every call funnels through here so two rules hold everywhere rather than being
 re-decided per call site:
 
-1. **Failures become AgentDbError.** Callers catch one type.
+1. **Failures become AgentDbError.** Callers catch one type — whether the action
+   failed outright or completed reporting ``success: false`` in its result, which is
+   how ``agent_db_execute_sql`` returns a failed body.
 2. **No retry or timeout overrides are ever sent.** The platform's defaults exist
    because someone reasoned about the seam; a client-side override would silently
    replace that reasoning. Notably, write paths must not gain a retry the raw
@@ -21,10 +23,13 @@ from zamp_sdk.db.utils.errors import AgentDbError
 async def call(action_name: str, params: dict[str, Any]) -> Any:
     """Execute a platform action, translating any failure to AgentDbError."""
     try:
-        return await ActionExecutor.execute(action_name, params)
+        response = await ActionExecutor.execute(action_name, params)
     except AgentDbError:
         raise
     except TimeoutError:
         raise
     except Exception as exc:
         raise AgentDbError.from_exception(exc) from exc
+    if isinstance(response, dict) and response.get("success") is False:
+        raise AgentDbError.from_exception(RuntimeError(response.get("error") or f"{action_name} failed"))
+    return response

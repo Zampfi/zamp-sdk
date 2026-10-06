@@ -56,6 +56,50 @@ class TestErrorTranslation:
                 await actions.call("agent_db_execute_sql", {})
 
 
+class TestReportedFailure:
+    """agent_db_execute_sql returns a failed body as a completed action whose result is
+    ``{"results": [], "success": false, "error": ...}``. It must still raise, exactly as
+    the action failing outright did, or a failed write reads as an empty success."""
+
+    @pytest.mark.asyncio
+    async def test_success_false_raises_with_the_platform_error(self):
+        response = {
+            "results": [],
+            "success": False,
+            "error": 'statement 1 failed [sqlstate=42703]: column "run_id" does not exist',
+        }
+        with patch(_EXECUTE, new=AsyncMock(return_value=response)):
+            with pytest.raises(AgentDbError) as exc:
+                await actions.call("agent_db_execute_sql", {})
+
+        assert exc.value.sqlstate == "42703"
+        assert exc.value.statement_index == 1
+        assert 'column "run_id" does not exist' in exc.value.message
+
+    @pytest.mark.asyncio
+    async def test_success_false_without_a_message_still_raises(self):
+        with patch(_EXECUTE, new=AsyncMock(return_value={"success": False})):
+            with pytest.raises(AgentDbError, match="agent_db_execute_sql failed"):
+                await actions.call("agent_db_execute_sql", {})
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "response",
+        [
+            {"results": [{"rows": [{"id": 1}], "row_count": 1}], "success": True, "error": None},
+            {"results": [{"rows": [{"id": 1}], "row_count": 1}]},
+            {"datasets": []},
+            None,
+        ],
+        ids=["success-true", "no-success-key", "other-action-shape", "none"],
+    )
+    async def test_anything_but_success_false_is_returned_unchanged(self, response):
+        """Today's platform sends no ``success`` key at all, so this is a no-op until
+        it does — the SDK can ship first."""
+        with patch(_EXECUTE, new=AsyncMock(return_value=response)):
+            assert await actions.call("agent_db_execute_sql", {}) is response
+
+
 class TestWhatIsNeverSent:
     @pytest.mark.asyncio
     async def test_no_retry_or_timeout_overrides(self):
