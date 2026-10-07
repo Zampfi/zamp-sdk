@@ -193,7 +193,9 @@ except AgentDbError as e:
 
 `sqlstate is None` is meaningful: it says the failure happened before Postgres saw
 the statement (a gate rejection, an authorization refusal). A `TimeoutError`
-propagates unwrapped, because the statement may have committed.
+propagates unwrapped, because the statement may have committed. `e.status_code` is
+the HTTP status when the call failed as an HTTP error — `429` when it was refused for
+a rate limit (see [Rate limits](#rate-limits)).
 
 ### Writes that may run twice
 
@@ -207,16 +209,20 @@ constraint, which you declare in the `CREATE TABLE` or add later with
 
 | Exception | When |
 |-----------|------|
+| `RateLimitedError` | The platform refused the call for a rate limit (HTTP 429), after a brief retry. A subclass of `HttpClientError` |
 | `HttpClientError` | HTTP request fails (non-2xx status, network error, timeout) |
 | `RuntimeError` | Action reaches a terminal failure state (FAILED, CANCELED, TERMINATED, TIMED_OUT) |
 | `TimeoutError` | Polling for action result exceeds the timeout limit |
 | `KeyError` | Required environment variable is missing and no explicit value was provided |
 
 ```python
+from zamp_sdk import RateLimitedError
 from zamp_sdk.action_executor.utils import HttpClientError
 
 try:
     result = await ActionExecutor.execute("my_action", params)
+except RateLimitedError as e:
+    print(f"Rate limited ({e.check}, {e.limit_class}): {e.message}")
 except HttpClientError as e:
     print(f"HTTP error {e.status_code}: {e.message}")
 except RuntimeError as e:
@@ -224,6 +230,40 @@ except RuntimeError as e:
 except TimeoutError as e:
     print(f"Timed out: {e}")
 ```
+
+### Rate limits
+
+The platform limits how fast an organization — and, where a rule says so, one user or
+agent — can start each kind of work. A refused call was **not started**, so it is safe to
+send again later, but not in a loop.
+
+- **Creating an action** (`POST /actions`) is sent again at most twice after a refusal (the
+  third refusal ends it), each wait honouring `Retry-After`, within 60 s of waiting on
+  refusals; then `RateLimitedError` is raised. Its `message` is the platform's explanation,
+  `retry_after` the seconds until a retry can succeed (`None` when a retry could never fit the
+  limit), `check` is `"org"` or `"principal"`, and `limit_class` the kind of work
+  (`"sdk.action"`, `"sdk.run"`, ...). A 5xx on create is retried on its own 5-minute budget.
+  The two budgets are independent, so a create that meets both can be sent more than 3 times
+  and wait up to about 7 minutes in all.
+- **Polling** a running action is never ended by a 429: the SDK waits as told and keeps
+  polling within the action's timeout.
+- **Some refusals arrive in-band**, inside a successful response, and are returned exactly as
+  before: a spawned agent task the platform refuses completes with
+  `error="RATE_LIMITED: ..."`, and inside the code executor a refused call returns a FAILED
+  envelope with that error. `rate_limit_refusal()` recognises every shape — a result, an
+  envelope, an error string, or a raised error — and returns a `RateLimitedError`, or `None`:
+
+```python
+from zamp_sdk import rate_limit_refusal
+
+result = await ActionExecutor.execute("ExecuteAgentTaskWorkflow", params)
+if (refusal := rate_limit_refusal(result)) is not None:
+    raise refusal  # stop and report it; do not retry in a loop
+```
+
+A result validated into a `return_type` model is recognised too, as long as the model keeps an
+optional `error` field (`error: str | None = None`). A model without one drops the refusal when
+the result is validated, and nothing can recover it.
 
 ## Development
 

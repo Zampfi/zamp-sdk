@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import re
 
+from zamp_sdk.action_executor.utils import HttpClientError
+
 # Cross-repo contract with pantheon, which emits either
 #   "statement 3 failed [sqlstate=23505]: ..."   (per statement, execute_sql_body)
 #   "agent_db_create_dataset failed [sqlstate=42501]: ..."   (per activity)
@@ -33,6 +35,9 @@ class AgentDbError(RuntimeError):
     failures that never reached Postgres — an authorization refusal, a gate
     rejection, a transport error — so ``is None`` is a meaningful distinction and
     not just missing data.
+
+    ``status_code`` is the HTTP status when the call failed as an HTTP error — 429
+    when the platform refused it for a rate limit — and ``None`` when it did not.
     """
 
     def __init__(
@@ -43,6 +48,7 @@ class AgentDbError(RuntimeError):
         statement_index: int | None = None,
         action_id: str | None = None,
         action_status: str | None = None,
+        status_code: int | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
@@ -50,6 +56,7 @@ class AgentDbError(RuntimeError):
         self.statement_index = statement_index
         self.action_id = action_id
         self.action_status = action_status
+        self.status_code = status_code
 
     @classmethod
     def from_exception(cls, exc: BaseException) -> "AgentDbError":
@@ -70,6 +77,7 @@ class AgentDbError(RuntimeError):
             statement_index=index,
             action_id=action_id,
             action_status=action_status,
+            status_code=_http_error_status(exc),
         )
 
     def __str__(self) -> str:
@@ -79,3 +87,15 @@ class AgentDbError(RuntimeError):
         if self.statement_index is not None:
             parts.append(f"[statement {self.statement_index}]")
         return " ".join(parts)
+
+
+def _http_error_status(exc: BaseException) -> int | None:
+    """The status of an HTTP response that failed (4xx or 5xx), else ``None``.
+
+    The HTTP client also raises ``HttpClientError`` for an action that failed inside a 200
+    response (the poll's body carries the action's ``error``); that is the common shape of a
+    SQL failure, and it did not fail as an HTTP error.
+    """
+    if isinstance(exc, HttpClientError) and exc.status_code is not None and exc.status_code >= 400:
+        return exc.status_code
+    return None
