@@ -147,6 +147,20 @@ class TestExecute:
         assert rows == [{"id": 1}]
 
     @pytest.mark.asyncio
+    async def test_a_failure_reported_in_the_result_raises_not_an_empty_list(self, executor):
+        table = await _invoices(executor)
+        executor.return_value = {
+            "results": [],
+            "success": False,
+            "error": 'statement 0 failed [sqlstate=42703]: column "run_id" does not exist',
+        }
+
+        with pytest.raises(AgentDbError) as exc:
+            await datasets.execute(select(table))
+
+        assert exc.value.sqlstate == "42703"
+
+    @pytest.mark.asyncio
     async def test_expected_rows_is_forwarded(self, executor):
         table = await _invoices(executor)
 
@@ -273,6 +287,23 @@ class TestTransaction:
         assert tx.results[second]["rows"] == [{"n": 2}]
 
     @pytest.mark.asyncio
+    async def test_a_failure_reported_in_the_result_raises_from_the_block(self, executor):
+        """A rolled-back body must not exit the block as if it had committed."""
+        table = await _invoices(executor)
+        executor.return_value = {
+            "results": [],
+            "success": False,
+            "error": "statement 1: expected_rows=1 but the statement affected 0 rows",
+        }
+
+        with pytest.raises(AgentDbError) as exc:
+            async with datasets.transaction() as tx:
+                tx.add(insert(table).values(vendor="a"))
+                tx.add(update(table).where(table.c.id == 1).values(vendor="b"), expected_rows=1)
+
+        assert exc.value.statement_index == 1
+
+    @pytest.mark.asyncio
     async def test_an_exception_inside_the_block_sends_nothing(self, executor):
         """The caller never finished describing the unit of work, so shipping a
         half-built body would commit an intent nobody stated."""
@@ -319,6 +350,17 @@ class TestStream:
 
         assert [len(p) for p in pages] == [2, 2, 1]
         assert executor.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_a_failure_reported_mid_stream_raises_instead_of_ending_early(self, executor):
+        table = await _invoices(executor)
+        executor.side_effect = [
+            {"results": [{"rows": [{"id": 1}, {"id": 2}]}]},
+            {"results": [], "success": False, "error": "statement 0 failed [sqlstate=57014]"},
+        ]
+
+        with pytest.raises(AgentDbError):
+            [page async for page in datasets.stream(select(table), page_size=2)]
 
     @pytest.mark.asyncio
     async def test_the_cursor_advances_past_the_last_row_seen(self, executor):
