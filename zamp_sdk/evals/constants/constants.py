@@ -13,4 +13,3 @@ FIXTURE_REQUEST_URL = "https://{name}.invalid"
 class FixtureAndTraceOperation(StrEnum):
     REPLAY_FIXTURE = "replay_fixture"
     RECORD_STEP = "record_step"
-    READ_TRACE = "read_trace"

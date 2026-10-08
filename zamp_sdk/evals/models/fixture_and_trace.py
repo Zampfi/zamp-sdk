@@ -1,12 +1,12 @@
-from typing import Annotated, Literal, Self, TypeAlias
+from typing import Annotated, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
+from zamp_sdk.action_executor.constants import ActionStatus
 from zamp_sdk.evals.constants import (
     CALL_NAME_PATTERN,
     ERROR_TYPE_PATTERN,
     KEY_VALUE_PATTERN,
-    REPLY_OUTCOME_COUNT_ERROR,
     FixtureAndTraceOperation,
 )
 
@@ -23,38 +23,37 @@ class RaisedError(BaseModel):
 
 
 class EvalFixtureAndTraceInput(BaseModel):
-    """One request to the eval_fixture_and_trace action. A read_trace request has no name, key, parent or args."""
+    """One request to the eval_fixture_and_trace action."""
 
     model_config = ConfigDict(extra="forbid")
 
     kind: FixtureAndTraceOperation
     call_id: str
-    name: CallName | None
+    name: CallName
     key: KeyValue | None
-    parent: str | None
+    parent: str
     args: dict[str, JsonValue]
     returns: JsonValue = None
     raises: RaisedError | None = None
 
 
+class EvalReadTraceInput(BaseModel):
+    """One request to the eval_read_trace action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    call_id: str
+
+
 class GatewayEnvelope(BaseModel):
     id: str
-    status: str
+    status: ActionStatus
     result: JsonValue = None
     error: str | None = None
 
 
 class FixtureReply(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
     n: int = Field(ge=1)
     returns: JsonValue = None
     raises: RaisedError | None = None
     fixture_error: FixtureErrorCode | None = None
-
-    @model_validator(mode="after")
-    def _has_one_outcome_at_most(self) -> Self:
-        if sum(outcome is not None for outcome in (self.returns, self.raises, self.fixture_error)) > 1:
-            raise ValueError(REPLY_OUTCOME_COUNT_ERROR)
-
-        return self

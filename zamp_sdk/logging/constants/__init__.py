@@ -2,6 +2,7 @@ from zamp_sdk.logging.constants.actions import (
     EMIT_ID_PREFIX,
     EMIT_LOG_ACTION_NAME,
     EVAL_FIXTURE_AND_TRACE_ACTION_NAME,
+    EVAL_READ_TRACE_ACTION_NAME,
     NON_LOGGABLE_ACTIONS,
 )
 from zamp_sdk.logging.constants.levels import (
@@ -16,6 +17,7 @@ __all__ = [
     "EMIT_ID_PREFIX",
     "EMIT_LOG_ACTION_NAME",
     "EVAL_FIXTURE_AND_TRACE_ACTION_NAME",
+    "EVAL_READ_TRACE_ACTION_NAME",
     "NON_LOGGABLE_ACTIONS",
     "LogLevel",
 ]

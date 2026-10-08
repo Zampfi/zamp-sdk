@@ -1,6 +1,7 @@
 from zamp_sdk.evals.models.fixture_and_trace import (
     CallName,
     EvalFixtureAndTraceInput,
+    EvalReadTraceInput,
     FixtureErrorCode,
     FixtureReply,
     GatewayEnvelope,
@@ -12,6 +13,7 @@ from zamp_sdk.evals.models.response import FixtureResponse
 __all__ = [
     "CallName",
     "EvalFixtureAndTraceInput",
+    "EvalReadTraceInput",
     "FixtureReply",
     "FixtureErrorCode",
     "FixtureResponse",

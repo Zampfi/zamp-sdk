@@ -4,7 +4,7 @@ import sys
 from collections.abc import Callable
 from typing import Any, Literal, TypeVar, cast
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, Field, JsonValue
 
 from zamp_sdk.context import current_eval_trial_id
 from zamp_sdk.evals.constants import (
@@ -16,6 +16,7 @@ from zamp_sdk.evals.constants import (
 from zamp_sdk.evals.models import (
     CallName,
     EvalFixtureAndTraceInput,
+    EvalReadTraceInput,
     FixtureErrorCode,
     FixtureReply,
     KeyValue,
@@ -23,11 +24,10 @@ from zamp_sdk.evals.models import (
 )
 from zamp_sdk.evals.utils import (
     build_exception,
-    build_read_trace_call,
     build_step_call,
     line_id,
+    new_call_id,
     parent_of,
-    raise_if_invalid_decoration,
     raise_if_workflow_host,
     returned_value,
     run_blocking,
@@ -35,6 +35,7 @@ from zamp_sdk.evals.utils import (
     run_observed_sync,
     send_to_trial,
 )
+from zamp_sdk.logging.constants import EVAL_FIXTURE_AND_TRACE_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME
 
 __all__ = ["FixtureError", "Trace", "TraceLine", "external", "observe", "read_trace"]
 
@@ -47,9 +48,7 @@ class FixtureError(Exception):
 
 class TraceLine(BaseModel):
     """One decorated call in one trial. The platform's eval_fixture_and_trace action writes it as the call goes
-    through and holds the trace; collect and the engine read it."""
-
-    model_config = ConfigDict(extra="forbid")
+    through; collect reads it back with read_trace()."""
 
     kind: Literal["external", "observe"]
     name: CallName
@@ -106,17 +105,17 @@ def observe(name: str, key: str | None = None) -> Callable[[_FunctionT], _Functi
 
 
 async def read_trace() -> Trace:
-    return Trace.model_validate(await send_to_trial(build_read_trace_call()))
+    request = EvalReadTraceInput(call_id=new_call_id())
+
+    return Trace.model_validate(await send_to_trial(EVAL_READ_TRACE_ACTION_NAME, request))
 
 
 def _decorator(
-    kind: Literal[FixtureAndTraceOperation.REPLAY_FIXTURE, FixtureAndTraceOperation.RECORD_STEP],
+    kind: FixtureAndTraceOperation,
     name: str,
     key: str | None,
 ) -> Callable[[_FunctionT], _FunctionT]:
     def decorate(func: _FunctionT) -> _FunctionT:
-        raise_if_invalid_decoration(name, key, func)
-
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
@@ -128,7 +127,7 @@ def _decorator(
                 if kind is FixtureAndTraceOperation.RECORD_STEP:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
 
-                return _answer_from_fixture(func, name, call)
+                return _answer_from_fixture(func, call)
 
             return cast(_FunctionT, inspect.markcoroutinefunction(call_async))
 
@@ -143,21 +142,23 @@ def _decorator(
             if kind is FixtureAndTraceOperation.RECORD_STEP:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
 
-            return run_blocking(_answer_from_fixture(func, name, call))
+            return run_blocking(_answer_from_fixture(func, call))
 
         return cast(_FunctionT, call_sync)
 
     return decorate
 
 
-async def _answer_from_fixture(func: Callable[..., Any], name: str, call: EvalFixtureAndTraceInput) -> Any:
-    reply = FixtureReply.model_validate(await send_to_trial(call))
+async def _answer_from_fixture(func: Callable[..., Any], call: EvalFixtureAndTraceInput) -> Any:
+    reply = FixtureReply.model_validate(await send_to_trial(EVAL_FIXTURE_AND_TRACE_ACTION_NAME, call))
     if reply.fixture_error is not None:
         raise FixtureError(
-            FIXTURE_ERROR_MESSAGE.format(line_id=line_id(name, call.key, reply.n), fixture_error=reply.fixture_error)
+            FIXTURE_ERROR_MESSAGE.format(
+                line_id=line_id(call.name, call.key, reply.n), fixture_error=reply.fixture_error
+            )
         )
 
     if reply.raises is not None:
         raise build_exception(reply.raises)
 
-    return returned_value(func, name, reply.returns)
+    return returned_value(func, call.name, reply.returns)

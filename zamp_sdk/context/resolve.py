@@ -17,7 +17,10 @@ from zamp_sdk.context.env import (
     ENV_TOOL_CALL_ID,
     ENV_TOOL_EXECUTION_MODE,
 )
-from zamp_sdk.context.execution_host import BOUND_METADATA_CONTEXT_KEY, ExecutionHost, current_execution_host
+from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
+
+# zamp-executor binds the whole metadata context under this one key (its ZAMP_METADATA_CONTEXT_KEY).
+_BOUND_METADATA_CONTEXT_KEY = "zamp_metadata_context"
 
 
 def resolve_context() -> dict[str, Any]:
@@ -65,7 +68,7 @@ def current_eval_trial_id() -> str | None:
     from zamp_public_workflow_sdk.actions_hub.models.common_models import ZampMetadataContext
     from zamp_public_workflow_sdk.actions_hub.utils.context_utils import get_variable_from_context
 
-    metadata = get_variable_from_context(BOUND_METADATA_CONTEXT_KEY)
+    metadata = get_variable_from_context(_BOUND_METADATA_CONTEXT_KEY)
     if metadata is None:
         return None
 

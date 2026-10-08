@@ -8,6 +8,7 @@ from zamp_sdk.evals.utils.arguments import to_json_value
 from zamp_sdk.evals.utils.blocking import ResultT, run_blocking
 from zamp_sdk.evals.utils.fixture_and_trace import send_to_trial
 from zamp_sdk.evals.utils.outcomes import to_raised_error
+from zamp_sdk.logging.constants import EVAL_FIXTURE_AND_TRACE_ACTION_NAME
 
 _enclosing_observe_name: ContextVar[str | None] = ContextVar("zamp_eval_enclosing_observe", default=None)
 
@@ -21,12 +22,14 @@ async def run_observed(call: EvalFixtureAndTraceInput, invoke: Callable[[], Awai
     try:
         result = await invoke()
     except Exception as error:
-        await send_to_trial(call.model_copy(update={"raises": to_raised_error(error)}))
+        await send_to_trial(
+            EVAL_FIXTURE_AND_TRACE_ACTION_NAME, call.model_copy(update={"raises": to_raised_error(error)})
+        )
         raise
     finally:
         _enclosing_observe_name.reset(reset_token)
 
-    await send_to_trial(call.model_copy(update={"returns": to_json_value(result)}))
+    await send_to_trial(EVAL_FIXTURE_AND_TRACE_ACTION_NAME, call.model_copy(update={"returns": to_json_value(result)}))
 
     return result
 
@@ -36,11 +39,17 @@ def run_observed_sync(call: EvalFixtureAndTraceInput, invoke: Callable[[], Resul
     try:
         result = invoke()
     except Exception as error:
-        run_blocking(send_to_trial(call.model_copy(update={"raises": to_raised_error(error)})))
+        run_blocking(
+            send_to_trial(
+                EVAL_FIXTURE_AND_TRACE_ACTION_NAME, call.model_copy(update={"raises": to_raised_error(error)})
+            )
+        )
         raise
     finally:
         _enclosing_observe_name.reset(reset_token)
 
-    run_blocking(send_to_trial(call.model_copy(update={"returns": to_json_value(result)})))
+    run_blocking(
+        send_to_trial(EVAL_FIXTURE_AND_TRACE_ACTION_NAME, call.model_copy(update={"returns": to_json_value(result)}))
+    )
 
     return result
