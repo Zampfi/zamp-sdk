@@ -57,7 +57,7 @@ class TraceLine(BaseModel):
 
 
 class Trace(BaseModel):
-    """One execution's trace, which collect reads through the door action. Lines are picked by name, never by line order."""
+    """One execution's trace, read by collect. Lines are picked by name, key and args; last is the latest repeated call."""
 
     lines: list[TraceLine]
 
