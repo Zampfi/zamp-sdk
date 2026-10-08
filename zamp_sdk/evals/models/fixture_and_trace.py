@@ -7,7 +7,7 @@ from zamp_sdk.evals.constants import (
     ERROR_TYPE_PATTERN,
     KEY_VALUE_PATTERN,
     REPLY_OUTCOME_COUNT_ERROR,
-    DoorKind,
+    FixtureAndTraceOperation,
 )
 
 CallName: TypeAlias = Annotated[str, StringConstraints(pattern=CALL_NAME_PATTERN, max_length=100)]
@@ -22,12 +22,12 @@ class RaisedError(BaseModel):
     message: str = ""
 
 
-class DoorCall(BaseModel):
-    """One call to the door action. A read_trace call has no name, key, parent or args."""
+class EvalFixtureAndTraceInput(BaseModel):
+    """One request to the eval_fixture_and_trace action. A read_trace request has no name, key, parent or args."""
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: DoorKind
+    kind: FixtureAndTraceOperation
     call_id: str
     name: CallName | None
     key: KeyValue | None
@@ -44,7 +44,7 @@ class GatewayEnvelope(BaseModel):
     error: str | None = None
 
 
-class DoorReply(BaseModel):
+class FixtureReply(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     n: int = Field(ge=1)

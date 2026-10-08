@@ -5,11 +5,11 @@ from zamp_sdk.evals.constants.constants import (
     FIXTURE_REQUEST_URL,
     KEY_VALUE_PATTERN,
     UNTRACED_ARGUMENT_NAMES,
-    DoorKind,
+    FixtureAndTraceOperation,
 )
 from zamp_sdk.evals.constants.messages import (
     BODY_AND_CONTENT_ERROR,
-    DOOR_FAILED_ERROR,
+    FIXTURE_AND_TRACE_FAILED_ERROR,
     FIXTURE_ERROR_MESSAGE,
     INVALID_CALL_NAME_ERROR,
     INVALID_KEY_VALUE_ERROR,
@@ -23,7 +23,7 @@ from zamp_sdk.evals.constants.messages import (
 __all__ = [
     "BODY_AND_CONTENT_ERROR",
     "CALL_NAME_PATTERN",
-    "DOOR_FAILED_ERROR",
+    "FIXTURE_AND_TRACE_FAILED_ERROR",
     "ERROR_TYPE_PATTERN",
     "FIXTURE_ERROR_MESSAGE",
     "FIXTURE_REQUEST_METHOD",
@@ -37,5 +37,5 @@ __all__ = [
     "SYNC_CALL_IN_WORKFLOW_ERROR",
     "TRACE_LINE_COUNT_ERROR",
     "UNTRACED_ARGUMENT_NAMES",
-    "DoorKind",
+    "FixtureAndTraceOperation",
 ]

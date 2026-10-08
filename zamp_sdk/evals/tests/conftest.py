@@ -41,7 +41,7 @@ def executor_eval_run(monkeypatch):
 
 
 @pytest.fixture
-def door():
+def fixtures_and_trace():
     with patch(EXECUTE, new=AsyncMock()) as execute:
         yield execute
 

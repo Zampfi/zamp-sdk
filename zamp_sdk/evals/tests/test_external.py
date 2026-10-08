@@ -46,20 +46,20 @@ async def get_page(url: str) -> httpx.Response:
     return httpx.Response(200)
 
 
-def sent(door):
-    return [call.args[1] for call in door.call_args_list]
+def sent(fixtures_and_trace):
+    return [call.args[1] for call in fixtures_and_trace.call_args_list]
 
 
 class TestOutsideAnEvalRun:
-    async def test_async_runs_untouched(self, door):
+    async def test_async_runs_untouched(self, fixtures_and_trace):
         assert await fetch_order("O1") == Order(id="O1", total=-1)
 
-        door.assert_not_called()
+        fixtures_and_trace.assert_not_called()
 
-    def test_sync_runs_untouched(self, door):
+    def test_sync_runs_untouched(self, fixtures_and_trace):
         assert fetch_order_sync("O1") == Order(id="O1", total=-1)
 
-        door.assert_not_called()
+        fixtures_and_trace.assert_not_called()
 
     def test_keeps_the_function_name_and_kind(self):
         assert fetch_order.__name__ == "fetch_order"
@@ -69,173 +69,179 @@ class TestOutsideAnEvalRun:
 
 
 class TestReturns:
-    async def test_async_returns_the_fixture_as_the_return_type(self, eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7})
+    async def test_async_returns_the_fixture_as_the_return_type(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"id": "O1", "total": 7})
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
 
-    def test_sync_returns_the_fixture_as_the_return_type(self, eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7})
+    def test_sync_returns_the_fixture_as_the_return_type(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"id": "O1", "total": 7})
 
         assert fetch_order_sync("O1") == Order(id="O1", total=7)
 
-    async def test_sync_call_inside_a_running_loop(self, eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7})
+    async def test_sync_call_inside_a_running_loop(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"id": "O1", "total": 7})
 
         assert fetch_order_sync("O1") == Order(id="O1", total=7)
 
-    async def test_without_an_annotation_returns_the_raw_value(self, eval_run, door, reply):
-        door.return_value = reply(returns={"state": "down"})
+    async def test_without_an_annotation_returns_the_raw_value(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"state": "down"})
 
         assert await fetch_status() == {"state": "down"}
 
-    async def test_a_human_ask_returns_none(self, eval_run, door, reply):
+    async def test_a_human_ask_returns_none(self, eval_run, fixtures_and_trace, reply):
         @evals.external("ask.decision")
         async def ask() -> None: ...
 
-        door.return_value = reply(returns=None)
+        fixtures_and_trace.return_value = reply(returns=None)
 
         assert await ask() is None
 
-    async def test_a_reply_without_an_outcome_returns_none(self, eval_run, door, reply):
-        door.return_value = reply()
+    async def test_a_reply_without_an_outcome_returns_none(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply()
 
         assert await fetch_status() is None
 
-    async def test_a_reply_with_its_other_outcomes_null_is_accepted(self, eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7}, raises=None, fixture_error=None)
+    async def test_a_reply_with_its_other_outcomes_null_is_accepted(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"id": "O1", "total": 7}, raises=None, fixture_error=None)
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
 
-    async def test_a_human_ask_with_null_outcomes_returns_none(self, eval_run, door, reply):
+    async def test_a_human_ask_with_null_outcomes_returns_none(self, eval_run, fixtures_and_trace, reply):
         @evals.external("ask.decision")
         async def ask() -> None: ...
 
-        door.return_value = reply(returns=None, raises=None, fixture_error=None)
+        fixtures_and_trace.return_value = reply(returns=None, raises=None, fixture_error=None)
 
         assert await ask() is None
 
-    async def test_a_reply_with_two_outcomes_is_rejected(self, eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7}, fixture_error="FIXTURE_MISSING")
+    async def test_a_reply_with_two_outcomes_is_rejected(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"id": "O1", "total": 7}, fixture_error="FIXTURE_MISSING")
 
         with pytest.raises(ValidationError, match="at most one of returns, raises or fixture_error"):
             await fetch_order("O1")
 
-    async def test_a_return_type_only_known_to_type_checkers_returns_the_raw_value(self, eval_run, door, reply):
+    async def test_a_return_type_only_known_to_type_checkers_returns_the_raw_value(
+        self, eval_run, fixtures_and_trace, reply
+    ):
         @evals.external("erp.total")
         async def fetch_total() -> "Decimal":
             raise NotImplementedError
 
-        door.return_value = reply(returns="12.50")
+        fixtures_and_trace.return_value = reply(returns="12.50")
 
         assert await fetch_total() == "12.50"
 
 
 class TestHttpResponse:
-    async def test_built_from_status_json_body_and_headers(self, eval_run, door, reply):
-        door.return_value = reply(returns={"status": 200, "body": {"id": "O1"}, "headers": {"X-Page": "1"}})
+    async def test_built_from_status_json_body_and_headers(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(
+            returns={"status": 200, "body": {"id": "O1"}, "headers": {"X-Page": "1"}}
+        )
 
         response = await get_page("https://erp.invalid")
 
         assert (response.status_code, response.json(), response.headers["X-Page"]) == (200, {"id": "O1"}, "1")
 
-    async def test_a_string_body_is_text(self, eval_run, door, reply):
-        door.return_value = reply(returns={"status": 200, "body": "<html/>"})
+    async def test_a_string_body_is_text(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"status": 200, "body": "<html/>"})
 
         assert (await get_page("https://erp.invalid")).text == "<html/>"
 
-    async def test_content_is_the_decoded_bytes(self, eval_run, door, reply):
-        door.return_value = reply(returns={"status": 200, "content": base64.b64encode(b"%PDF-1.7").decode()})
+    async def test_content_is_the_decoded_bytes(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(
+            returns={"status": 200, "content": base64.b64encode(b"%PDF-1.7").decode()}
+        )
 
         assert (await get_page("https://erp.invalid")).content == b"%PDF-1.7"
 
-    async def test_an_http_error_raises_on_raise_for_status(self, eval_run, door, reply):
-        door.return_value = reply(returns={"status": 503, "body": {"error": "busy"}})
+    async def test_an_http_error_raises_on_raise_for_status(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"status": 503, "body": {"error": "busy"}})
 
         response = await get_page("https://erp.invalid")
 
         with pytest.raises(httpx.HTTPStatusError, match="503"):
             response.raise_for_status()
 
-    async def test_an_optional_response(self, eval_run, door, reply):
+    async def test_an_optional_response(self, eval_run, fixtures_and_trace, reply):
         @evals.external("erp.maybe")
         async def maybe() -> Optional[httpx.Response]: ...
 
-        door.return_value = reply(returns={"status": 204})
+        fixtures_and_trace.return_value = reply(returns={"status": 204})
         assert (await maybe()).status_code == 204
 
-        door.return_value = reply(returns=None)
+        fixtures_and_trace.return_value = reply(returns=None)
         assert await maybe() is None
 
-    async def test_a_plain_response_never_comes_back_as_none(self, eval_run, door, reply):
-        door.return_value = reply(returns=None)
+    async def test_a_plain_response_never_comes_back_as_none(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns=None)
 
         with pytest.raises(ValidationError):
             await get_page("https://erp.invalid")
 
-    async def test_body_and_content_together_are_rejected(self, eval_run, door, reply):
+    async def test_body_and_content_together_are_rejected(self, eval_run, fixtures_and_trace, reply):
         content = base64.b64encode(b"%PDF-1.7").decode()
-        door.return_value = reply(returns={"status": 200, "body": "<html/>", "content": content})
+        fixtures_and_trace.return_value = reply(returns={"status": 200, "body": "<html/>", "content": content})
 
         with pytest.raises(ValidationError, match="a body or content, not both"):
             await get_page("https://erp.invalid")
 
 
 class TestRaises:
-    async def test_async_raises_the_fixture_error(self, eval_run, door, reply):
-        door.return_value = reply(raises={"type": "builtins.TimeoutError", "message": "read timed out"})
+    async def test_async_raises_the_fixture_error(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(raises={"type": "builtins.TimeoutError", "message": "read timed out"})
 
         with pytest.raises(TimeoutError, match="read timed out"):
             await fetch_order("O1")
 
-    def test_sync_raises_the_fixture_error(self, eval_run, door, reply):
-        door.return_value = reply(raises={"type": "builtins.ConnectionError", "message": "refused"})
+    def test_sync_raises_the_fixture_error(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(raises={"type": "builtins.ConnectionError", "message": "refused"})
 
         with pytest.raises(ConnectionError, match="refused"):
             fetch_order_sync("O1")
 
-    def test_an_sdk_error_type_is_importable(self, eval_run, door, reply):
-        door.return_value = reply(raises={"type": "zamp_sdk.AgentDbError", "message": "boom"})
+    def test_an_sdk_error_type_is_importable(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(raises={"type": "zamp_sdk.AgentDbError", "message": "boom"})
 
         with pytest.raises(AgentDbError, match="boom"):
             fetch_order_sync("O1")
 
-    async def test_an_httpx_transport_error(self, eval_run, door, reply):
-        door.return_value = reply(raises={"type": "httpx.ConnectTimeout", "message": "timed out"})
+    async def test_an_httpx_transport_error(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(raises={"type": "httpx.ConnectTimeout", "message": "timed out"})
 
         with pytest.raises(httpx.ConnectTimeout, match="timed out"):
             await get_page("https://erp.invalid")
 
-    async def test_a_fixture_error_raises_fixture_error_naming_the_call_id(self, eval_run, door, reply):
-        door.return_value = reply(n=3, fixture_error="FIXTURE_EXHAUSTED")
+    async def test_a_fixture_error_raises_fixture_error_naming_the_call_id(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(n=3, fixture_error="FIXTURE_EXHAUSTED")
 
         with pytest.raises(evals.FixtureError, match="^erp.order:O1#3: FIXTURE_EXHAUSTED$"):
             await fetch_order("O1")
 
-    def test_a_missing_fixture_without_a_key(self, eval_run, door, reply):
-        door.return_value = reply(fixture_error="FIXTURE_MISSING")
+    def test_a_missing_fixture_without_a_key(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(fixture_error="FIXTURE_MISSING")
 
         with pytest.raises(evals.FixtureError, match="^erp.status#1: FIXTURE_MISSING$"):
             fetch_status_sync()
 
-    async def test_a_failed_door_call_propagates(self, eval_run, door):
-        door.side_effect = RuntimeError("Action eval_door FAILED")
+    async def test_a_failed_request_propagates(self, eval_run, fixtures_and_trace):
+        fixtures_and_trace.side_effect = RuntimeError("Action eval_fixture_and_trace FAILED")
 
-        with pytest.raises(RuntimeError, match="eval_door"):
+        with pytest.raises(RuntimeError, match="eval_fixture_and_trace"):
             await fetch_order("O1")
 
 
-class TestDoorCall:
-    async def test_async_sends_the_call(self, eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7})
+class TestRequest:
+    async def test_async_sends_the_call(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"id": "O1", "total": 7})
 
         await fetch_order("O1")
 
-        action, call = door.call_args.args
-        assert action == "eval_door"
-        assert door.call_args.kwargs == {}
+        action, call = fixtures_and_trace.call_args.args
+        assert action == "eval_fixture_and_trace"
+        assert fixtures_and_trace.call_args.kwargs == {}
         assert call == {
-            "kind": "external",
+            "kind": "replay_fixture",
             "call_id": call["call_id"],
             "name": "erp.order",
             "key": "O1",
@@ -245,57 +251,59 @@ class TestDoorCall:
             "raises": None,
         }
 
-    def test_sync_sends_arguments_by_name(self, eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7})
+    def test_sync_sends_arguments_by_name(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"id": "O1", "total": 7})
 
         fetch_order_sync(realm="test", order_id="O1")
 
-        (call,) = sent(door)
+        (call,) = sent(fixtures_and_trace)
         assert call["args"] == {"order_id": "O1", "realm": "test"}
         assert call["parent"] == "test_external.py:test_sync_sends_arguments_by_name"
 
-    async def test_parallel_calls_name_their_caller(self, eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7})
+    async def test_parallel_calls_name_their_caller(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns={"id": "O1", "total": 7})
 
         await asyncio.gather(fetch_order("O1"), fetch_order("O2"))
 
-        assert {call["parent"] for call in sent(door)} == {"test_external.py:test_parallel_calls_name_their_caller"}
+        assert {call["parent"] for call in sent(fixtures_and_trace)} == {
+            "test_external.py:test_parallel_calls_name_their_caller"
+        }
 
-    def test_no_key_sends_none(self, eval_run, door, reply):
-        door.return_value = reply(returns="down")
+    def test_no_key_sends_none(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns="down")
 
         fetch_status_sync()
 
-        assert sent(door)[0]["key"] is None
+        assert sent(fixtures_and_trace)[0]["key"] is None
 
-    def test_an_integer_key_is_sent_as_text(self, eval_run, door, reply):
+    def test_an_integer_key_is_sent_as_text(self, eval_run, fixtures_and_trace, reply):
         @evals.external("erp.page", key="page")
         def get_page_number(page: int): ...
 
-        door.return_value = reply(returns=None)
+        fixtures_and_trace.return_value = reply(returns=None)
         get_page_number(2)
 
-        assert sent(door)[0]["key"] == "2"
+        assert sent(fixtures_and_trace)[0]["key"] == "2"
 
-    def test_secret_arguments_are_never_sent(self, eval_run, door, reply):
+    def test_secret_arguments_are_never_sent(self, eval_run, fixtures_and_trace, reply):
         @evals.external("erp.token")
         def fetch_token(url: str, headers: dict, auth: str, token: str, credentials: dict): ...
 
-        door.return_value = reply(returns=None)
+        fixtures_and_trace.return_value = reply(returns=None)
         fetch_token("https://erp.invalid", {"Authorization": "Bearer x"}, "basic", "t0k", {"id": "c1"})
 
-        assert sent(door)[0]["args"] == {"url": "https://erp.invalid"}
+        assert sent(fixtures_and_trace)[0]["args"] == {"url": "https://erp.invalid"}
 
-    def test_secret_arguments_passed_through_kwargs_are_never_sent(self, eval_run, door, reply):
+    def test_secret_arguments_passed_through_kwargs_are_never_sent(self, eval_run, fixtures_and_trace, reply):
         @evals.external("erp.request")
         def request(method: str, url: str, **kwargs): ...
 
-        door.return_value = reply(returns=None)
+        fixtures_and_trace.return_value = reply(returns=None)
         request("GET", "https://erp.invalid", headers={"Authorization": "Bearer x"}, token="t0k", timeout=5)
 
-        assert sent(door)[0]["args"] == {"method": "GET", "url": "https://erp.invalid", "timeout": 5}
+        assert sent(fixtures_and_trace)[0]["args"] == {"method": "GET", "url": "https://erp.invalid", "timeout": 5}
 
-    async def test_a_method_never_sends_its_instance(self, eval_run, door, reply):
+    async def test_a_method_never_sends_its_instance(self, eval_run, fixtures_and_trace, reply):
         class Client:
             def __init__(self, token: str):
                 self.token = token
@@ -309,14 +317,14 @@ class TestDoorCall:
             def status(cls, realm: str) -> str:
                 return "live"
 
-        door.return_value = reply(returns={})
+        fixtures_and_trace.return_value = reply(returns={})
         await Client("t0k").fetch("O1")
-        door.return_value = reply(returns="live")
+        fixtures_and_trace.return_value = reply(returns="live")
         Client.status("prod")
 
-        assert [call["args"] for call in sent(door)] == [{"order_id": "O1"}, {"realm": "prod"}]
+        assert [call["args"] for call in sent(fixtures_and_trace)] == [{"order_id": "O1"}, {"realm": "prod"}]
 
-    def test_an_argument_json_cannot_hold_is_sent_as_its_repr(self, eval_run, door, reply):
+    def test_an_argument_json_cannot_hold_is_sent_as_its_repr(self, eval_run, fixtures_and_trace, reply):
         class Session:
             def __repr__(self):
                 return "<Session>"
@@ -324,27 +332,27 @@ class TestDoorCall:
         @evals.external("erp.post")
         def post(session: Session, order: Order): ...
 
-        door.return_value = reply(returns=None)
+        fixtures_and_trace.return_value = reply(returns=None)
         post(Session(), Order(id="O1", total=7))
 
-        assert sent(door)[0]["args"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
+        assert sent(fixtures_and_trace)[0]["args"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
 
-    def test_bytes_are_sent_as_text_or_else_as_their_repr(self, eval_run, door, reply):
+    def test_bytes_are_sent_as_text_or_else_as_their_repr(self, eval_run, fixtures_and_trace, reply):
         @evals.external("erp.upload")
         def upload(name: bytes, content: bytes): ...
 
-        door.return_value = reply(returns=None)
+        fixtures_and_trace.return_value = reply(returns=None)
         upload(b"invoice.pdf", b"%PDF\xff")
 
-        assert sent(door)[0]["args"] == {"name": "invoice.pdf", "content": "b'%PDF\\xff'"}
+        assert sent(fixtures_and_trace)[0]["args"] == {"name": "invoice.pdf", "content": "b'%PDF\\xff'"}
 
-    def test_every_call_has_its_own_call_id(self, eval_run, door, reply):
-        door.return_value = reply(returns="down")
+    def test_every_call_has_its_own_call_id(self, eval_run, fixtures_and_trace, reply):
+        fixtures_and_trace.return_value = reply(returns="down")
 
         fetch_status_sync()
         fetch_status_sync()
 
-        first, second = (call["call_id"] for call in sent(door))
+        first, second = (call["call_id"] for call in sent(fixtures_and_trace))
         assert first != second
 
 
@@ -363,42 +371,44 @@ class TestDecoration:
             def fetch(): ...
 
     @pytest.mark.parametrize("order_id", ["O 1", "O#1", "", None, True, 1.5])
-    async def test_a_key_value_that_cannot_be_a_trace_key_fails_before_the_door(self, eval_run, door, order_id):
+    async def test_a_key_value_that_cannot_be_a_trace_key_fails_before_the_request(
+        self, eval_run, fixtures_and_trace, order_id
+    ):
         with pytest.raises(ValueError, match=f"erp.order: key 'order_id' is {order_id!r}; a key value is an integer"):
             await fetch_order(order_id)
 
-        door.assert_not_called()
+        fixtures_and_trace.assert_not_called()
 
 
 class TestOnTheExecutor:
     async def test_async_reads_the_bound_id_through_the_gateway_envelope(
-        self, executor_eval_run, door, reply, envelope
+        self, executor_eval_run, fixtures_and_trace, reply, envelope
     ):
-        door.return_value = envelope(reply(returns={"id": "O1", "total": 7}))
+        fixtures_and_trace.return_value = envelope(reply(returns={"id": "O1", "total": 7}))
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
-        assert sent(door)[0]["call_id"] == "workflow-uuid"
+        assert sent(fixtures_and_trace)[0]["call_id"] == "workflow-uuid"
 
-    async def test_a_fixture_error_raises_fixture_error(self, executor_eval_run, door, reply, envelope):
-        door.return_value = envelope(reply(fixture_error="FIXTURE_MISSING"))
+    async def test_a_fixture_error_raises_fixture_error(self, executor_eval_run, fixtures_and_trace, reply, envelope):
+        fixtures_and_trace.return_value = envelope(reply(fixture_error="FIXTURE_MISSING"))
 
         with pytest.raises(evals.FixtureError, match="^erp.order:O1#1: FIXTURE_MISSING$"):
             await fetch_order("O1")
 
-    async def test_a_failed_door_action_raises(self, executor_eval_run, door, envelope):
-        door.return_value = envelope(status="FAILED", error="no eval run")
+    async def test_a_failed_action_raises(self, executor_eval_run, fixtures_and_trace, envelope):
+        fixtures_and_trace.return_value = envelope(status="FAILED", error="no eval run")
 
         with pytest.raises(RuntimeError, match="^Action action-1 FAILED: no eval run$"):
             await fetch_order("O1")
 
-    def test_sync_refuses_in_workflow_code(self, executor_eval_run, door):
-        with pytest.raises(RuntimeError, match="erp.order: a sync function cannot reach the eval door"):
+    def test_sync_refuses_in_workflow_code(self, executor_eval_run, fixtures_and_trace):
+        with pytest.raises(RuntimeError, match="erp.order: a sync function cannot reach eval_fixture_and_trace"):
             fetch_order_sync("O1")
 
-        door.assert_not_called()
+        fixtures_and_trace.assert_not_called()
 
 
-class TestTheDoorLeavesNoTrace:
+class TestTheActionLeavesNoTrace:
     @pytest.fixture(autouse=True)
     def _runtime_env(self, monkeypatch):
         monkeypatch.setenv("ZAMP_BASE_URL", "https://example.invalid")
@@ -410,7 +420,7 @@ class TestTheDoorLeavesNoTrace:
         monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "t")
         monkeypatch.setenv("ZAMP_RUN_ID", "r")
 
-    async def test_a_door_call_is_never_logged_or_captured(self, eval_run, reply):
+    async def test_a_request_is_never_logged_or_captured(self, eval_run, reply):
         configure_auto_action_logs(True)
         start_log_capture()
         with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run:
@@ -418,7 +428,7 @@ class TestTheDoorLeavesNoTrace:
             await fetch_order("O1")
 
         assert drain_log_capture() == []
-        assert [call.kwargs["action_name"] for call in run.call_args_list] == ["eval_door"]
+        assert [call.kwargs["action_name"] for call in run.call_args_list] == ["eval_fixture_and_trace"]
 
     async def test_an_ordinary_action_in_the_same_setup_is_logged(self, eval_run):
         configure_auto_action_logs(True)

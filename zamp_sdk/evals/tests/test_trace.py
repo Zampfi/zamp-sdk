@@ -77,15 +77,15 @@ class TestLast:
 
 
 class TestReadTrace:
-    async def test_reads_through_the_door(self, eval_run, door):
+    async def test_reads_through_the_action(self, eval_run, fixtures_and_trace):
         external = {"kind": "external", "name": "erp.order", "key": "O1", "n": 1, "parent": "x.py:f", "args": {}}
         observe = {"kind": "observe", "name": "steps.load", "n": 1, "parent": "x.py:f", "args": {}}
-        door.return_value = {"lines": [{**external, "returns": {"id": "O1"}}, observe]}
+        fixtures_and_trace.return_value = {"lines": [{**external, "returns": {"id": "O1"}}, observe]}
 
         trace = await evals.read_trace()
 
-        action, call = door.call_args.args
-        assert action == "eval_door"
+        action, call = fixtures_and_trace.call_args.args
+        assert action == "eval_fixture_and_trace"
         assert call == {
             "kind": "read_trace",
             "call_id": call["call_id"],
@@ -99,11 +99,13 @@ class TestReadTrace:
         assert [found.id for found in trace.lines] == ["erp.order:O1#1", "steps.load#1"]
         assert trace.one("erp.order", key="O1").returns == {"id": "O1"}
 
-    async def test_reads_through_the_gateway_envelope_on_the_executor(self, executor_eval_run, door, envelope):
+    async def test_reads_through_the_gateway_envelope_on_the_executor(
+        self, executor_eval_run, fixtures_and_trace, envelope
+    ):
         line = {"kind": "observe", "name": "steps.load", "n": 1, "parent": "x.py:f", "args": {}}
-        door.return_value = envelope({"lines": [line]})
+        fixtures_and_trace.return_value = envelope({"lines": [line]})
 
         trace = await evals.read_trace()
 
-        assert door.call_args.args[1]["call_id"] == "workflow-uuid"
+        assert fixtures_and_trace.call_args.args[1]["call_id"] == "workflow-uuid"
         assert trace.one("steps.load").id == "steps.load#1"

@@ -7,8 +7,20 @@ from typing import Any, Literal, TypeVar, cast
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from zamp_sdk.context import current_eval_trial_id
-from zamp_sdk.evals.constants import FIXTURE_ERROR_MESSAGE, NO_TRACE_LINE_ERROR, TRACE_LINE_COUNT_ERROR, DoorKind
-from zamp_sdk.evals.models import CallName, DoorCall, DoorReply, FixtureErrorCode, KeyValue, RaisedError
+from zamp_sdk.evals.constants import (
+    FIXTURE_ERROR_MESSAGE,
+    NO_TRACE_LINE_ERROR,
+    TRACE_LINE_COUNT_ERROR,
+    FixtureAndTraceOperation,
+)
+from zamp_sdk.evals.models import (
+    CallName,
+    EvalFixtureAndTraceInput,
+    FixtureErrorCode,
+    FixtureReply,
+    KeyValue,
+    RaisedError,
+)
 from zamp_sdk.evals.utils import (
     build_exception,
     build_read_trace_call,
@@ -21,7 +33,7 @@ from zamp_sdk.evals.utils import (
     run_blocking,
     run_observed,
     run_observed_sync,
-    send_door_call,
+    send_to_trial,
 )
 
 __all__ = ["FixtureError", "Trace", "TraceLine", "external", "observe", "read_trace"]
@@ -34,8 +46,8 @@ class FixtureError(Exception):
 
 
 class TraceLine(BaseModel):
-    """One decorated call in one trial. The platform's door action writes it as the call goes through and holds
-    the trace; collect and the engine read it."""
+    """One decorated call in one trial. The platform's eval_fixture_and_trace action writes it as the call goes
+    through and holds the trace; collect and the engine read it."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -86,19 +98,21 @@ class Trace(BaseModel):
 
 
 def external(name: str, key: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
-    return _decorator(DoorKind.EXTERNAL, name, key)
+    return _decorator(FixtureAndTraceOperation.REPLAY_FIXTURE, name, key)
 
 
 def observe(name: str, key: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
-    return _decorator(DoorKind.OBSERVE, name, key)
+    return _decorator(FixtureAndTraceOperation.RECORD_STEP, name, key)
 
 
 async def read_trace() -> Trace:
-    return Trace.model_validate(await send_door_call(build_read_trace_call()))
+    return Trace.model_validate(await send_to_trial(build_read_trace_call()))
 
 
 def _decorator(
-    kind: Literal[DoorKind.EXTERNAL, DoorKind.OBSERVE], name: str, key: str | None
+    kind: Literal[FixtureAndTraceOperation.REPLAY_FIXTURE, FixtureAndTraceOperation.RECORD_STEP],
+    name: str,
+    key: str | None,
 ) -> Callable[[_FunctionT], _FunctionT]:
     def decorate(func: _FunctionT) -> _FunctionT:
         raise_if_invalid_decoration(name, key, func)
@@ -111,7 +125,7 @@ def _decorator(
                     return func(*args, **kwargs)
 
                 call = build_step_call(kind, name, key, func, args, kwargs, parent_of(sys._getframe(1)))
-                if kind is DoorKind.OBSERVE:
+                if kind is FixtureAndTraceOperation.RECORD_STEP:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
 
                 return _answer_from_fixture(func, name, call)
@@ -126,7 +140,7 @@ def _decorator(
             raise_if_workflow_host(name, func)
 
             call = build_step_call(kind, name, key, func, args, kwargs, parent_of(sys._getframe(1)))
-            if kind is DoorKind.OBSERVE:
+            if kind is FixtureAndTraceOperation.RECORD_STEP:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
 
             return run_blocking(_answer_from_fixture(func, name, call))
@@ -136,8 +150,8 @@ def _decorator(
     return decorate
 
 
-async def _answer_from_fixture(func: Callable[..., Any], name: str, call: DoorCall) -> Any:
-    reply = DoorReply.model_validate(await send_door_call(call))
+async def _answer_from_fixture(func: Callable[..., Any], name: str, call: EvalFixtureAndTraceInput) -> Any:
+    reply = FixtureReply.model_validate(await send_to_trial(call))
     if reply.fixture_error is not None:
         raise FixtureError(
             FIXTURE_ERROR_MESSAGE.format(line_id=line_id(name, call.key, reply.n), fixture_error=reply.fixture_error)
