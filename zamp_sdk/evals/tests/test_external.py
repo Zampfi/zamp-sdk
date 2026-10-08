@@ -1,13 +1,19 @@
 import asyncio
 import base64
 import inspect
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from zamp_sdk import AgentDbError, evals
+from zamp_sdk import AgentDbError, configure_auto_action_logs, evals
+from zamp_sdk.action_executor import ActionExecutor
+from zamp_sdk.capture import drain_log_capture, start_log_capture
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 
 class Order(BaseModel):
@@ -91,17 +97,38 @@ class TestReturns:
 
         assert await ask() is None
 
-    async def test_a_reply_without_an_outcome_is_rejected(self, eval_run, door, reply):
+    async def test_a_reply_without_an_outcome_returns_none(self, eval_run, door, reply):
         door.return_value = reply()
 
-        with pytest.raises(ValidationError, match="exactly one of returns, raises or fixture_error"):
-            await fetch_order("O1")
+        assert await fetch_status() is None
+
+    async def test_a_reply_with_its_other_outcomes_null_is_accepted(self, eval_run, door, reply):
+        door.return_value = reply(returns={"id": "O1", "total": 7}, raises=None, fixture_error=None)
+
+        assert await fetch_order("O1") == Order(id="O1", total=7)
+
+    async def test_a_human_ask_with_null_outcomes_returns_none(self, eval_run, door, reply):
+        @evals.external("ask.decision")
+        async def ask() -> None: ...
+
+        door.return_value = reply(returns=None, raises=None, fixture_error=None)
+
+        assert await ask() is None
 
     async def test_a_reply_with_two_outcomes_is_rejected(self, eval_run, door, reply):
         door.return_value = reply(returns={"id": "O1", "total": 7}, fixture_error="FIXTURE_MISSING")
 
-        with pytest.raises(ValidationError, match="exactly one of returns, raises or fixture_error"):
+        with pytest.raises(ValidationError, match="at most one of returns, raises or fixture_error"):
             await fetch_order("O1")
+
+    async def test_a_return_type_only_known_to_type_checkers_returns_the_raw_value(self, eval_run, door, reply):
+        @evals.external("erp.total")
+        async def fetch_total() -> "Decimal":
+            raise NotImplementedError
+
+        door.return_value = reply(returns="12.50")
+
+        assert await fetch_total() == "12.50"
 
 
 class TestHttpResponse:
@@ -206,7 +233,7 @@ class TestDoorCall:
 
         action, call = door.call_args.args
         assert action == "eval_door"
-        assert door.call_args.kwargs == {"log_action": False}
+        assert door.call_args.kwargs == {}
         assert call == {
             "kind": "external",
             "call_id": call["call_id"],
@@ -241,16 +268,7 @@ class TestDoorCall:
 
         assert sent(door)[0]["key"] is None
 
-    def test_a_none_key_value_sends_none(self, eval_run, door, reply):
-        @evals.external("erp.page", key="page")
-        def get_page_number(page: int | None): ...
-
-        door.return_value = reply(returns=None)
-        get_page_number(None)
-
-        assert sent(door)[0]["key"] is None
-
-    def test_a_non_string_key_is_sent_as_text(self, eval_run, door, reply):
+    def test_an_integer_key_is_sent_as_text(self, eval_run, door, reply):
         @evals.external("erp.page", key="page")
         def get_page_number(page: int): ...
 
@@ -267,6 +285,15 @@ class TestDoorCall:
         fetch_token("https://erp.invalid", {"Authorization": "Bearer x"}, "basic", "t0k", {"id": "c1"})
 
         assert sent(door)[0]["args"] == {"url": "https://erp.invalid"}
+
+    def test_secret_arguments_passed_through_kwargs_are_never_sent(self, eval_run, door, reply):
+        @evals.external("erp.request")
+        def request(method: str, url: str, **kwargs): ...
+
+        door.return_value = reply(returns=None)
+        request("GET", "https://erp.invalid", headers={"Authorization": "Bearer x"}, token="t0k", timeout=5)
+
+        assert sent(door)[0]["args"] == {"method": "GET", "url": "https://erp.invalid", "timeout": 5}
 
     async def test_a_method_never_sends_its_instance(self, eval_run, door, reply):
         class Client:
@@ -302,6 +329,15 @@ class TestDoorCall:
 
         assert sent(door)[0]["args"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
 
+    def test_bytes_are_sent_as_text_or_else_as_their_repr(self, eval_run, door, reply):
+        @evals.external("erp.upload")
+        def upload(name: bytes, content: bytes): ...
+
+        door.return_value = reply(returns=None)
+        upload(b"invoice.pdf", b"%PDF\xff")
+
+        assert sent(door)[0]["args"] == {"name": "invoice.pdf", "content": "b'%PDF\\xff'"}
+
     def test_every_call_has_its_own_call_id(self, eval_run, door, reply):
         door.return_value = reply(returns="down")
 
@@ -326,37 +362,62 @@ class TestDecoration:
             @evals.external(name)
             def fetch(): ...
 
-    @pytest.mark.parametrize("order_id", ["O 1", "O#1", ""])
+    @pytest.mark.parametrize("order_id", ["O 1", "O#1", "", None, True, 1.5])
     async def test_a_key_value_that_cannot_be_a_trace_key_fails_before_the_door(self, eval_run, door, order_id):
-        with pytest.raises(ValueError, match=f"erp.order: key 'order_id' is '{order_id}'; a key value has no spaces"):
+        with pytest.raises(ValueError, match=f"erp.order: key 'order_id' is {order_id!r}; a key value is an integer"):
             await fetch_order(order_id)
 
         door.assert_not_called()
 
 
 class TestOnTheExecutor:
-    async def test_async_reads_the_bound_id_and_unwraps_the_gateway_envelope(
-        self, executor_eval_run, gateway, reply, envelope
-    ):
-        gateway.return_value = envelope(reply(returns={"id": "O1", "total": 7}))
+    async def test_async_reads_the_bound_id(self, executor_eval_run, door, reply):
+        door.return_value = reply(returns={"id": "O1", "total": 7})
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
-        assert sent(gateway)[0]["call_id"] == "workflow-uuid"
+        assert sent(door)[0]["call_id"] == "workflow-uuid"
 
-    async def test_a_fixture_error_comes_through_the_envelope(self, executor_eval_run, gateway, reply, envelope):
-        gateway.return_value = envelope(reply(fixture_error="FIXTURE_MISSING"))
+    async def test_a_fixture_error_raises_fixture_error(self, executor_eval_run, door, reply):
+        door.return_value = reply(fixture_error="FIXTURE_MISSING")
 
         with pytest.raises(evals.FixtureError, match="^erp.order:O1#1: FIXTURE_MISSING$"):
             await fetch_order("O1")
 
-    async def test_a_failed_door_action_raises(self, executor_eval_run, gateway, envelope):
-        gateway.return_value = envelope(status="FAILED", error="no eval run")
-
-        with pytest.raises(RuntimeError, match="^Action action-1 FAILED: no eval run$"):
-            await fetch_order("O1")
-
-    def test_sync_refuses_in_workflow_code(self, executor_eval_run, gateway):
+    def test_sync_refuses_in_workflow_code(self, executor_eval_run, door):
         with pytest.raises(RuntimeError, match="erp.order: a sync function cannot reach the eval door"):
             fetch_order_sync("O1")
 
-        gateway.assert_not_called()
+        door.assert_not_called()
+
+
+class TestTheDoorLeavesNoTrace:
+    @pytest.fixture(autouse=True)
+    def _runtime_env(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BASE_URL", "https://example.invalid")
+        monkeypatch.setenv("ZAMP_AUTH_TOKEN", "token")
+        monkeypatch.setenv("ZAMP_CHANNEL_TYPE", "conversation")
+        monkeypatch.setenv("ZAMP_CHANNEL_ID", "11111111-1111-1111-1111-111111111111")
+        monkeypatch.setenv("ZAMP_STREAMING_ID", "s")
+        monkeypatch.setenv("ZAMP_MESSAGE_ID", "m")
+        monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "t")
+        monkeypatch.setenv("ZAMP_RUN_ID", "r")
+
+    async def test_a_door_call_is_never_logged_or_captured(self, eval_run, reply):
+        configure_auto_action_logs(True)
+        start_log_capture()
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run:
+            run.return_value = reply(returns={"id": "O1", "total": 7})
+            await fetch_order("O1")
+
+        assert drain_log_capture() == []
+        assert [call.kwargs["action_name"] for call in run.call_args_list] == ["eval_door"]
+
+    async def test_an_ordinary_action_in_the_same_setup_is_logged(self, eval_run):
+        configure_auto_action_logs(True)
+        start_log_capture()
+        with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run:
+            run.return_value = {"ok": True}
+            await ActionExecutor.execute("do_thing", {"a": 1})
+
+        assert [entry["event"] for entry in drain_log_capture()] == ["action"]
+        assert "emit_log" in [call.kwargs["action_name"] for call in run.call_args_list]

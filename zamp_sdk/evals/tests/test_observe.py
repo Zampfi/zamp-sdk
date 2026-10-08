@@ -125,6 +125,16 @@ class TestReturns:
         assert await check("O1") is True
         assert sent(door)[0]["key"] == "O1"
 
+    async def test_bytes_json_cannot_hold_are_recorded_as_their_repr(self, eval_run, door, reply):
+        @evals.observe("steps.render")
+        async def render() -> bytes:
+            return b"%PDF\xff"
+
+        door.return_value = reply()
+
+        assert await render() == b"%PDF\xff"
+        assert sent(door)[0]["returns"] == "b'%PDF\\xff'"
+
 
 class TestRaises:
     async def test_async_records_the_error_and_raises_it(self, eval_run, door, reply):
@@ -158,20 +168,20 @@ class TestRaises:
 
 
 class TestOnTheExecutor:
-    async def test_async_records_the_step_through_the_gateway(self, executor_eval_run, gateway, reply, envelope):
-        gateway.side_effect = [envelope(reply(returns={"id": "O1"})), envelope(reply())]
+    async def test_async_records_the_step_with_workflow_call_ids(self, executor_eval_run, door, reply):
+        door.side_effect = [reply(returns={"id": "O1"}), reply()]
 
         assert await load("O1") == {"order": {"id": "O1"}}
-        assert [call["call_id"] for call in sent(gateway)] == ["workflow-uuid", "workflow-uuid"]
+        assert [call["call_id"] for call in sent(door)] == ["workflow-uuid", "workflow-uuid"]
 
-    async def test_a_failed_door_action_raises(self, executor_eval_run, gateway, reply, envelope):
-        gateway.side_effect = [envelope(reply(returns={"id": "O1"})), envelope(status="FAILED", error="no eval run")]
+    async def test_a_failed_door_call_propagates(self, executor_eval_run, door, reply):
+        door.side_effect = [reply(returns={"id": "O1"}), RuntimeError("Action eval_door FAILED")]
 
-        with pytest.raises(RuntimeError, match="^Action action-1 FAILED: no eval run$"):
+        with pytest.raises(RuntimeError, match="eval_door"):
             await load("O1")
 
-    def test_sync_refuses_in_workflow_code(self, executor_eval_run, gateway):
+    def test_sync_refuses_in_workflow_code(self, executor_eval_run, door):
         with pytest.raises(RuntimeError, match="steps.load: a sync function cannot reach the eval door"):
             load_sync("O1")
 
-        gateway.assert_not_called()
+        door.assert_not_called()

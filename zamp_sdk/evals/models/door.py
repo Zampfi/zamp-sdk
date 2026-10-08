@@ -7,7 +7,6 @@ from zamp_sdk.evals.constants import (
     ERROR_TYPE_PATTERN,
     KEY_VALUE_PATTERN,
     REPLY_OUTCOME_COUNT_ERROR,
-    REPLY_OUTCOME_FIELDS,
     DoorKind,
 )
 
@@ -23,24 +22,19 @@ class RaisedError(BaseModel):
     message: str = ""
 
 
-class StepCall(BaseModel):
+class DoorCall(BaseModel):
+    """One call to the door action. A read_trace call has no name, key, parent or args."""
+
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal[DoorKind.EXTERNAL, DoorKind.OBSERVE]
+    kind: DoorKind
     call_id: str
-    name: CallName
+    name: CallName | None
     key: KeyValue | None
-    parent: str
+    parent: str | None
     args: dict[str, JsonValue]
     returns: JsonValue = None
     raises: RaisedError | None = None
-
-
-class ReadTraceCall(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal[DoorKind.READ_TRACE] = DoorKind.READ_TRACE
-    call_id: str
 
 
 class DoorReply(BaseModel):
@@ -52,15 +46,8 @@ class DoorReply(BaseModel):
     fixture_error: FixtureErrorCode | None = None
 
     @model_validator(mode="after")
-    def _has_exactly_one_outcome(self) -> Self:
-        if len(self.model_fields_set & REPLY_OUTCOME_FIELDS) != 1:
+    def _has_one_outcome_at_most(self) -> Self:
+        if sum(outcome is not None for outcome in (self.returns, self.raises, self.fixture_error)) > 1:
             raise ValueError(REPLY_OUTCOME_COUNT_ERROR)
 
         return self
-
-
-class GatewayEnvelope(BaseModel):
-    id: str
-    status: str
-    result: JsonValue = None
-    error: str | None = None

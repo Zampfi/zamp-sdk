@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from types import FrameType
 
-from zamp_sdk.evals.models import StepCall
+from zamp_sdk.evals.models import DoorCall
 from zamp_sdk.evals.utils.arguments import to_json_value
 from zamp_sdk.evals.utils.blocking import ResultT, run_blocking
 from zamp_sdk.evals.utils.door import send_door_call
@@ -16,12 +16,10 @@ def parent_of(frame: FrameType) -> str:
     return _enclosing_observe_name.get() or f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_code.co_name}"
 
 
-async def run_observed(
-    func: Callable[..., Awaitable[ResultT]], call: StepCall, args: tuple[object, ...], kwargs: dict[str, object]
-) -> ResultT:
+async def run_observed(call: DoorCall, invoke: Callable[[], Awaitable[ResultT]]) -> ResultT:
     reset_token = _enclosing_observe_name.set(call.name)
     try:
-        result = await func(*args, **kwargs)
+        result = await invoke()
     except Exception as error:
         await send_door_call(call.model_copy(update={"raises": to_raised_error(error)}))
         raise
@@ -33,12 +31,10 @@ async def run_observed(
     return result
 
 
-def run_observed_sync(
-    func: Callable[..., ResultT], call: StepCall, args: tuple[object, ...], kwargs: dict[str, object]
-) -> ResultT:
+def run_observed_sync(call: DoorCall, invoke: Callable[[], ResultT]) -> ResultT:
     reset_token = _enclosing_observe_name.set(call.name)
     try:
-        result = func(*args, **kwargs)
+        result = invoke()
     except Exception as error:
         run_blocking(send_door_call(call.model_copy(update={"raises": to_raised_error(error)})))
         raise

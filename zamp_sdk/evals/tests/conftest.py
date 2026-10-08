@@ -6,8 +6,6 @@ import pytest
 from pydantic import BaseModel
 
 EXECUTE = "zamp_sdk.action_executor.ActionExecutor.execute"
-GET_ACTION_GATEWAY = "zamp_sdk.action_executor.routing.get_action_gateway"
-IS_REGISTERED_LOCALLY = "zamp_sdk.action_executor.routing.is_registered_locally"
 
 
 class ZampMetadataContext(BaseModel):
@@ -49,26 +47,8 @@ def door():
 
 
 @pytest.fixture
-def gateway():
-    gateway = AsyncMock()
-    with (
-        patch(GET_ACTION_GATEWAY, return_value=gateway),
-        patch(IS_REGISTERED_LOCALLY, new=AsyncMock(return_value=False)),
-    ):
-        yield gateway
-
-
-@pytest.fixture
 def reply():
     def build(n=1, **outcome):
         return {"n": n, **outcome}
-
-    return build
-
-
-@pytest.fixture
-def envelope():
-    def build(result=None, status="COMPLETED", error=None):
-        return {"id": "action-1", "status": status, "result": result, "error": error}
 
     return build

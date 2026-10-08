@@ -4,10 +4,6 @@ from pydantic import ValidationError
 from zamp_sdk import evals
 
 
-def sent_call(door):
-    return door.call_args.args[1]
-
-
 def line(name, key=None, n=1, **args):
     return evals.TraceLine(kind="external", name=name, key=key, n=n, parent="x.py:f", args=args)
 
@@ -90,15 +86,24 @@ class TestReadTrace:
 
         action, call = door.call_args.args
         assert action == "eval_door"
-        assert call == {"kind": "read_trace", "call_id": call["call_id"]}
+        assert call == {
+            "kind": "read_trace",
+            "call_id": call["call_id"],
+            "name": None,
+            "key": None,
+            "parent": None,
+            "args": {},
+            "returns": None,
+            "raises": None,
+        }
         assert [found.id for found in trace.lines] == ["erp.order:O1#1", "steps.load#1"]
         assert trace.one("erp.order", key="O1").returns == {"id": "O1"}
 
-    async def test_reads_through_the_gateway_on_the_executor(self, executor_eval_run, gateway, envelope):
+    async def test_reads_with_a_workflow_call_id_on_the_executor(self, executor_eval_run, door):
         line = {"kind": "observe", "name": "steps.load", "n": 1, "parent": "x.py:f", "args": {}}
-        gateway.return_value = envelope({"lines": [line]})
+        door.return_value = {"lines": [line]}
 
         trace = await evals.read_trace()
 
-        assert sent_call(gateway) == {"kind": "read_trace", "call_id": "workflow-uuid"}
+        assert door.call_args.args[1]["call_id"] == "workflow-uuid"
         assert trace.one("steps.load").id == "steps.load#1"
