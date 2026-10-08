@@ -112,9 +112,6 @@ def _bound_metadata_context(metadata):
             "zamp_public_workflow_sdk.actions_hub.utils.context_utils": SimpleNamespace(
                 get_variable_from_context=bound.get
             ),
-            "zamp_public_workflow_sdk.temporal.interceptors.metadata_context_interceptor": SimpleNamespace(
-                METADATA_CONTEXT_FIELD="zamp_metadata_context"
-            ),
         },
     )
 

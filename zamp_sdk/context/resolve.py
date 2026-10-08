@@ -17,7 +17,7 @@ from zamp_sdk.context.env import (
     ENV_TOOL_CALL_ID,
     ENV_TOOL_EXECUTION_MODE,
 )
-from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
+from zamp_sdk.context.execution_host import BOUND_METADATA_CONTEXT_KEY, ExecutionHost, current_execution_host
 
 
 def resolve_context() -> dict[str, Any]:
@@ -64,9 +64,8 @@ def current_eval_execution_id() -> str | None:
 
     from zamp_public_workflow_sdk.actions_hub.models.common_models import ZampMetadataContext
     from zamp_public_workflow_sdk.actions_hub.utils.context_utils import get_variable_from_context
-    from zamp_public_workflow_sdk.temporal.interceptors.metadata_context_interceptor import METADATA_CONTEXT_FIELD
 
-    metadata = get_variable_from_context(METADATA_CONTEXT_FIELD)
+    metadata = get_variable_from_context(BOUND_METADATA_CONTEXT_KEY)
     if metadata is None:
         return None
 

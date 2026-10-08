@@ -13,10 +13,6 @@ if TYPE_CHECKING:
     import httpx
 
 
-def line_id(name: str, key: str | None, n: int) -> str:
-    return f"{name}{f':{key}' if key is not None else ''}#{n}"
-
-
 def to_raised_error(error: Exception) -> RaisedError:
     return RaisedError(type=f"{type(error).__module__}.{type(error).__name__}", message=str(error))
 
@@ -32,19 +28,14 @@ def returned_value(func: Callable[..., object], name: str, returns: JsonValue) -
     if annotation is inspect.Signature.empty:
         return returns
 
-    if not _returns_httpx_response(annotation):
+    httpx = sys.modules.get("httpx")
+    if httpx is None or annotation not in (httpx.Response, httpx.Response | None):
         return TypeAdapter(annotation).validate_python(returns)
 
-    if returns is None:
+    if returns is None and annotation is not httpx.Response:
         return None
 
     return _build_response(name, FixtureResponse.model_validate(returns))
-
-
-def _returns_httpx_response(annotation: object) -> bool:
-    httpx = sys.modules.get("httpx")
-
-    return httpx is not None and annotation in (httpx.Response, httpx.Response | None)
 
 
 def _build_response(name: str, response: FixtureResponse) -> "httpx.Response":

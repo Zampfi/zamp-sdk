@@ -5,7 +5,7 @@ from typing import Optional
 
 import httpx
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from zamp_sdk import AgentDbError, evals
 
@@ -91,6 +91,18 @@ class TestReturns:
 
         assert await ask() is None
 
+    async def test_a_reply_without_an_outcome_is_rejected(self, eval_run, door, reply):
+        door.return_value = reply()
+
+        with pytest.raises(ValidationError, match="exactly one of returns, raises or fixture_error"):
+            await fetch_order("O1")
+
+    async def test_a_reply_with_two_outcomes_is_rejected(self, eval_run, door, reply):
+        door.return_value = reply(returns={"id": "O1", "total": 7}, fixture_error="FIXTURE_MISSING")
+
+        with pytest.raises(ValidationError, match="exactly one of returns, raises or fixture_error"):
+            await fetch_order("O1")
+
 
 class TestHttpResponse:
     async def test_built_from_status_json_body_and_headers(self, eval_run, door, reply):
@@ -127,6 +139,19 @@ class TestHttpResponse:
 
         door.return_value = reply(returns=None)
         assert await maybe() is None
+
+    async def test_a_plain_response_never_comes_back_as_none(self, eval_run, door, reply):
+        door.return_value = reply(returns=None)
+
+        with pytest.raises(ValidationError):
+            await get_page("https://erp.invalid")
+
+    async def test_body_and_content_together_are_rejected(self, eval_run, door, reply):
+        content = base64.b64encode(b"%PDF-1.7").decode()
+        door.return_value = reply(returns={"status": 200, "body": "<html/>", "content": content})
+
+        with pytest.raises(ValidationError, match="a body or content, not both"):
+            await get_page("https://erp.invalid")
 
 
 class TestRaises:
@@ -181,6 +206,7 @@ class TestDoorCall:
 
         action, call = door.call_args.args
         assert action == "eval_door"
+        assert door.call_args.kwargs == {"log_action": False}
         assert call == {
             "kind": "external",
             "call_id": call["call_id"],
@@ -242,6 +268,27 @@ class TestDoorCall:
 
         assert sent(door)[0]["args"] == {"url": "https://erp.invalid"}
 
+    async def test_a_method_never_sends_its_instance(self, eval_run, door, reply):
+        class Client:
+            def __init__(self, token: str):
+                self.token = token
+
+            @evals.external("erp.order", key="order_id")
+            async def fetch(self, order_id: str) -> dict:
+                return {}
+
+            @classmethod
+            @evals.external("erp.status")
+            def status(cls, realm: str) -> str:
+                return "live"
+
+        door.return_value = reply(returns={})
+        await Client("t0k").fetch("O1")
+        door.return_value = reply(returns="live")
+        Client.status("prod")
+
+        assert [call["args"] for call in sent(door)] == [{"order_id": "O1"}, {"realm": "prod"}]
+
     def test_an_argument_json_cannot_hold_is_sent_as_its_repr(self, eval_run, door, reply):
         class Session:
             def __repr__(self):
@@ -272,16 +319,44 @@ class TestDecoration:
             @evals.external("erp.order", key="id")
             def fetch(order_id: str): ...
 
+    @pytest.mark.parametrize("name", ["erp", "erp order.get", "ERP.order", "erp.order#1"])
+    def test_a_bad_name_fails_at_decoration(self, name):
+        with pytest.raises(ValueError, match="is not a call name"):
+
+            @evals.external(name)
+            def fetch(): ...
+
+    @pytest.mark.parametrize("order_id", ["O 1", "O#1", ""])
+    async def test_a_key_value_that_cannot_be_a_trace_key_fails_before_the_door(self, eval_run, door, order_id):
+        with pytest.raises(ValueError, match=f"erp.order: key 'order_id' is '{order_id}'; a key value has no spaces"):
+            await fetch_order(order_id)
+
+        door.assert_not_called()
+
 
 class TestOnTheExecutor:
-    async def test_async_reads_the_bound_id_and_makes_a_workflow_call_id(self, executor_eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7})
+    async def test_async_reads_the_bound_id_and_unwraps_the_gateway_envelope(
+        self, executor_eval_run, gateway, reply, envelope
+    ):
+        gateway.return_value = envelope(reply(returns={"id": "O1", "total": 7}))
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
-        assert sent(door)[0]["call_id"] == "workflow-uuid"
+        assert sent(gateway)[0]["call_id"] == "workflow-uuid"
 
-    def test_sync_refuses_in_workflow_code(self, executor_eval_run, door):
+    async def test_a_fixture_error_comes_through_the_envelope(self, executor_eval_run, gateway, reply, envelope):
+        gateway.return_value = envelope(reply(fixture_error="FIXTURE_MISSING"))
+
+        with pytest.raises(evals.FixtureError, match="^erp.order:O1#1: FIXTURE_MISSING$"):
+            await fetch_order("O1")
+
+    async def test_a_failed_door_action_raises(self, executor_eval_run, gateway, envelope):
+        gateway.return_value = envelope(status="FAILED", error="no eval run")
+
+        with pytest.raises(RuntimeError, match="^Action action-1 FAILED: no eval run$"):
+            await fetch_order("O1")
+
+    def test_sync_refuses_in_workflow_code(self, executor_eval_run, gateway):
         with pytest.raises(RuntimeError, match="erp.order: a sync function cannot reach the eval door"):
             fetch_order_sync("O1")
 
-        door.assert_not_called()
+        gateway.assert_not_called()

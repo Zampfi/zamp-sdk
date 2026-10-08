@@ -427,10 +427,14 @@ class TestExecuteAction:
         mock_client.post.return_value = {"id": "action-123"}
         mock_client.get.return_value = {"status": "COMPLETED", "result": None}
 
-        with patch(f"{_MODULE}.HttpClient", return_value=mock_client) as client_cls:
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=mock_client) as client_cls,
+            patch(f"{_MODULE}.current_eval_execution_id") as eval_execution_id,
+        ):
             await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
 
         assert "X-EVAL-EXECUTION-ID" not in client_cls.call_args.kwargs["default_headers"]
+        eval_execution_id.assert_not_called()
 
     async def test_includes_channel_context_in_body_when_provided(self):
         mock_client = AsyncMock()

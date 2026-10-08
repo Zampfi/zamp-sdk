@@ -307,6 +307,16 @@ class ActionExecutor:
         ambient_url = (os.environ.get(ENV_BASE_URL) or "").rstrip("/")
         return bool(ambient_url) and config.base_url.rstrip("/") == ambient_url
 
+    @staticmethod
+    def _ambient_run_headers() -> dict[str, str]:
+        """The branch and eval execution this process runs in, as request headers."""
+        headers = {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
+        eval_execution_id = current_eval_execution_id()
+        if eval_execution_id is not None:
+            headers[EVAL_EXECUTION_HEADER] = eval_execution_id
+
+        return headers
+
     @classmethod
     async def _execute_via_api(cls, request: ActionRequest) -> Any:
         """Call the platform over HTTP, showing the call in the live message.
@@ -383,23 +393,13 @@ class ActionExecutor:
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
         """Post to ``{config.base_url}/actions`` and poll until a terminal state."""
-        eval_execution_id = current_eval_execution_id()
         client = HttpClient(
             base_url=config.base_url,
             default_headers={
                 "Authorization": f"Bearer {config.auth_token}",
-                # The platform runs the action in this branch (DB, files, spawned tasks) —
-                # only on the deployment that supplied the branch.
-                **(
-                    {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
-                    if cls._is_ambient_deployment(config)
-                    else {}
-                ),
-                **(
-                    {EVAL_EXECUTION_HEADER: eval_execution_id}
-                    if eval_execution_id is not None and cls._is_ambient_deployment(config)
-                    else {}
-                ),
+                # The platform runs the action in this branch (DB, files, spawned tasks) and eval
+                # execution — only on the deployment that supplied them.
+                **(cls._ambient_run_headers() if cls._is_ambient_deployment(config) else {}),
             },
         )
 

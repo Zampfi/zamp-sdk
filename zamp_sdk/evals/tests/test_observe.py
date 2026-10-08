@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from zamp_sdk import evals
@@ -144,16 +146,32 @@ class TestRaises:
         (step,) = sent(door)
         assert step["raises"] == {"type": "builtins.ValueError", "message": "bad"}
 
+    async def test_a_cancelled_step_records_nothing(self, eval_run, door):
+        @evals.observe("steps.wait")
+        async def wait():
+            raise asyncio.CancelledError
+
+        with pytest.raises(asyncio.CancelledError):
+            await wait()
+
+        door.assert_not_called()
+
 
 class TestOnTheExecutor:
-    async def test_async_records_the_step(self, executor_eval_run, door, reply):
-        door.side_effect = [reply(returns={"id": "O1"}), reply()]
+    async def test_async_records_the_step_through_the_gateway(self, executor_eval_run, gateway, reply, envelope):
+        gateway.side_effect = [envelope(reply(returns={"id": "O1"})), envelope(reply())]
 
         assert await load("O1") == {"order": {"id": "O1"}}
-        assert [call["call_id"] for call in sent(door)] == ["workflow-uuid", "workflow-uuid"]
+        assert [call["call_id"] for call in sent(gateway)] == ["workflow-uuid", "workflow-uuid"]
 
-    def test_sync_refuses_in_workflow_code(self, executor_eval_run, door):
+    async def test_a_failed_door_action_raises(self, executor_eval_run, gateway, reply, envelope):
+        gateway.side_effect = [envelope(reply(returns={"id": "O1"})), envelope(status="FAILED", error="no eval run")]
+
+        with pytest.raises(RuntimeError, match="^Action action-1 FAILED: no eval run$"):
+            await load("O1")
+
+    def test_sync_refuses_in_workflow_code(self, executor_eval_run, gateway):
         with pytest.raises(RuntimeError, match="steps.load: a sync function cannot reach the eval door"):
             load_sync("O1")
 
-        door.assert_not_called()
+        gateway.assert_not_called()

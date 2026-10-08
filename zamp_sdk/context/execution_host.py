@@ -14,6 +14,9 @@ from enum import StrEnum
 
 from zamp_sdk.context.env import ENV_EXECUTION_HOST
 
+# zamp-executor binds the whole metadata context under this one key (its ZAMP_METADATA_CONTEXT_KEY).
+BOUND_METADATA_CONTEXT_KEY = "zamp_metadata_context"
+
 
 class ExecutionHost(StrEnum):
     """The runtime hosting this process.
