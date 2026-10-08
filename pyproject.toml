@@ -39,6 +39,7 @@ ruff = "*"
 mypy = "*"
 pre-commit = "*"
 diff-cover = "*"
+httpx = "*"
 
 [build-system]
 requires = ["poetry-core"]
@@ -58,6 +59,10 @@ pretty = true
 
 [[tool.mypy.overrides]]
 module = "zamp_public_workflow_sdk.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "temporalio.*"
 ignore_missing_imports = true
 
 [tool.ruff]

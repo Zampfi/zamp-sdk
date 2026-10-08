@@ -1,17 +1,15 @@
-from typing import Annotated, Literal
+from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
-from zamp_sdk.evals.constants import CALL_NAME_PATTERN, ERROR_TYPE_PATTERN, KEY_VALUE_PATTERN
+from zamp_sdk.evals.constants import CALL_NAME_PATTERN, ERROR_TYPE_PATTERN, KEY_VALUE_PATTERN, DoorKind
 
-CallName = Annotated[str, StringConstraints(pattern=CALL_NAME_PATTERN, max_length=100)]
-KeyValue = Annotated[str, StringConstraints(pattern=KEY_VALUE_PATTERN)]
-FixtureErrorCode = Literal["FIXTURE_MISSING", "FIXTURE_EXHAUSTED"]
+CallName: TypeAlias = Annotated[str, StringConstraints(pattern=CALL_NAME_PATTERN, max_length=100)]
+KeyValue: TypeAlias = Annotated[str, StringConstraints(pattern=KEY_VALUE_PATTERN)]
+FixtureErrorCode: TypeAlias = Literal["FIXTURE_MISSING", "FIXTURE_EXHAUSTED"]
 
 
-class FixtureError(BaseModel):
-    """A transport error raised in place of the call, built as type(message)."""
-
+class RaisedError(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     type: str = Field(pattern=ERROR_TYPE_PATTERN)
@@ -19,19 +17,22 @@ class FixtureError(BaseModel):
 
 
 class DoorCall(BaseModel):
-    """One decorated call sent to the door: an external asks for its fixture, an observe reports its outcome."""
+    model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["external", "observe"]
-    name: CallName
-    key: KeyValue | None
-    args: dict[str, JsonValue]
+    kind: DoorKind
     call_id: str
-    parent: str
+    name: CallName | None
+    key: KeyValue | None
+    parent: str | None
+    args: dict[str, JsonValue]
     returns: JsonValue = None
-    raises: FixtureError | None = None
+    raises: RaisedError | None = None
 
 
-class TraceRead(BaseModel):
-    """Asks the door for the whole trace of the current execution."""
+class DoorReply(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["read_trace"] = "read_trace"
+    n: int = Field(ge=1)
+    returns: JsonValue = None
+    raises: RaisedError | None = None
+    fixture_error: FixtureErrorCode | None = None

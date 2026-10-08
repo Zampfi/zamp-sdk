@@ -1,17 +1,19 @@
 from zamp_sdk.evals.models.door import (
     CallName,
     DoorCall,
-    FixtureError,
+    DoorReply,
     FixtureErrorCode,
     KeyValue,
-    TraceRead,
+    RaisedError,
 )
+from zamp_sdk.evals.models.response import FixtureResponse
 
 __all__ = [
     "CallName",
     "DoorCall",
-    "FixtureError",
+    "DoorReply",
     "FixtureErrorCode",
+    "FixtureResponse",
     "KeyValue",
-    "TraceRead",
+    "RaisedError",
 ]

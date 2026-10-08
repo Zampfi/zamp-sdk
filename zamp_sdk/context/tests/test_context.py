@@ -1,8 +1,10 @@
+import sys
 import uuid
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
-import structlog
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from zamp_sdk.context import (
     ChannelContext,
@@ -78,15 +80,43 @@ class TestCurrentEvalExecutionId:
         monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
         monkeypatch.setenv("ZAMP_EVAL_EXECUTION_ID", "from-env")
 
-        with structlog.contextvars.bound_contextvars(zamp_metadata_context={"eval_execution_id": "run1-1-item1-1"}):
+        with _bound_metadata_context({"eval_execution_id": "run1-1-item1-1"}):
             assert current_eval_execution_id() == "run1-1-item1-1"
-        assert current_eval_execution_id() is None
 
     def test_actions_hub_none_when_the_context_has_no_id(self, monkeypatch):
         monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
 
-        with structlog.contextvars.bound_contextvars(zamp_metadata_context={"branch_id": "b1"}):
+        with _bound_metadata_context({"branch_id": "b1"}):
             assert current_eval_execution_id() is None
+
+    def test_actions_hub_none_when_no_context_is_bound(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
+
+        with _bound_metadata_context(None):
+            assert current_eval_execution_id() is None
+
+
+class _ZampMetadataContext(BaseModel):
+    branch_id: str | None = None
+    eval_execution_id: str | None = None
+
+
+def _bound_metadata_context(metadata):
+    bound = {"zamp_metadata_context": metadata}
+    return patch.dict(
+        sys.modules,
+        {
+            "zamp_public_workflow_sdk.actions_hub.models.common_models": SimpleNamespace(
+                ZampMetadataContext=_ZampMetadataContext
+            ),
+            "zamp_public_workflow_sdk.actions_hub.utils.context_utils": SimpleNamespace(
+                get_variable_from_context=bound.get
+            ),
+            "zamp_public_workflow_sdk.temporal.interceptors.metadata_context_interceptor": SimpleNamespace(
+                METADATA_CONTEXT_FIELD="zamp_metadata_context"
+            ),
+        },
+    )
 
 
 class TestResolveContext:

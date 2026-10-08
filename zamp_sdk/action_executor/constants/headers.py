@@ -5,3 +5,5 @@ BRANCH_HEADERS = {
     "db_branch_mode": "X-DB-BRANCH-MODE",
     "environment": "X-ENVIRONMENT",
 }
+
+EVAL_EXECUTION_HEADER = "X-EVAL-EXECUTION-ID"

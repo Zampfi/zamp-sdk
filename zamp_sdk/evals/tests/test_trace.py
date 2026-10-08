@@ -77,11 +77,24 @@ class TestLast:
 
 
 class TestReadTrace:
-    async def test_reads_through_the_door(self, door, reply):
-        door.return_value = {"lines": [reply(key="O1", returns={"id": "O1"}), reply(kind="observe", name="steps.load")]}
+    async def test_reads_through_the_door(self, eval_run, door):
+        external = {"kind": "external", "name": "erp.order", "key": "O1", "n": 1, "parent": "x.py:f", "args": {}}
+        observe = {"kind": "observe", "name": "steps.load", "n": 1, "parent": "x.py:f", "args": {}}
+        door.return_value = {"lines": [{**external, "returns": {"id": "O1"}}, observe]}
 
         trace = await evals.read_trace()
 
-        door.assert_awaited_once_with("eval_door", {"kind": "read_trace"})
+        action, call = door.call_args.args
+        assert action == "eval_door"
+        assert call == {
+            "kind": "read_trace",
+            "call_id": call["call_id"],
+            "name": None,
+            "key": None,
+            "parent": None,
+            "args": {},
+            "returns": None,
+            "raises": None,
+        }
         assert [found.id for found in trace.lines] == ["erp.order:O1#1", "steps.load#1"]
         assert trace.one("erp.order", key="O1").returns == {"id": "O1"}

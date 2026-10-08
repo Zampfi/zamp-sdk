@@ -1,48 +1,34 @@
-"""Fixtures and traces for eval runs.
-
-Outside an eval run a decorated function runs untouched. In one, every call goes through the platform's door
-action: an ``external`` returns or raises its fixture instead of running, an ``observe`` runs and is recorded,
-and :func:`read_trace` reads back what was recorded.
-
-The public names are defined here rather than re-exported: the code executor exposes only a sub-namespace's own
-members.
-"""
-
 import functools
 import inspect
 import sys
-import uuid
-from contextvars import ContextVar
-from types import FrameType
-from typing import Any, Callable, Literal, TypeVar, cast
+from collections.abc import Callable
+from typing import Any, Literal, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.context import current_eval_execution_id
-from zamp_sdk.evals.constants import EVAL_DOOR_ACTION
-from zamp_sdk.evals.models import (
-    CallName,
-    DoorCall,
-    FixtureError,
-    FixtureErrorCode,
-    KeyValue,
-    TraceRead,
-)
+from zamp_sdk.evals.constants import FIXTURE_ERROR_MESSAGE, NO_TRACE_LINE_ERROR, TRACE_LINE_COUNT_ERROR, DoorKind
+from zamp_sdk.evals.models import CallName, DoorCall, DoorReply, FixtureErrorCode, KeyValue, RaisedError
 from zamp_sdk.evals.utils import (
-    call_arguments,
-    caller,
-    error_of,
-    exception_from,
-    jsonable,
-    key_value,
+    build_door_call,
+    build_exception,
+    build_read_trace_call,
+    line_id,
+    parent_of,
+    raise_if_key_not_a_parameter,
+    raise_if_workflow_host,
     returned_value,
     run_blocking,
+    run_observed,
+    run_observed_sync,
+    send_door_call,
 )
 
-_F = TypeVar("_F", bound=Callable[..., Any])
+_FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 
-_step: ContextVar[str | None] = ContextVar("zamp_eval_step", default=None)
+
+class FixtureError(Exception):
+    pass
 
 
 class TraceLine(BaseModel):
@@ -60,13 +46,12 @@ class TraceLine(BaseModel):
     parent: str = Field(description="Enclosing observe step, else file:function; for reading only, never matched")
     args: dict[str, JsonValue] = Field(description="Arguments by name; headers and credentials are never written")
     returns: JsonValue = None
-    raises: FixtureError | None = None
+    raises: RaisedError | None = None
     fixture_error: FixtureErrorCode | None = None
 
     @property
     def id(self) -> str:
-        """name[:key]#n, the id error messages use: erp.approval_state#2."""
-        return f"{self.name}{f':{self.key}' if self.key is not None else ''}#{self.n}"
+        return line_id(self.name, self.key, self.n)
 
 
 class Trace(BaseModel):
@@ -86,130 +71,94 @@ class Trace(BaseModel):
     def one(self, name: str, key: str | None = None, **args: JsonValue) -> TraceLine:
         found = self.find(name, key, **args)
         if len(found) != 1:
-            raise LookupError(f"{name}: expected one trace line, found {len(found)}")
+            raise LookupError(TRACE_LINE_COUNT_ERROR.format(name=name, count=len(found)))
+
         return found[0]
 
     def last(self, name: str, key: str | None = None, **args: JsonValue) -> TraceLine:
         found = self.find(name, key, **args)
         if not found:
-            raise LookupError(f"{name}: no trace line")
+            raise LookupError(NO_TRACE_LINE_ERROR.format(name=name))
+
         return found[-1]
 
 
-def external(name: str, key: str | None = None) -> Callable[[_F], _F]:
-    """In an eval run the call does not run: it returns or raises what the item's fixture says."""
+def external(name: str, key: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
+    def decorate(func: _FunctionT) -> _FunctionT:
+        raise_if_key_not_a_parameter(name, key, func)
 
-    def decorate(func: _F) -> _F:
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
-            async def run_async(*args: Any, **kwargs: Any) -> Any:
+            def call_async(*args: Any, **kwargs: Any) -> Any:
                 if current_eval_execution_id() is None:
-                    return await func(*args, **kwargs)
+                    return func(*args, **kwargs)
 
-                call = _door_call("external", name, key, func, args, kwargs, _parent(sys._getframe(1)))
-                return _answer(func, await _send(call))
+                call = build_door_call(DoorKind.EXTERNAL, name, key, func, args, kwargs, parent_of(sys._getframe(1)))
 
-            return cast(_F, run_async)
+                return _return_or_raise_fixture(func, name, call)
+
+            return cast(_FunctionT, inspect.markcoroutinefunction(call_async))
 
         @functools.wraps(func)
-        def run_sync(*args: Any, **kwargs: Any) -> Any:
+        def call_sync(*args: Any, **kwargs: Any) -> Any:
             if current_eval_execution_id() is None:
                 return func(*args, **kwargs)
 
-            call = _door_call("external", name, key, func, args, kwargs, _parent(sys._getframe(1)))
-            return _answer(func, run_blocking(_send(call)))
+            raise_if_workflow_host(name, func)
+            call = build_door_call(DoorKind.EXTERNAL, name, key, func, args, kwargs, parent_of(sys._getframe(1)))
 
-        return cast(_F, run_sync)
+            return run_blocking(_return_or_raise_fixture(func, name, call))
+
+        return cast(_FunctionT, call_sync)
 
     return decorate
 
 
-def observe(name: str, key: str | None = None) -> Callable[[_F], _F]:
-    """In an eval run the call runs as usual and its outcome is recorded; calls inside it name it as parent."""
+def observe(name: str, key: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
+    def decorate(func: _FunctionT) -> _FunctionT:
+        raise_if_key_not_a_parameter(name, key, func)
 
-    def decorate(func: _F) -> _F:
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
-            async def run_async(*args: Any, **kwargs: Any) -> Any:
+            def call_async(*args: Any, **kwargs: Any) -> Any:
                 if current_eval_execution_id() is None:
-                    return await func(*args, **kwargs)
+                    return func(*args, **kwargs)
 
-                call = _door_call("observe", name, key, func, args, kwargs, _parent(sys._getframe(1)))
-                step = _step.set(name)
-                try:
-                    result = await func(*args, **kwargs)
-                except Exception as error:
-                    await _send(call.model_copy(update={"raises": error_of(error)}))
-                    raise
-                finally:
-                    _step.reset(step)
+                call = build_door_call(DoorKind.OBSERVE, name, key, func, args, kwargs, parent_of(sys._getframe(1)))
 
-                await _send(call.model_copy(update={"returns": jsonable(result)}))
-                return result
+                return run_observed(func, call, args, kwargs)
 
-            return cast(_F, run_async)
+            return cast(_FunctionT, inspect.markcoroutinefunction(call_async))
 
         @functools.wraps(func)
-        def run_sync(*args: Any, **kwargs: Any) -> Any:
+        def call_sync(*args: Any, **kwargs: Any) -> Any:
             if current_eval_execution_id() is None:
                 return func(*args, **kwargs)
 
-            call = _door_call("observe", name, key, func, args, kwargs, _parent(sys._getframe(1)))
-            step = _step.set(name)
-            try:
-                result = func(*args, **kwargs)
-            except Exception as error:
-                run_blocking(_send(call.model_copy(update={"raises": error_of(error)})))
-                raise
-            finally:
-                _step.reset(step)
+            raise_if_workflow_host(name, func)
+            call = build_door_call(DoorKind.OBSERVE, name, key, func, args, kwargs, parent_of(sys._getframe(1)))
 
-            run_blocking(_send(call.model_copy(update={"returns": jsonable(result)})))
-            return result
+            return run_observed_sync(func, call, args, kwargs)
 
-        return cast(_F, run_sync)
+        return cast(_FunctionT, call_sync)
 
     return decorate
 
 
 async def read_trace() -> Trace:
-    """Every call the current execution made so far, read through the door."""
-    return Trace.model_validate(await ActionExecutor.execute(EVAL_DOOR_ACTION, TraceRead().model_dump()))
+    return Trace.model_validate(await send_door_call(build_read_trace_call()))
 
 
-def _door_call(
-    kind: Literal["external", "observe"],
-    name: str,
-    key: str | None,
-    func: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: dict[str, Any],
-    parent: str,
-) -> DoorCall:
-    arguments = call_arguments(func, args, kwargs)
-    return DoorCall(
-        kind=kind,
-        name=name,
-        key=key_value(arguments, key),
-        args=arguments,
-        call_id=uuid.uuid4().hex,
-        parent=parent,
-    )
+async def _return_or_raise_fixture(func: Callable[..., object], name: str, call: DoorCall) -> object:
+    reply = DoorReply.model_validate(await send_door_call(call))
+    if reply.fixture_error is not None:
+        raise FixtureError(
+            FIXTURE_ERROR_MESSAGE.format(line_id=line_id(name, call.key, reply.n), fixture_error=reply.fixture_error)
+        )
 
+    if reply.raises is not None:
+        raise build_exception(reply.raises)
 
-def _parent(frame: FrameType) -> str:
-    return _step.get() or caller(frame)
-
-
-async def _send(call: DoorCall) -> TraceLine:
-    return TraceLine.model_validate(await ActionExecutor.execute(EVAL_DOOR_ACTION, call.model_dump(mode="json")))
-
-
-def _answer(func: Callable[..., Any], line: TraceLine) -> Any:
-    if line.fixture_error is not None:
-        raise LookupError(f"{line.id}: {line.fixture_error}")
-    if line.raises is not None:
-        raise exception_from(line.raises)
-    return returned_value(func, line.returns)
+    return returned_value(func, name, reply.returns)

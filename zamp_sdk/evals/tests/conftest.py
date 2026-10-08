@@ -1,8 +1,15 @@
+import sys
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from pydantic import BaseModel
 
-EXECUTE = "zamp_sdk.evals.ActionExecutor.execute"
+EXECUTE = "zamp_sdk.action_executor.ActionExecutor.execute"
+
+
+class ZampMetadataContext(BaseModel):
+    eval_execution_id: str | None = None
 
 
 @pytest.fixture(autouse=True)
@@ -17,6 +24,25 @@ def eval_run(monkeypatch):
 
 
 @pytest.fixture
+def executor_eval_run(monkeypatch):
+    monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
+    modules = {
+        "zamp_public_workflow_sdk.actions_hub.models.common_models": SimpleNamespace(
+            ZampMetadataContext=ZampMetadataContext
+        ),
+        "zamp_public_workflow_sdk.actions_hub.utils.context_utils": SimpleNamespace(
+            get_variable_from_context=lambda name: {"eval_execution_id": "run1-1-item1-1"}
+        ),
+        "zamp_public_workflow_sdk.temporal.interceptors.metadata_context_interceptor": SimpleNamespace(
+            METADATA_CONTEXT_FIELD="zamp_metadata_context"
+        ),
+        "temporalio": SimpleNamespace(workflow=SimpleNamespace(uuid4=lambda: SimpleNamespace(hex="workflow-uuid"))),
+    }
+    with patch.dict(sys.modules, modules):
+        yield
+
+
+@pytest.fixture
 def door():
     with patch(EXECUTE, new=AsyncMock()) as execute:
         yield execute
@@ -24,9 +50,7 @@ def door():
 
 @pytest.fixture
 def reply():
-    """A door reply: the trace line the platform wrote for the call."""
-
-    def build(kind="external", name="erp.order", key=None, n=1, **fields):
-        return {"kind": kind, "name": name, "key": key, "n": n, "parent": "x.py:f", "args": {}, **fields}
+    def build(n=1, **outcome):
+        return {"n": n, **outcome}
 
     return build

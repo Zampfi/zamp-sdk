@@ -7,6 +7,7 @@ from typing import Any, Callable
 from zamp_sdk.action_executor.constants import (
     ACTION_ENVELOPE_KEYS,
     BRANCH_HEADERS,
+    EVAL_EXECUTION_HEADER,
     IN_PROGRESS_STATUSES,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
@@ -30,6 +31,7 @@ from zamp_sdk.context import (
     ENV_BASE_URL,
     ChannelContext,
     current_branch_context,
+    current_eval_execution_id,
     resolve_channel_context,
 )
 from zamp_sdk.logger import get_logger
@@ -381,6 +383,7 @@ class ActionExecutor:
         action_start_to_close_timeout: timedelta | None = None,
     ) -> Any:
         """Post to ``{config.base_url}/actions`` and poll until a terminal state."""
+        eval_execution_id = current_eval_execution_id()
         client = HttpClient(
             base_url=config.base_url,
             default_headers={
@@ -390,6 +393,11 @@ class ActionExecutor:
                 **(
                     {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
                     if cls._is_ambient_deployment(config)
+                    else {}
+                ),
+                **(
+                    {EVAL_EXECUTION_HEADER: eval_execution_id}
+                    if eval_execution_id is not None and cls._is_ambient_deployment(config)
                     else {}
                 ),
             },
