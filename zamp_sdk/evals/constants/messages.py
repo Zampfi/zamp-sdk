@@ -9,6 +9,7 @@ SYNC_CALL_IN_WORKFLOW_ERROR = (
     "{name}: a sync function cannot reach the eval door from workflow code; make {function} async"
 )
 REPLY_OUTCOME_COUNT_ERROR = "a door reply carries at most one of returns, raises or fixture_error"
+DOOR_FAILED_ERROR = "Action {action_id} {status}: {error}"
 BODY_AND_CONTENT_ERROR = "a fixture response has a body or content, not both"
 FIXTURE_ERROR_MESSAGE = "{line_id}: {fixture_error}"
 TRACE_LINE_COUNT_ERROR = "{name}: expected one trace line, found {count}"

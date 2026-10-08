@@ -37,6 +37,13 @@ class DoorCall(BaseModel):
     raises: RaisedError | None = None
 
 
+class GatewayEnvelope(BaseModel):
+    id: str
+    status: str
+    result: JsonValue = None
+    error: str | None = None
+
+
 class DoorReply(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

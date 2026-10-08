@@ -3,6 +3,7 @@ from zamp_sdk.evals.models.door import (
     DoorCall,
     DoorReply,
     FixtureErrorCode,
+    GatewayEnvelope,
     KeyValue,
     RaisedError,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "DoorReply",
     "FixtureErrorCode",
     "FixtureResponse",
+    "GatewayEnvelope",
     "KeyValue",
     "RaisedError",
 ]

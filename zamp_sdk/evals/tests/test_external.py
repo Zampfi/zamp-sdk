@@ -371,16 +371,24 @@ class TestDecoration:
 
 
 class TestOnTheExecutor:
-    async def test_async_reads_the_bound_id(self, executor_eval_run, door, reply):
-        door.return_value = reply(returns={"id": "O1", "total": 7})
+    async def test_async_reads_the_bound_id_through_the_gateway_envelope(
+        self, executor_eval_run, door, reply, envelope
+    ):
+        door.return_value = envelope(reply(returns={"id": "O1", "total": 7}))
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
         assert sent(door)[0]["call_id"] == "workflow-uuid"
 
-    async def test_a_fixture_error_raises_fixture_error(self, executor_eval_run, door, reply):
-        door.return_value = reply(fixture_error="FIXTURE_MISSING")
+    async def test_a_fixture_error_raises_fixture_error(self, executor_eval_run, door, reply, envelope):
+        door.return_value = envelope(reply(fixture_error="FIXTURE_MISSING"))
 
         with pytest.raises(evals.FixtureError, match="^erp.order:O1#1: FIXTURE_MISSING$"):
+            await fetch_order("O1")
+
+    async def test_a_failed_door_action_raises(self, executor_eval_run, door, envelope):
+        door.return_value = envelope(status="FAILED", error="no eval run")
+
+        with pytest.raises(RuntimeError, match="^Action action-1 FAILED: no eval run$"):
             await fetch_order("O1")
 
     def test_sync_refuses_in_workflow_code(self, executor_eval_run, door):

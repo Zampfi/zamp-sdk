@@ -47,6 +47,14 @@ def door():
 
 
 @pytest.fixture
+def envelope():
+    def build(result=None, status="COMPLETED", error=None):
+        return {"id": "action-1", "status": status, "result": result, "error": error}
+
+    return build
+
+
+@pytest.fixture
 def reply():
     def build(n=1, **outcome):
         return {"n": n, **outcome}

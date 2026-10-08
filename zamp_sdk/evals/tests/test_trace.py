@@ -99,9 +99,9 @@ class TestReadTrace:
         assert [found.id for found in trace.lines] == ["erp.order:O1#1", "steps.load#1"]
         assert trace.one("erp.order", key="O1").returns == {"id": "O1"}
 
-    async def test_reads_with_a_workflow_call_id_on_the_executor(self, executor_eval_run, door):
+    async def test_reads_through_the_gateway_envelope_on_the_executor(self, executor_eval_run, door, envelope):
         line = {"kind": "observe", "name": "steps.load", "n": 1, "parent": "x.py:f", "args": {}}
-        door.return_value = {"lines": [line]}
+        door.return_value = envelope({"lines": [line]})
 
         trace = await evals.read_trace()
 

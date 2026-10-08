@@ -168,16 +168,16 @@ class TestRaises:
 
 
 class TestOnTheExecutor:
-    async def test_async_records_the_step_with_workflow_call_ids(self, executor_eval_run, door, reply):
-        door.side_effect = [reply(returns={"id": "O1"}), reply()]
+    async def test_async_records_the_step_with_workflow_call_ids(self, executor_eval_run, door, reply, envelope):
+        door.side_effect = [envelope(reply(returns={"id": "O1"})), envelope(reply())]
 
         assert await load("O1") == {"order": {"id": "O1"}}
         assert [call["call_id"] for call in sent(door)] == ["workflow-uuid", "workflow-uuid"]
 
-    async def test_a_failed_door_call_propagates(self, executor_eval_run, door, reply):
-        door.side_effect = [reply(returns={"id": "O1"}), RuntimeError("Action eval_door FAILED")]
+    async def test_a_failed_door_action_raises(self, executor_eval_run, door, reply, envelope):
+        door.side_effect = [envelope(reply(returns={"id": "O1"})), envelope(status="FAILED", error="no eval run")]
 
-        with pytest.raises(RuntimeError, match="eval_door"):
+        with pytest.raises(RuntimeError, match="^Action action-1 FAILED: no eval run$"):
             await load("O1")
 
     def test_sync_refuses_in_workflow_code(self, executor_eval_run, door):
