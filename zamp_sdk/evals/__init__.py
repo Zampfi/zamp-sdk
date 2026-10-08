@@ -6,7 +6,7 @@ from typing import Any, Literal, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from zamp_sdk.context import current_eval_execution_id
+from zamp_sdk.context import current_eval_trial_id
 from zamp_sdk.evals.constants import FIXTURE_ERROR_MESSAGE, NO_TRACE_LINE_ERROR, TRACE_LINE_COUNT_ERROR, DoorKind
 from zamp_sdk.evals.models import CallName, DoorCall, DoorReply, FixtureErrorCode, KeyValue, RaisedError
 from zamp_sdk.evals.utils import (
@@ -34,7 +34,7 @@ class FixtureError(Exception):
 
 
 class TraceLine(BaseModel):
-    """One decorated call in one execution. The platform's door action writes it as the call goes through and holds
+    """One decorated call in one trial. The platform's door action writes it as the call goes through and holds
     the trace; collect and the engine read it."""
 
     model_config = ConfigDict(extra="forbid")
@@ -44,7 +44,7 @@ class TraceLine(BaseModel):
     key: KeyValue | None = Field(
         default=None, description="Value of the parameter the decorator names as key, if it names one"
     )
-    n: int = Field(ge=1, description="Calls of this name and key so far in the execution, this one included")
+    n: int = Field(ge=1, description="Calls of this name and key so far in the trial, this one included")
     parent: str = Field(description="Enclosing observe step, else file:function; for reading only, never matched")
     args: dict[str, JsonValue] = Field(description="Arguments by name; headers and credentials are never written")
     returns: JsonValue = None
@@ -57,7 +57,7 @@ class TraceLine(BaseModel):
 
 
 class Trace(BaseModel):
-    """One execution's trace, read by collect. Lines are picked by name, key and args; last is the latest repeated call."""
+    """One trial's trace, read by collect. Lines are picked by name, key and args; last is the latest repeated call."""
 
     lines: list[TraceLine]
 
@@ -107,7 +107,7 @@ def _decorator(
 
             @functools.wraps(func)
             def call_async(*args: Any, **kwargs: Any) -> Any:
-                if current_eval_execution_id() is None:
+                if current_eval_trial_id() is None:
                     return func(*args, **kwargs)
 
                 call = build_step_call(kind, name, key, func, args, kwargs, parent_of(sys._getframe(1)))
@@ -120,7 +120,7 @@ def _decorator(
 
         @functools.wraps(func)
         def call_sync(*args: Any, **kwargs: Any) -> Any:
-            if current_eval_execution_id() is None:
+            if current_eval_trial_id() is None:
                 return func(*args, **kwargs)
 
             raise_if_workflow_host(name, func)

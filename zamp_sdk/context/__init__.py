@@ -15,7 +15,7 @@ from zamp_sdk.context.env import (
     ENV_CHANNEL_TYPE,
     ENV_DB_BRANCH_MODE,
     ENV_ENVIRONMENT,
-    ENV_EVAL_EXECUTION_ID,
+    ENV_EVAL_TRIAL_ID,
     ENV_EXECUTION_HOST,
     ENV_LOG_ENABLED,
     ENV_LOG_LEVEL,
@@ -28,7 +28,7 @@ from zamp_sdk.context.env import (
 from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
 from zamp_sdk.context.resolve import (
     current_branch_context,
-    current_eval_execution_id,
+    current_eval_trial_id,
     resolve_channel_context,
     resolve_context,
 )
@@ -46,7 +46,7 @@ __all__ = [
     "ENV_CHANNEL_TYPE",
     "ENV_DB_BRANCH_MODE",
     "ENV_ENVIRONMENT",
-    "ENV_EVAL_EXECUTION_ID",
+    "ENV_EVAL_TRIAL_ID",
     "ENV_EXECUTION_HOST",
     "ENV_LOG_ENABLED",
     "ENV_LOG_LEVEL",
@@ -58,7 +58,7 @@ __all__ = [
     "bind_channel_context",
     "clear_channel_context",
     "current_branch_context",
-    "current_eval_execution_id",
+    "current_eval_trial_id",
     "current_channel_context",
     "current_execution_host",
     "resolve_channel_context",

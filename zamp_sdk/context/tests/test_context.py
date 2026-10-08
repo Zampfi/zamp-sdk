@@ -13,7 +13,7 @@ from zamp_sdk.context import (
     bind_channel_context,
     clear_channel_context,
     current_branch_context,
-    current_eval_execution_id,
+    current_eval_trial_id,
     resolve_channel_context,
     resolve_context,
 )
@@ -33,7 +33,7 @@ def _clear_zamp_env(monkeypatch):
         "ZAMP_DB_BRANCH_MODE",
         "ZAMP_ENVIRONMENT",
         "ZAMP_TOOL_EXECUTION_MODE",
-        "ZAMP_EVAL_EXECUTION_ID",
+        "ZAMP_EVAL_TRIAL_ID",
         "ZAMP_SDK_EXECUTION_HOST",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -66,39 +66,39 @@ class TestCurrentBranchContext:
 
 class TestCurrentEvalExecutionId:
     def test_none_outside_an_eval_run(self):
-        assert current_eval_execution_id() is None
+        assert current_eval_trial_id() is None
 
     def test_reads_the_injected_id(self, monkeypatch):
-        monkeypatch.setenv("ZAMP_EVAL_EXECUTION_ID", "run1-1-item1-1")
-        assert current_eval_execution_id() == "run1-1-item1-1"
+        monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "run1-1-item1-1")
+        assert current_eval_trial_id() == "run1-1-item1-1"
 
     def test_blank_is_none(self, monkeypatch):
-        monkeypatch.setenv("ZAMP_EVAL_EXECUTION_ID", "")
-        assert current_eval_execution_id() is None
+        monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "")
+        assert current_eval_trial_id() is None
 
     def test_actions_hub_reads_the_bound_metadata_context(self, monkeypatch):
         monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
-        monkeypatch.setenv("ZAMP_EVAL_EXECUTION_ID", "from-env")
+        monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "from-env")
 
-        with _bound_metadata_context({"eval_execution_id": "run1-1-item1-1"}):
-            assert current_eval_execution_id() == "run1-1-item1-1"
+        with _bound_metadata_context({"eval_trial_id": "run1-1-item1-1"}):
+            assert current_eval_trial_id() == "run1-1-item1-1"
 
     def test_actions_hub_none_when_the_context_has_no_id(self, monkeypatch):
         monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
 
         with _bound_metadata_context({"branch_id": "b1"}):
-            assert current_eval_execution_id() is None
+            assert current_eval_trial_id() is None
 
     def test_actions_hub_none_when_no_context_is_bound(self, monkeypatch):
         monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
 
         with _bound_metadata_context(None):
-            assert current_eval_execution_id() is None
+            assert current_eval_trial_id() is None
 
 
 class _ZampMetadataContext(BaseModel):
     branch_id: str | None = None
-    eval_execution_id: str | None = None
+    eval_trial_id: str | None = None
 
 
 def _bound_metadata_context(metadata):

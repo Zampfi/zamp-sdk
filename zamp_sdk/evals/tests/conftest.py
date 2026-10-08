@@ -9,24 +9,24 @@ EXECUTE = "zamp_sdk.action_executor.ActionExecutor.execute"
 
 
 class ZampMetadataContext(BaseModel):
-    eval_execution_id: str | None = None
+    eval_trial_id: str | None = None
 
 
 @pytest.fixture(autouse=True)
 def _api_host(monkeypatch):
     monkeypatch.delenv("ZAMP_SDK_EXECUTION_HOST", raising=False)
-    monkeypatch.delenv("ZAMP_EVAL_EXECUTION_ID", raising=False)
+    monkeypatch.delenv("ZAMP_EVAL_TRIAL_ID", raising=False)
 
 
 @pytest.fixture
 def eval_run(monkeypatch):
-    monkeypatch.setenv("ZAMP_EVAL_EXECUTION_ID", "run1-1-item1-1")
+    monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "run1-1-item1-1")
 
 
 @pytest.fixture
 def executor_eval_run(monkeypatch):
     monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
-    bound = {"zamp_metadata_context": {"eval_execution_id": "run1-1-item1-1"}}
+    bound = {"zamp_metadata_context": {"eval_trial_id": "run1-1-item1-1"}}
     modules = {
         "zamp_public_workflow_sdk.actions_hub.models.common_models": SimpleNamespace(
             ZampMetadataContext=ZampMetadataContext
