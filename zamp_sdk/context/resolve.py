@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
+import structlog
+
 from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
 from zamp_sdk.context.env import (
     ENV_BRANCH_ID,
@@ -10,6 +12,7 @@ from zamp_sdk.context.env import (
     ENV_CHANNEL_TYPE,
     ENV_DB_BRANCH_MODE,
     ENV_ENVIRONMENT,
+    ENV_EVAL_EXECUTION_ID,
     ENV_MESSAGE_ID,
     ENV_RUN_ID,
     ENV_STREAMING_ID,
@@ -17,6 +20,9 @@ from zamp_sdk.context.env import (
     ENV_TOOL_EXECUTION_MODE,
 )
 from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
+
+# The run's ZampMetadataContext as a dict, bound by zamp-executor's CodeExecutorWorkflow.
+METADATA_CONTEXT_KEY = "zamp_metadata_context"
 
 
 def resolve_context() -> dict[str, Any]:
@@ -55,6 +61,18 @@ def current_branch_context() -> dict[str, str]:
         "environment": os.environ.get(ENV_ENVIRONMENT),
     }
     return {k: v for k, v in ctx.items() if v}
+
+
+def current_eval_execution_id() -> str | None:
+    """The eval execution this run belongs to, or None outside an eval run.
+
+    Read like the branch on the API host. On an ``ACTIONS_HUB`` host it comes from the metadata
+    context the executor workflow bound, since no environment is injected there.
+    """
+    if current_execution_host() is ExecutionHost.ACTIONS_HUB:
+        metadata = structlog.contextvars.get_contextvars().get(METADATA_CONTEXT_KEY) or {}
+        return metadata.get("eval_execution_id")
+    return os.environ.get(ENV_EVAL_EXECUTION_ID) or None
 
 
 def resolve_channel_context() -> Optional[ChannelContext]:

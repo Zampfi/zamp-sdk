@@ -1,0 +1,87 @@
+import pytest
+from pydantic import ValidationError
+
+from zamp_sdk import evals
+
+
+def line(name, key=None, n=1, **args):
+    return evals.TraceLine(kind="external", name=name, key=key, n=n, parent="x.py:f", args=args)
+
+
+@pytest.fixture
+def trace():
+    return evals.Trace(
+        lines=[
+            line("erp.token"),
+            line("erp.attachment", key="ATT1", attachment_id="ATT1", realm="prod"),
+            line("erp.attachment", key="ATT2", attachment_id="ATT2", realm="prod"),
+            line("erp.approve", n=1),
+            line("erp.approve", n=2),
+        ]
+    )
+
+
+class TestTraceLine:
+    def test_id_is_name_and_n(self):
+        assert line("erp.approve", n=2).id == "erp.approve#2"
+
+    def test_id_carries_the_key(self):
+        assert line("erp.attachment", key="ATT1").id == "erp.attachment:ATT1#1"
+
+    def test_rejects_an_unknown_field(self):
+        with pytest.raises(ValidationError):
+            evals.TraceLine(kind="external", name="erp.token", n=1, parent="p", args={}, extra=True)
+
+    def test_rejects_a_bad_name(self):
+        with pytest.raises(ValidationError):
+            line("Token")
+
+
+class TestFind:
+    def test_by_name(self, trace):
+        assert [found.id for found in trace.find("erp.attachment")] == [
+            "erp.attachment:ATT1#1",
+            "erp.attachment:ATT2#1",
+        ]
+
+    def test_by_key(self, trace):
+        assert [found.id for found in trace.find("erp.attachment", key="ATT2")] == ["erp.attachment:ATT2#1"]
+
+    def test_by_args(self, trace):
+        assert [found.id for found in trace.find("erp.attachment", attachment_id="ATT1")] == ["erp.attachment:ATT1#1"]
+
+    def test_nothing_found(self, trace):
+        assert trace.find("erp.reject") == []
+
+
+class TestOne:
+    def test_the_only_line(self, trace):
+        assert trace.one("erp.token").id == "erp.token#1"
+
+    def test_raises_on_several(self, trace):
+        with pytest.raises(LookupError, match="erp.approve: expected one trace line, found 2"):
+            trace.one("erp.approve")
+
+    def test_raises_on_none(self, trace):
+        with pytest.raises(LookupError, match="erp.reject: expected one trace line, found 0"):
+            trace.one("erp.reject")
+
+
+class TestLast:
+    def test_the_last_line(self, trace):
+        assert trace.last("erp.approve").id == "erp.approve#2"
+
+    def test_raises_on_none(self, trace):
+        with pytest.raises(LookupError, match="erp.reject: no trace line"):
+            trace.last("erp.reject")
+
+
+class TestReadTrace:
+    async def test_reads_through_the_door(self, door, reply):
+        door.return_value = {"lines": [reply(key="O1", returns={"id": "O1"}), reply(kind="observe", name="steps.load")]}
+
+        trace = await evals.read_trace()
+
+        door.assert_awaited_once_with("eval_door", {"kind": "read_trace"})
+        assert [found.id for found in trace.lines] == ["erp.order:O1#1", "steps.load#1"]
+        assert trace.one("erp.order", key="O1").returns == {"id": "O1"}

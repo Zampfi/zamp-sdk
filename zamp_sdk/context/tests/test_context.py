@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+import structlog
 from pydantic import ValidationError
 
 from zamp_sdk.context import (
@@ -10,6 +11,7 @@ from zamp_sdk.context import (
     bind_channel_context,
     clear_channel_context,
     current_branch_context,
+    current_eval_execution_id,
     resolve_channel_context,
     resolve_context,
 )
@@ -29,6 +31,8 @@ def _clear_zamp_env(monkeypatch):
         "ZAMP_DB_BRANCH_MODE",
         "ZAMP_ENVIRONMENT",
         "ZAMP_TOOL_EXECUTION_MODE",
+        "ZAMP_EVAL_EXECUTION_ID",
+        "ZAMP_SDK_EXECUTION_HOST",
     ):
         monkeypatch.delenv(var, raising=False)
 
@@ -56,6 +60,33 @@ class TestCurrentBranchContext:
         monkeypatch.setenv("ZAMP_BRANCH_ID", "feature-x")
         monkeypatch.setenv("ZAMP_DB_BRANCH_MODE", "")
         assert current_branch_context() == {"branch_id": "feature-x"}
+
+
+class TestCurrentEvalExecutionId:
+    def test_none_outside_an_eval_run(self):
+        assert current_eval_execution_id() is None
+
+    def test_reads_the_injected_id(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_EVAL_EXECUTION_ID", "run1-1-item1-1")
+        assert current_eval_execution_id() == "run1-1-item1-1"
+
+    def test_blank_is_none(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_EVAL_EXECUTION_ID", "")
+        assert current_eval_execution_id() is None
+
+    def test_actions_hub_reads_the_bound_metadata_context(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
+        monkeypatch.setenv("ZAMP_EVAL_EXECUTION_ID", "from-env")
+
+        with structlog.contextvars.bound_contextvars(zamp_metadata_context={"eval_execution_id": "run1-1-item1-1"}):
+            assert current_eval_execution_id() == "run1-1-item1-1"
+        assert current_eval_execution_id() is None
+
+    def test_actions_hub_none_when_the_context_has_no_id(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
+
+        with structlog.contextvars.bound_contextvars(zamp_metadata_context={"branch_id": "b1"}):
+            assert current_eval_execution_id() is None
 
 
 class TestResolveContext:
