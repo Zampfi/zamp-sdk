@@ -1,14 +1,11 @@
 from zamp_sdk.evals.utils.blocking import raise_if_workflow_host, run_blocking
-from zamp_sdk.evals.utils.fixture_and_trace import build_step_call, new_call_id, send_to_trial
 from zamp_sdk.evals.utils.observe_step import parent_of, run_observed, run_observed_sync
 from zamp_sdk.evals.utils.outcomes import build_exception, returned_value
-from zamp_sdk.evals.utils.trace_line import line_id
+from zamp_sdk.evals.utils.trial_actions import build_call_input, send_to_trial
 
 __all__ = [
+    "build_call_input",
     "build_exception",
-    "build_step_call",
-    "line_id",
-    "new_call_id",
     "parent_of",
     "raise_if_workflow_host",
     "returned_value",

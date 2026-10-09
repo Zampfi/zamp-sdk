@@ -1,17 +1,17 @@
 import uuid
 from collections.abc import Callable
 
-from pydantic import BaseModel, JsonValue
+from pydantic import JsonValue
 
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants import ACTION_ENVELOPE_KEYS, SUCCESS_STATUSES
 from zamp_sdk.context import ExecutionHost, current_execution_host
-from zamp_sdk.evals.constants import EVAL_ACTION_FAILED_ERROR, FixtureAndTraceOperation
-from zamp_sdk.evals.models import EvalFixtureAndTraceInput, GatewayEnvelope
+from zamp_sdk.evals.constants import EVAL_ACTION_FAILED_ERROR
+from zamp_sdk.evals.models import ExternalCallInput, GatewayEnvelope
 from zamp_sdk.evals.utils.arguments import bind_arguments, key_value, trace_arguments
 
 
-def new_call_id() -> str:
+def new_invocation_id() -> str:
     if current_execution_host() is ExecutionHost.ACTIONS_HUB:
         from temporalio import workflow
 
@@ -20,29 +20,27 @@ def new_call_id() -> str:
     return uuid.uuid4().hex
 
 
-def build_step_call(
-    kind: FixtureAndTraceOperation,
+def build_call_input(
     name: str,
     key: str | None,
     func: Callable[..., object],
     args: tuple[object, ...],
     kwargs: dict[str, object],
     parent: str,
-) -> EvalFixtureAndTraceInput:
+) -> ExternalCallInput:
     arguments = bind_arguments(func, args, kwargs)
 
-    return EvalFixtureAndTraceInput(
-        kind=kind,
-        call_id=new_call_id(),
+    return ExternalCallInput(
         name=name,
         key=key_value(arguments, key),
+        invocation_id=new_invocation_id(),
         parent=parent,
         args=trace_arguments(arguments),
     )
 
 
-async def send_to_trial(action_name: str, request: BaseModel) -> JsonValue:
-    response = await ActionExecutor.execute(action_name, request.model_dump(mode="json"))
+async def send_to_trial(action_name: str, params: dict[str, JsonValue]) -> JsonValue:
+    response = await ActionExecutor.execute(action_name, params)
 
     # The executor's gateway returns {id, status, result, error} and reports a failure as a value
     if not (isinstance(response, dict) and ACTION_ENVELOPE_KEYS.issubset(response)):

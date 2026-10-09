@@ -5,27 +5,23 @@ from zamp_sdk.evals.constants.constants import (
     FIXTURE_REQUEST_URL,
     KEY_VALUE_PATTERN,
     UNTRACED_ARGUMENT_NAMES,
-    FixtureAndTraceOperation,
+    DecoratedCallKind,
+    FixtureErrorCode,
 )
 from zamp_sdk.evals.constants.messages import (
     EVAL_ACTION_FAILED_ERROR,
-    FIXTURE_ERROR_MESSAGE,
-    NO_TRACE_LINE_ERROR,
     SYNC_CALL_IN_WORKFLOW_ERROR,
-    TRACE_LINE_COUNT_ERROR,
 )
 
 __all__ = [
     "CALL_NAME_PATTERN",
     "ERROR_TYPE_PATTERN",
     "EVAL_ACTION_FAILED_ERROR",
-    "FIXTURE_ERROR_MESSAGE",
     "FIXTURE_REQUEST_METHOD",
     "FIXTURE_REQUEST_URL",
     "KEY_VALUE_PATTERN",
-    "NO_TRACE_LINE_ERROR",
     "SYNC_CALL_IN_WORKFLOW_ERROR",
-    "TRACE_LINE_COUNT_ERROR",
     "UNTRACED_ARGUMENT_NAMES",
-    "FixtureAndTraceOperation",
+    "DecoratedCallKind",
+    "FixtureErrorCode",
 ]

@@ -1,7 +1,5 @@
 SYNC_CALL_IN_WORKFLOW_ERROR = (
-    "{name}: a sync function cannot reach eval_fixture_and_trace from workflow code; make {function} async"
+    "{name}: a sync function cannot reach eval_external_call or eval_observed_step from workflow code; "
+    "make {function} async"
 )
 EVAL_ACTION_FAILED_ERROR = "{action_name} {action_id} {status}: {error}"
-FIXTURE_ERROR_MESSAGE = "{line_id}: {fixture_error}"
-TRACE_LINE_COUNT_ERROR = "{name}: expected one trace line, found {count}"
-NO_TRACE_LINE_ERROR = "{name}: no trace line"

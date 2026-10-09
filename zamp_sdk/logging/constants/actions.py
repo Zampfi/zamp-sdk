@@ -1,8 +1,11 @@
 # Name of the action dispatched through ActionExecutor for every emitted block.
 EMIT_LOG_ACTION_NAME = "emit_log"
 
-# Name of the action external and observe calls go through in an eval run.
-EVAL_FIXTURE_AND_TRACE_ACTION_NAME = "eval_fixture_and_trace"
+# Name of the action an external call goes through in an eval run.
+EVAL_EXTERNAL_CALL_ACTION_NAME = "eval_external_call"
+
+# Name of the action an observe step reports to in an eval run.
+EVAL_OBSERVED_STEP_ACTION_NAME = "eval_observed_step"
 
 # Name of the action read_trace goes through in an eval run.
 EVAL_READ_TRACE_ACTION_NAME = "eval_read_trace"
@@ -18,5 +21,10 @@ EMIT_ID_PREFIX = "emit_"
 # eval actions are here for the same reason: they are how an eval run fakes, records and reads
 # calls, not their work.
 NON_LOGGABLE_ACTIONS = frozenset(
-    {EMIT_LOG_ACTION_NAME, EVAL_FIXTURE_AND_TRACE_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME}
+    {
+        EMIT_LOG_ACTION_NAME,
+        EVAL_EXTERNAL_CALL_ACTION_NAME,
+        EVAL_OBSERVED_STEP_ACTION_NAME,
+        EVAL_READ_TRACE_ACTION_NAME,
+    }
 )

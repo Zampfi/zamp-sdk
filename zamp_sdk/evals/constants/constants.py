@@ -1,4 +1,4 @@
-from enum import StrEnum
+from enum import Enum
 
 CALL_NAME_PATTERN = r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$"
 KEY_VALUE_PATTERN = r"^[^#\s]+$"
@@ -10,6 +10,11 @@ FIXTURE_REQUEST_METHOD = "GET"
 FIXTURE_REQUEST_URL = "https://{name}.invalid"
 
 
-class FixtureAndTraceOperation(StrEnum):
-    REPLAY_FIXTURE = "replay_fixture"
-    RECORD_STEP = "record_step"
+class DecoratedCallKind(str, Enum):
+    EXTERNAL = "external"
+    OBSERVE = "observe"
+
+
+class FixtureErrorCode(str, Enum):
+    FIXTURE_MISSING = "FIXTURE_MISSING"
+    FIXTURE_EXHAUSTED = "FIXTURE_EXHAUSTED"
