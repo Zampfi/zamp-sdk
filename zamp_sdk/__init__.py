@@ -1,3 +1,4 @@
+from zamp_sdk import evals
 from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.context import (
@@ -76,6 +77,7 @@ __all__ = [
     "configure_logging",
     "current_channel_context",
     "datasets",
+    "evals",
     "drain_log_capture",
     "start_log_capture",
     "TextContentBlock",

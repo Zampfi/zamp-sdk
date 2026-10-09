@@ -5,3 +5,5 @@ BRANCH_HEADERS = {
     "db_branch_mode": "X-DB-BRANCH-MODE",
     "environment": "X-ENVIRONMENT",
 }
+
+EVAL_TRIAL_HEADER = "X-EVAL-TRIAL-ID"

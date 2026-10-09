@@ -26,6 +26,8 @@ ENV_BRANCH_ID = "ZAMP_BRANCH_ID"
 ENV_DB_BRANCH_MODE = "ZAMP_DB_BRANCH_MODE"
 ENV_ENVIRONMENT = "ZAMP_ENVIRONMENT"
 
+ENV_EVAL_TRIAL_ID = "ZAMP_EVAL_TRIAL_ID"
+
 # This run's LoggingConfig, one variable per field, for a process with no workflow input to
 # carry it on. Read independently rather than all-or-none like the channel variables above: a
 # missing field just keeps its default.

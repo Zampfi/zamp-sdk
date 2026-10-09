@@ -7,6 +7,7 @@ from typing import Any, Callable
 from zamp_sdk.action_executor.constants import (
     ACTION_ENVELOPE_KEYS,
     BRANCH_HEADERS,
+    EVAL_TRIAL_HEADER,
     IN_PROGRESS_STATUSES,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
@@ -30,6 +31,7 @@ from zamp_sdk.context import (
     ENV_BASE_URL,
     ChannelContext,
     current_branch_context,
+    current_eval_trial_id,
     resolve_channel_context,
 )
 from zamp_sdk.logger import get_logger
@@ -305,6 +307,16 @@ class ActionExecutor:
         ambient_url = (os.environ.get(ENV_BASE_URL) or "").rstrip("/")
         return bool(ambient_url) and config.base_url.rstrip("/") == ambient_url
 
+    @staticmethod
+    def _ambient_run_headers() -> dict[str, str]:
+        """The branch and eval trial this process runs in, as request headers."""
+        headers = {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
+        eval_trial_id = current_eval_trial_id()
+        if eval_trial_id is not None:
+            headers[EVAL_TRIAL_HEADER] = eval_trial_id
+
+        return headers
+
     @classmethod
     async def _execute_via_api(cls, request: ActionRequest) -> Any:
         """Call the platform over HTTP, showing the call in the live message.
@@ -385,13 +397,9 @@ class ActionExecutor:
             base_url=config.base_url,
             default_headers={
                 "Authorization": f"Bearer {config.auth_token}",
-                # The platform runs the action in this branch (DB, files, spawned tasks) —
-                # only on the deployment that supplied the branch.
-                **(
-                    {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
-                    if cls._is_ambient_deployment(config)
-                    else {}
-                ),
+                # The platform runs the action in this branch (DB, files, spawned tasks) and eval
+                # trial — only on the deployment that supplied them.
+                **(cls._ambient_run_headers() if cls._is_ambient_deployment(config) else {}),
             },
         )
 

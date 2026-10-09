@@ -10,6 +10,7 @@ from zamp_sdk.context.env import (
     ENV_CHANNEL_TYPE,
     ENV_DB_BRANCH_MODE,
     ENV_ENVIRONMENT,
+    ENV_EVAL_TRIAL_ID,
     ENV_MESSAGE_ID,
     ENV_RUN_ID,
     ENV_STREAMING_ID,
@@ -17,6 +18,9 @@ from zamp_sdk.context.env import (
     ENV_TOOL_EXECUTION_MODE,
 )
 from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
+
+# zamp-executor binds the whole metadata context under this one key (its ZAMP_METADATA_CONTEXT_KEY).
+_BOUND_METADATA_CONTEXT_KEY = "zamp_metadata_context"
 
 
 def resolve_context() -> dict[str, Any]:
@@ -55,6 +59,20 @@ def current_branch_context() -> dict[str, str]:
         "environment": os.environ.get(ENV_ENVIRONMENT),
     }
     return {k: v for k, v in ctx.items() if v}
+
+
+def current_eval_trial_id() -> str | None:
+    if current_execution_host() is not ExecutionHost.ACTIONS_HUB:
+        return os.environ.get(ENV_EVAL_TRIAL_ID) or None
+
+    from zamp_public_workflow_sdk.actions_hub.models.common_models import ZampMetadataContext
+    from zamp_public_workflow_sdk.actions_hub.utils.context_utils import get_variable_from_context
+
+    metadata = get_variable_from_context(_BOUND_METADATA_CONTEXT_KEY)
+    if metadata is None:
+        return None
+
+    return ZampMetadataContext.model_validate(metadata).eval_trial_id
 
 
 def resolve_channel_context() -> Optional[ChannelContext]:
