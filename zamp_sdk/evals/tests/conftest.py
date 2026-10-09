@@ -55,8 +55,15 @@ def envelope():
 
 
 @pytest.fixture
-def reply():
-    def build(n=1, **outcome):
-        return {"n": n, **outcome}
+def returned():
+    return lambda value: {"kind": "returned", "value": value}
 
-    return build
+
+@pytest.fixture
+def raised():
+    return lambda type, message: {"kind": "raised", "type": type, "message": message}
+
+
+@pytest.fixture
+def fixture_failed():
+    return lambda code, message: {"kind": "fixture_failed", "code": code, "message": message}

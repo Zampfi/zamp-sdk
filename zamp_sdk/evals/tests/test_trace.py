@@ -1,111 +1,63 @@
-import pytest
-from pydantic import ValidationError
-
 from zamp_sdk import evals
+from zamp_sdk.evals.models import ExternalCall, ObservedStep
+
+AT = "2026-10-08T10:00:00Z"
 
 
-def line(name, key=None, n=1, **args):
-    return evals.TraceLine(kind="external", name=name, key=key, n=n, parent="x.py:f", args=args)
-
-
-@pytest.fixture
-def trace():
-    return evals.Trace(
-        lines=[
-            line("erp.token"),
-            line("erp.attachment", key="ATT1", attachment_id="ATT1", realm="prod"),
-            line("erp.attachment", key="ATT2", attachment_id="ATT2", realm="prod"),
-            line("erp.approve", n=1),
-            line("erp.approve", n=2),
-        ]
-    )
-
-
-class TestTraceLine:
-    def test_id_is_name_and_n(self):
-        assert line("erp.approve", n=2).id == "erp.approve#2"
-
-    def test_id_carries_the_key(self):
-        assert line("erp.attachment", key="ATT1").id == "erp.attachment:ATT1#1"
-
-    def test_rejects_an_unknown_field(self):
-        with pytest.raises(ValidationError):
-            evals.TraceLine(kind="external", name="erp.token", n=1, parent="p", args={}, extra=True)
-
-    def test_rejects_a_bad_name(self):
-        with pytest.raises(ValidationError):
-            line("Token")
-
-
-class TestFind:
-    def test_by_name(self, trace):
-        assert [found.id for found in trace.find("erp.attachment")] == [
-            "erp.attachment:ATT1#1",
-            "erp.attachment:ATT2#1",
-        ]
-
-    def test_by_key(self, trace):
-        assert [found.id for found in trace.find("erp.attachment", key="ATT2")] == ["erp.attachment:ATT2#1"]
-
-    def test_by_args(self, trace):
-        assert [found.id for found in trace.find("erp.attachment", attachment_id="ATT1")] == ["erp.attachment:ATT1#1"]
-
-    def test_nothing_found(self, trace):
-        assert trace.find("erp.reject") == []
-
-
-class TestOne:
-    def test_the_only_line(self, trace):
-        assert trace.one("erp.token").id == "erp.token#1"
-
-    def test_raises_on_several(self, trace):
-        with pytest.raises(LookupError, match="erp.approve: expected one trace line, found 2"):
-            trace.one("erp.approve")
-
-    def test_raises_on_none(self, trace):
-        with pytest.raises(LookupError, match="erp.reject: expected one trace line, found 0"):
-            trace.one("erp.reject")
-
-
-class TestLast:
-    def test_the_last_line(self, trace):
-        assert trace.last("erp.approve").id == "erp.approve#2"
-
-    def test_raises_on_none(self, trace):
-        with pytest.raises(LookupError, match="erp.reject: no trace line"):
-            trace.last("erp.reject")
+def traced(kind, name, outcome, key=None, n=1, **args):
+    return {
+        "kind": kind,
+        "name": name,
+        "key": key,
+        "n": n,
+        "invocation_id": f"{name}-{n}",
+        "parent": "x.py:f",
+        "args": args,
+        "at": AT,
+        "outcome": outcome,
+    }
 
 
 class TestReadTrace:
-    async def test_reads_through_the_action(self, eval_run, fixtures_and_trace):
-        external = {"kind": "external", "name": "erp.order", "key": "O1", "n": 1, "parent": "x.py:f", "args": {}}
-        observe = {"kind": "observe", "name": "steps.load", "n": 1, "parent": "x.py:f", "args": {}}
-        fixtures_and_trace.return_value = {"lines": [{**external, "returns": {"id": "O1"}}, observe]}
+    async def test_sends_an_empty_request_to_the_read_trace_action(self, eval_run, fixtures_and_trace):
+        fixtures_and_trace.return_value = {"lines": []}
 
-        trace = await evals.read_trace()
+        assert await evals.read_trace() == []
 
-        action, call = fixtures_and_trace.call_args.args
-        assert action == "eval_fixture_and_trace"
-        assert call == {
-            "kind": "read_trace",
-            "call_id": call["call_id"],
-            "name": None,
-            "key": None,
-            "parent": None,
-            "args": {},
-            "returns": None,
-            "raises": None,
+        fixtures_and_trace.assert_awaited_once_with("eval_read_trace", {})
+
+    async def test_returns_the_lines_as_external_calls_and_observed_steps(
+        self, eval_run, fixtures_and_trace, returned, raised
+    ):
+        fixtures_and_trace.return_value = {
+            "lines": [
+                traced("external", "erp.order", returned({"id": "O1"}), key="O1", order_id="O1"),
+                traced("observe", "steps.load", raised("builtins.ValueError", "bad")),
+            ]
         }
-        assert [found.id for found in trace.lines] == ["erp.order:O1#1", "steps.load#1"]
-        assert trace.one("erp.order", key="O1").returns == {"id": "O1"}
+
+        external, observed = await evals.read_trace()
+
+        assert isinstance(external, ExternalCall)
+        assert (external.name, external.key, external.n, external.args) == ("erp.order", "O1", 1, {"order_id": "O1"})
+        assert external.outcome.value == {"id": "O1"}
+        assert isinstance(observed, ObservedStep)
+        assert (observed.outcome.type, observed.outcome.message) == ("builtins.ValueError", "bad")
+
+    async def test_an_external_call_can_carry_a_fixture_failure(self, eval_run, fixtures_and_trace, fixture_failed):
+        failed = fixture_failed("FIXTURE_MISSING", "erp.order:O1#1: the item's fixture file has no key for this call")
+        fixtures_and_trace.return_value = {"lines": [traced("external", "erp.order", failed, key="O1")]}
+
+        (line,) = await evals.read_trace()
+
+        assert line.outcome.code == "FIXTURE_MISSING"
 
     async def test_reads_through_the_gateway_envelope_on_the_executor(
-        self, executor_eval_run, fixtures_and_trace, envelope
+        self, executor_eval_run, fixtures_and_trace, envelope, returned
     ):
-        line = {"kind": "observe", "name": "steps.load", "n": 1, "parent": "x.py:f", "args": {}}
+        line = traced("observe", "steps.load", returned(None))
         fixtures_and_trace.return_value = envelope({"lines": [line]})
 
-        trace = await evals.read_trace()
+        (observed,) = await evals.read_trace()
 
-        assert fixtures_and_trace.call_args.args[1]["call_id"] == "workflow-uuid"
-        assert trace.one("steps.load").id == "steps.load#1"
+        assert observed.name == "steps.load"

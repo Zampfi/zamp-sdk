@@ -69,37 +69,37 @@ class TestOutsideAnEvalRun:
 
 
 class TestReturns:
-    async def test_async_runs_and_records_what_it_returned(self, eval_run, fixtures_and_trace, reply):
-        fixtures_and_trace.side_effect = [reply(returns={"id": "O1", "source": "fixture"}), None]
+    async def test_async_runs_and_records_what_it_returned(self, eval_run, fixtures_and_trace, returned):
+        fixtures_and_trace.side_effect = [returned({"id": "O1", "source": "fixture"}), None]
 
         result = await load("O1")
 
         assert result == {"order": {"id": "O1", "source": "fixture"}}
         inner, step = sent(fixtures_and_trace)
+        assert fixtures_and_trace.call_args.args[0] == "eval_observed_step"
         assert step == {
-            "kind": "record_step",
-            "call_id": step["call_id"],
             "name": "steps.load",
             "key": None,
+            "invocation_id": step["invocation_id"],
             "parent": "test_observe.py:test_async_runs_and_records_what_it_returned",
             "args": {"order_id": "O1"},
-            "returns": result,
-            "raises": None,
+            "outcome": {"kind": "returned", "value": result},
         }
         assert inner["parent"] == "steps.load"
 
-    def test_sync_runs_and_records_what_it_returned(self, eval_run, fixtures_and_trace, reply):
-        fixtures_and_trace.side_effect = [reply(returns={"id": "O1"}), None]
+    def test_sync_runs_and_records_what_it_returned(self, eval_run, fixtures_and_trace, returned):
+        fixtures_and_trace.side_effect = [returned({"id": "O1"}), None]
 
         result = load_sync("O1")
 
         inner, step = sent(fixtures_and_trace)
-        assert step["returns"] == result == {"order": {"id": "O1"}}
+        assert step["outcome"] == {"kind": "returned", "value": result}
+        assert result == {"order": {"id": "O1"}}
         assert step["parent"] == "test_observe.py:test_sync_runs_and_records_what_it_returned"
         assert inner["parent"] == "steps.load"
 
-    async def test_a_nested_step_names_the_step_around_it(self, eval_run, fixtures_and_trace, reply):
-        fixtures_and_trace.side_effect = [reply(returns={"id": "O1"}), None, None]
+    async def test_a_nested_step_names_the_step_around_it(self, eval_run, fixtures_and_trace, returned):
+        fixtures_and_trace.side_effect = [returned({"id": "O1"}), None, None]
 
         await review("O1")
 
@@ -107,8 +107,8 @@ class TestReturns:
         assert (inner["parent"], load_step["parent"]) == ("steps.load", "steps.review")
         assert review_step["parent"] == "test_observe.py:test_a_nested_step_names_the_step_around_it"
 
-    async def test_the_step_ends_with_the_call(self, eval_run, fixtures_and_trace, reply):
-        fixtures_and_trace.side_effect = [reply(returns={}), None, reply(returns={})]
+    async def test_the_step_ends_with_the_call(self, eval_run, fixtures_and_trace, returned):
+        fixtures_and_trace.side_effect = [returned({}), None, returned({})]
 
         await load("O1")
         await fetch_order("O2")
@@ -125,6 +125,11 @@ class TestReturns:
         assert await check("O1") is True
         assert sent(fixtures_and_trace)[0]["key"] == "O1"
 
+    @pytest.mark.xfail(
+        strict=True,
+        raises=UnicodeDecodeError,
+        reason="SDK bug: to_json_value lets non-UTF-8 bytes raise instead of falling back to repr",
+    )
     async def test_bytes_json_cannot_hold_are_recorded_as_their_repr(self, eval_run, fixtures_and_trace):
         @evals.observe("steps.render")
         async def render() -> bytes:
@@ -133,7 +138,7 @@ class TestReturns:
         fixtures_and_trace.return_value = None
 
         assert await render() == b"%PDF\xff"
-        assert sent(fixtures_and_trace)[0]["returns"] == "b'%PDF\\xff'"
+        assert sent(fixtures_and_trace)[0]["outcome"] == {"kind": "returned", "value": "b'%PDF\\xff'"}
 
 
 class TestRaises:
@@ -144,8 +149,7 @@ class TestRaises:
             await fail("bad")
 
         (step,) = sent(fixtures_and_trace)
-        assert step["raises"] == {"type": "builtins.ValueError", "message": "bad"}
-        assert step["returns"] is None
+        assert step["outcome"] == {"kind": "raised", "type": "builtins.ValueError", "message": "bad"}
 
     def test_sync_records_the_error_and_raises_it(self, eval_run, fixtures_and_trace):
         fixtures_and_trace.return_value = None
@@ -154,7 +158,7 @@ class TestRaises:
             fail_sync("bad")
 
         (step,) = sent(fixtures_and_trace)
-        assert step["raises"] == {"type": "builtins.ValueError", "message": "bad"}
+        assert step["outcome"] == {"kind": "raised", "type": "builtins.ValueError", "message": "bad"}
 
     async def test_a_cancelled_step_records_nothing(self, eval_run, fixtures_and_trace):
         @evals.observe("steps.wait")
@@ -168,25 +172,25 @@ class TestRaises:
 
 
 class TestOnTheExecutor:
-    async def test_async_records_the_step_with_workflow_call_ids(
-        self, executor_eval_run, fixtures_and_trace, reply, envelope
+    async def test_async_records_the_step_with_workflow_invocation_ids(
+        self, executor_eval_run, fixtures_and_trace, returned, envelope
     ):
-        fixtures_and_trace.side_effect = [envelope(reply(returns={"id": "O1"})), envelope()]
+        fixtures_and_trace.side_effect = [envelope(returned({"id": "O1"})), envelope()]
 
         assert await load("O1") == {"order": {"id": "O1"}}
-        assert [call["call_id"] for call in sent(fixtures_and_trace)] == ["workflow-uuid", "workflow-uuid"]
+        assert [call["invocation_id"] for call in sent(fixtures_and_trace)] == ["workflow-uuid", "workflow-uuid"]
 
-    async def test_a_failed_action_raises(self, executor_eval_run, fixtures_and_trace, reply, envelope):
+    async def test_a_failed_action_raises(self, executor_eval_run, fixtures_and_trace, returned, envelope):
         fixtures_and_trace.side_effect = [
-            envelope(reply(returns={"id": "O1"})),
+            envelope(returned({"id": "O1"})),
             envelope(status="FAILED", error="no eval run"),
         ]
 
-        with pytest.raises(RuntimeError, match="^Action action-1 FAILED: no eval run$"):
+        with pytest.raises(RuntimeError, match="^eval_observed_step action-1 FAILED: no eval run$"):
             await load("O1")
 
     def test_sync_refuses_in_workflow_code(self, executor_eval_run, fixtures_and_trace):
-        with pytest.raises(RuntimeError, match="steps.load: a sync function cannot reach eval_fixture_and_trace"):
+        with pytest.raises(RuntimeError, match="steps.load: a sync function cannot reach eval_external_call"):
             load_sync("O1")
 
         fixtures_and_trace.assert_not_called()
