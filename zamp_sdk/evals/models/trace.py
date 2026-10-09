@@ -11,9 +11,7 @@ class TracedCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: CallName
-    key: KeyValue | None = Field(
-        default=None, description="Value of the parameter the decorator names as key, if it names one"
-    )
+    key: KeyValue | None = Field(description="Value of the parameter the decorator names as key, if it names one")
     n: int = Field(ge=1, description="Calls of this name and key so far in the trial, this one included")
     invocation_id: str
     parent: str = Field(description="Enclosing observe step, else file:function; for reading only, never matched")

@@ -1,10 +1,8 @@
 # Name of the action dispatched through ActionExecutor for every emitted block.
 EMIT_LOG_ACTION_NAME = "emit_log"
 
-# Name of the action an external call goes through in an eval run.
 EVAL_EXTERNAL_CALL_ACTION_NAME = "eval_external_call"
 
-# Name of the action an observe step reports to in an eval run.
 EVAL_OBSERVED_STEP_ACTION_NAME = "eval_observed_step"
 
 # Name of the action read_trace goes through in an eval run.

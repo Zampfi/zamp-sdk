@@ -5,10 +5,9 @@ from types import FrameType
 
 from pydantic import JsonValue
 
-from zamp_sdk.evals.models import ExternalCallInput, ObservedOutcome, ObservedStepInput, Returned
-from zamp_sdk.evals.utils.arguments import to_json_value
+from zamp_sdk.evals.models import ExternalCallInput, ObservedOutcome, ObservedStepInput
 from zamp_sdk.evals.utils.blocking import ResultT, run_blocking
-from zamp_sdk.evals.utils.outcomes import to_raised
+from zamp_sdk.evals.utils.outcomes import to_raised, to_returned
 from zamp_sdk.evals.utils.trial_actions import send_to_trial
 from zamp_sdk.logging.constants import EVAL_OBSERVED_STEP_ACTION_NAME
 
@@ -29,7 +28,7 @@ async def run_observed(call: ExternalCallInput, invoke: Callable[[], Awaitable[R
     finally:
         _enclosing_observe_name.reset(reset_token)
 
-    await send_to_trial(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, _returned(result)))
+    await send_to_trial(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result)))
 
     return result
 
@@ -44,13 +43,9 @@ def run_observed_sync(call: ExternalCallInput, invoke: Callable[[], ResultT]) ->
     finally:
         _enclosing_observe_name.reset(reset_token)
 
-    run_blocking(send_to_trial(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, _returned(result))))
+    run_blocking(send_to_trial(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result))))
 
     return result
-
-
-def _returned(result: object) -> Returned:
-    return Returned(kind="returned", value=to_json_value(result))
 
 
 def _observed_step_params(call: ExternalCallInput, outcome: ObservedOutcome) -> dict[str, JsonValue]:

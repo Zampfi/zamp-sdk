@@ -8,7 +8,8 @@ from typing import TYPE_CHECKING
 from pydantic import JsonValue, TypeAdapter
 
 from zamp_sdk.evals.constants import FIXTURE_REQUEST_METHOD, FIXTURE_REQUEST_URL
-from zamp_sdk.evals.models import FixtureResponse, Raised
+from zamp_sdk.evals.models import FixtureResponse, Raised, Returned
+from zamp_sdk.evals.utils.arguments import to_json_value
 
 if TYPE_CHECKING:
     import httpx
@@ -16,6 +17,10 @@ if TYPE_CHECKING:
 
 def to_raised(error: Exception) -> Raised:
     return Raised(kind="raised", type=f"{type(error).__module__}.{type(error).__name__}", message=str(error))
+
+
+def to_returned(result: object) -> Returned:
+    return Returned(kind="returned", value=to_json_value(result))
 
 
 def build_exception(raised: Raised) -> Exception:
