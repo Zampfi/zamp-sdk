@@ -31,4 +31,4 @@ def trace_arguments(arguments: dict[str, object]) -> dict[str, JsonValue]:
 
 
 def to_json_value(value: object) -> JsonValue:
-    return to_jsonable_python(value, fallback=repr)
+    return to_jsonable_python(value, fallback=repr, bytes_mode="base64")

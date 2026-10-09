@@ -125,12 +125,7 @@ class TestReturns:
         assert await check("O1") is True
         assert sent(fixtures_and_trace)[0]["key"] == "O1"
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=UnicodeDecodeError,
-        reason="SDK bug: to_json_value lets non-UTF-8 bytes raise instead of falling back to repr",
-    )
-    async def test_bytes_json_cannot_hold_are_recorded_as_their_repr(self, eval_run, fixtures_and_trace):
+    async def test_bytes_are_recorded_as_base64(self, eval_run, fixtures_and_trace):
         @evals.observe("steps.render")
         async def render() -> bytes:
             return b"%PDF\xff"
@@ -138,7 +133,7 @@ class TestReturns:
         fixtures_and_trace.return_value = None
 
         assert await render() == b"%PDF\xff"
-        assert sent(fixtures_and_trace)[0]["outcome"] == {"kind": "returned", "value": "b'%PDF\\xff'"}
+        assert sent(fixtures_and_trace)[0]["outcome"] == {"kind": "returned", "value": "JVBERv8="}
 
 
 class TestRaises:

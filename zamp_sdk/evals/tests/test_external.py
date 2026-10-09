@@ -297,19 +297,14 @@ class TestRequest:
 
         assert sent(fixtures_and_trace)[0]["args"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=UnicodeDecodeError,
-        reason="SDK bug: to_json_value lets non-UTF-8 bytes raise instead of falling back to repr",
-    )
-    def test_bytes_are_sent_as_text_or_else_as_their_repr(self, eval_run, fixtures_and_trace, returned):
+    def test_bytes_are_sent_as_base64(self, eval_run, fixtures_and_trace, returned):
         @evals.external("erp.upload")
         def upload(name: bytes, content: bytes): ...
 
         fixtures_and_trace.return_value = returned(None)
         upload(b"invoice.pdf", b"%PDF\xff")
 
-        assert sent(fixtures_and_trace)[0]["args"] == {"name": "invoice.pdf", "content": "b'%PDF\\xff'"}
+        assert sent(fixtures_and_trace)[0]["args"] == {"name": "aW52b2ljZS5wZGY=", "content": "JVBERv8="}
 
     def test_every_call_has_its_own_invocation_id(self, eval_run, fixtures_and_trace, returned):
         fixtures_and_trace.return_value = returned("down")
