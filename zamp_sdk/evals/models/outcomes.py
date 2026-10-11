@@ -2,7 +2,7 @@ from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from zamp_sdk.evals.constants import ERROR_TYPE_PATTERN, FixtureErrorCode
+from zamp_sdk.evals.constants import FixtureErrorCode
 
 
 class Returned(BaseModel):
@@ -16,7 +16,7 @@ class Raised(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["raised"]
-    type: str = Field(pattern=ERROR_TYPE_PATTERN)
+    type: str
     message: str
 
 

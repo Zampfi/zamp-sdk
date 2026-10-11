@@ -52,6 +52,15 @@ class TestReadTrace:
 
         assert line.outcome.code == "FIXTURE_MISSING"
 
+    async def test_a_line_keeps_any_name_key_and_error_type(self, eval_run, fixtures_and_trace, raised):
+        fixtures_and_trace.return_value = {
+            "lines": [traced("external", "Mail.Fetch", raised("TimeoutError", "late"), key="notes #2.msg")]
+        }
+
+        (line,) = await evals.read_trace()
+
+        assert (line.name, line.key, line.outcome.type) == ("Mail.Fetch", "notes #2.msg", "TimeoutError")
+
     async def test_reads_through_the_gateway_envelope_on_the_executor(
         self, executor_eval_run, fixtures_and_trace, envelope, returned
     ):

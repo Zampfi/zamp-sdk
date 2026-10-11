@@ -245,6 +245,18 @@ class TestRequest:
 
         assert sent(fixtures_and_trace)[0]["key"] == "2"
 
+    def test_any_name_and_key_are_sent_as_written(self, eval_run, fixtures_and_trace, returned):
+        name = f"Mail.Fetch_{'x' * 100}"
+
+        @evals.external(name, key="file_name")
+        def fetch_attachment(file_name: str): ...
+
+        fixtures_and_trace.return_value = returned(None)
+        fetch_attachment("notes #2.msg")
+
+        (call,) = sent(fixtures_and_trace)
+        assert (call["name"], call["key"]) == (name, "notes #2.msg")
+
     def test_secret_arguments_are_never_sent(self, eval_run, fixtures_and_trace, returned):
         @evals.external("erp.token")
         def fetch_token(url: str, headers: dict, auth: str, token: str, credentials: dict): ...
