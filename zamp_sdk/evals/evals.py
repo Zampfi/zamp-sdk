@@ -38,7 +38,7 @@ _external_call_outcome_adapter: TypeAdapter[ExternalCallOutcome] = TypeAdapter(E
 
 def external_call(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
     """In an eval trial, answer the call from its fixture instead of running it; outside one, run it as written."""
-    return _build_decorator(DecoratedCallKind.EXTERNAL, name, key_argument)
+    return _build_decorator(DecoratedCallKind.EXTERNAL_CALL, name, key_argument)
 
 
 def observe(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:

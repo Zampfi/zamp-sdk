@@ -28,7 +28,7 @@ PLACEHOLDER_REQUEST_URL = "https://fixture.invalid"
 
 
 class DecoratedCallKind(str, Enum):
-    EXTERNAL = "external"
+    EXTERNAL_CALL = "external"
     OBSERVE = "observe"
 
 
