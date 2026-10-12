@@ -194,46 +194,46 @@ class TestTheEmitActionLeavesNoTrace:
 
 
 class TestWhatTheBlockShows:
-    """The gateway wraps the answer in a transport envelope; its block shows the answer.
+    """The gateway wraps the answer in an action response; its block shows the answer.
 
     Only the gateway route unwraps, and it does so in its own dispatch method — the other
     routes never call this, so there is no shape-sniffing to get wrong."""
 
-    ENVELOPE: dict[str, Any] = {
+    ACTION_RESPONSE: dict[str, Any] = {
         "id": "external-action-executor-0d95",
         "status": "COMPLETED",
         "result": {"datasets": []},
         "error": None,
     }
 
-    def test_a_gateway_envelope_is_stripped_to_its_answer(self):
-        assert ActionExecutor._unwrap_envelope(self.ENVELOPE) == {"datasets": []}
+    def test_a_gateway_action_response_is_stripped_to_its_answer(self):
+        assert ActionExecutor._unwrap_action_response(self.ACTION_RESPONSE) == {"datasets": []}
 
     def test_a_failed_gateway_call_shows_its_reason(self):
         """The gateway reports failure as a value rather than raising, so this is the success
         path — reading ``result`` alone would show None and lose the reason."""
         failed = {"id": "x", "status": "FAILED", "result": None, "error": "Action not found"}
 
-        assert ActionExecutor._unwrap_envelope(failed) == "Action not found"
+        assert ActionExecutor._unwrap_action_response(failed) == "Action not found"
 
     def test_the_api_route_never_unwraps(self):
         """It already returns the action's own answer, so a value of its own that happens to
-        look like an envelope is never at risk — that route does not call this at all."""
+        look like an action response is never at risk — that route does not call this at all."""
         source = inspect.getsource(ActionExecutor._execute_via_api)
 
-        assert "_unwrap_envelope" not in source
-        assert "_unwrap_envelope" in inspect.getsource(ActionExecutor._execute_via_gateway)
+        assert "_unwrap_action_response" not in source
+        assert "_unwrap_action_response" in inspect.getsource(ActionExecutor._execute_via_gateway)
 
     def test_a_gateway_response_of_an_unexpected_shape_is_shown_whole(self):
         """The key check is a guard, so a malformed response is shown rather than reduced to
         nothing."""
         odd = {"status": "COMPLETED"}
 
-        assert ActionExecutor._unwrap_envelope(odd) == odd
+        assert ActionExecutor._unwrap_action_response(odd) == odd
 
     @pytest.mark.parametrize("value", ["a string", None, 42])
     def test_a_non_dict_passes_through(self, value):
-        assert ActionExecutor._unwrap_envelope(value) == value
+        assert ActionExecutor._unwrap_action_response(value) == value
 
 
 class TestTheApiRouteNeedsARuntime:

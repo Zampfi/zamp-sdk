@@ -4,7 +4,7 @@ import uuid
 from pydantic import JsonValue
 
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.action_executor.constants import ACTION_ENVELOPE_KEYS, SUCCESS_STATUSES
+from zamp_sdk.action_executor.constants import ACTION_RESPONSE_KEYS, SUCCESS_STATUSES
 from zamp_sdk.action_executor.models import ActionResponse
 from zamp_sdk.context import ExecutionHost, current_execution_host
 from zamp_sdk.evals.constants import EVAL_ACTION_FAILED_ERROR
@@ -44,7 +44,7 @@ async def call_eval_action(action_name: str, params: dict[str, JsonValue]) -> Js
     response = await ActionExecutor.execute(action_name, params)
 
     # The executor's gateway returns {id, status, result, error} and reports a failure as a value
-    if not (isinstance(response, dict) and ACTION_ENVELOPE_KEYS.issubset(response)):
+    if not (isinstance(response, dict) and ACTION_RESPONSE_KEYS.issubset(response)):
         return response
 
     action_response = ActionResponse.model_validate(response)

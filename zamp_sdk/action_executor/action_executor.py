@@ -5,7 +5,7 @@ from datetime import timedelta
 from typing import Any, Callable
 
 from zamp_sdk.action_executor.constants import (
-    ACTION_ENVELOPE_KEYS,
+    ACTION_RESPONSE_KEYS,
     BRANCH_HEADERS,
     EVAL_TRIAL_ID_HEADER,
     IN_PROGRESS_STATUSES,
@@ -121,16 +121,16 @@ class ActionExecutor:
         return result
 
     @staticmethod
-    def _unwrap_envelope(result: Any) -> Any:
+    def _unwrap_action_response(result: Any) -> Any:
         """The answer inside the gateway's ``{"id", "status", "result", "error"}``.
 
         A failure shows its ``error`` — the gateway reports one as a *value*, so ``result``
         alone would be ``None`` and lose the reason.
 
-        Display only: the envelope still reaches authored code untouched. The key check is a
+        Display only: the action response still reaches authored code untouched. The key check is a
         guard, so a response of an unexpected shape is shown whole rather than emptied.
         """
-        if isinstance(result, dict) and ACTION_ENVELOPE_KEYS.issubset(result):
+        if isinstance(result, dict) and ACTION_RESPONSE_KEYS.issubset(result):
             return result.get("error") or result["result"]
         return result
 
@@ -249,7 +249,7 @@ class ActionExecutor:
     async def _execute_via_gateway(cls, request: ActionRequest, gateway: Callable[..., Any]) -> Any:
         """Hand the action to the host's gateway, showing the call in the live message.
 
-        Returns the gateway's envelope unchanged — only the block is unwrapped.
+        Returns the gateway's action response unchanged — only the block is unwrapped.
         """
         block_id = await open_action_log(
             request.action_name,
@@ -269,7 +269,7 @@ class ActionExecutor:
         except Exception as exc:
             await fail_action_log(block_id, request.action_name, exc)
             raise
-        await close_action_log(block_id, request.action_name, cls._unwrap_envelope(result))
+        await close_action_log(block_id, request.action_name, cls._unwrap_action_response(result))
         return result
 
     @staticmethod
