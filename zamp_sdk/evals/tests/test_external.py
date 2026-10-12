@@ -150,6 +150,11 @@ class TestHttpResponse:
 
         assert (await get_page("https://erp.invalid")).content == b"%PDF-1.7"
 
+    async def test_content_reads_the_url_safe_base64_a_trace_writes(self, eval_run, fixtures_and_trace, returned):
+        fixtures_and_trace.return_value = returned({"status": 200, "content": "JVBERvv_"})
+
+        assert (await get_page("https://erp.invalid")).content == b"%PDF\xfb\xff"
+
     async def test_an_http_error_raises_on_raise_for_status(self, eval_run, fixtures_and_trace, returned):
         fixtures_and_trace.return_value = returned({"status": 503, "body": {"error": "busy"}})
 
