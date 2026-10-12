@@ -16,8 +16,8 @@ def bind_arguments(
     arguments = dict(bound.arguments)
     for parameter in bound.signature.parameters.values():
         if parameter.kind is inspect.Parameter.VAR_KEYWORD:
-            del arguments[parameter.name]
-            arguments.update(bound.arguments[parameter.name])
+            extra_arguments = arguments.pop(parameter.name)
+            arguments.update({name: value for name, value in extra_arguments.items() if name not in arguments})
 
     return arguments
 

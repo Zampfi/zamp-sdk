@@ -316,6 +316,17 @@ class TestRequest:
         (call,) = sent(execute_action)
         assert (call["name"], call["key"]) == (name, "notes #2.msg")
 
+    def test_a_keyword_named_like_a_positional_only_parameter_keeps_the_key(
+        self, in_eval_trial, execute_action, returned
+    ):
+        @evals.external_call("erp.order", key_argument="order_id")
+        def fetch(order_id: str, /, **kwargs): ...
+
+        execute_action.return_value = returned(None)
+        fetch("O1", order_id="meta")
+
+        assert sent(execute_action)[0]["key"] == "O1"
+
     def test_secret_arguments_are_never_sent(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.token")
         def fetch_token(url: str, headers: dict, auth: str, token: str, credentials: dict): ...
