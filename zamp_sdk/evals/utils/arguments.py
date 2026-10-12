@@ -22,8 +22,8 @@ def bind_arguments(
     return arguments
 
 
-def key_value(arguments: dict[str, object], key: str | None) -> str | None:
-    return None if key is None else str(arguments[key])
+def key_value(arguments: dict[str, object], key_argument: str | None) -> str | None:
+    return None if key_argument is None else str(arguments[key_argument])
 
 
 def trace_arguments(arguments: dict[str, object]) -> dict[str, JsonValue]:

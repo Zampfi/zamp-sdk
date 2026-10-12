@@ -21,12 +21,12 @@ class Order(BaseModel):
     total: int
 
 
-@evals.external("erp.order", key="order_id")
+@evals.external("erp.order", key_argument="order_id")
 async def fetch_order(order_id: str, realm: str = "prod") -> Order:
     return Order(id=order_id, total=-1)
 
 
-@evals.external("erp.order", key="order_id")
+@evals.external("erp.order", key_argument="order_id")
 def fetch_order_sync(order_id: str, realm: str = "prod") -> Order:
     return Order(id=order_id, total=-1)
 
@@ -294,7 +294,7 @@ class TestRequest:
         assert sent(fixtures_and_trace)[0]["key"] is None
 
     def test_an_integer_key_is_sent_as_text(self, eval_run, fixtures_and_trace, returned):
-        @evals.external("erp.page", key="page")
+        @evals.external("erp.page", key_argument="page")
         def get_page_number(page: int): ...
 
         fixtures_and_trace.return_value = returned(None)
@@ -305,7 +305,7 @@ class TestRequest:
     def test_any_name_and_key_are_sent_as_written(self, eval_run, fixtures_and_trace, returned):
         name = f"Mail.Fetch_{'x' * 100}"
 
-        @evals.external(name, key="file_name")
+        @evals.external(name, key_argument="file_name")
         def fetch_attachment(file_name: str): ...
 
         fixtures_and_trace.return_value = returned(None)
@@ -357,7 +357,7 @@ class TestRequest:
             def __init__(self, token: str):
                 self.token = token
 
-            @evals.external("erp.order", key="order_id")
+            @evals.external("erp.order", key_argument="order_id")
             async def fetch(self, order_id: str) -> dict:
                 return {}
 

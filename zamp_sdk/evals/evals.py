@@ -35,14 +35,14 @@ _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 _external_call_outcome: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalCallOutcome)
 
 
-def external(name: str, key: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
+def external(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
     """In an eval trial, answer the call from its fixture instead of running it; outside one, run it as written."""
-    return _decorator(DecoratedCallKind.EXTERNAL, name, key)
+    return _decorator(DecoratedCallKind.EXTERNAL, name, key_argument)
 
 
-def observe(name: str, key: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
+def observe(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
     """In an eval trial, run the function and record what it returned or raised in the trace."""
-    return _decorator(DecoratedCallKind.OBSERVE, name, key)
+    return _decorator(DecoratedCallKind.OBSERVE, name, key_argument)
 
 
 async def read_trace() -> list[TraceEntry]:
@@ -56,7 +56,7 @@ async def read_trace() -> list[TraceEntry]:
 def _decorator(
     kind: DecoratedCallKind,
     name: str,
-    key: str | None,
+    key_argument: str | None,
 ) -> Callable[[_FunctionT], _FunctionT]:
     def decorate(func: _FunctionT) -> _FunctionT:
         if inspect.isgeneratorfunction(func) or inspect.isasyncgenfunction(func):
@@ -69,7 +69,7 @@ def _decorator(
                 if current_eval_trial_id() is None:
                     return func(*args, **kwargs)
 
-                call = build_call_input(name, key, func, args, kwargs, parent_of(sys._getframe(1)))
+                call = build_call_input(name, key_argument, func, args, kwargs, parent_of(sys._getframe(1)))
                 if kind is DecoratedCallKind.OBSERVE:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
 
@@ -84,7 +84,7 @@ def _decorator(
 
             raise_if_on_actions_hub(name, func)
 
-            call = build_call_input(name, key, func, args, kwargs, parent_of(sys._getframe(1)))
+            call = build_call_input(name, key_argument, func, args, kwargs, parent_of(sys._getframe(1)))
             if kind is DecoratedCallKind.OBSERVE:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
 

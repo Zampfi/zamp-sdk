@@ -23,7 +23,7 @@ def new_invocation_id() -> str:
 
 def build_call_input(
     name: str,
-    key: str | None,
+    key_argument: str | None,
     func: Callable[..., object],
     args: tuple[object, ...],
     kwargs: dict[str, object],
@@ -33,7 +33,7 @@ def build_call_input(
 
     return TracedCallInput(
         name=name,
-        key=key_value(arguments, key),
+        key=key_value(arguments, key_argument),
         invocation_id=new_invocation_id(),
         parent=parent,
         args=trace_arguments(arguments),

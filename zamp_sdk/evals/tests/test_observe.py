@@ -5,12 +5,12 @@ import pytest
 from zamp_sdk import evals
 
 
-@evals.external("erp.order", key="order_id")
+@evals.external("erp.order", key_argument="order_id")
 async def fetch_order(order_id: str) -> dict:
     return {"id": order_id}
 
 
-@evals.external("erp.order", key="order_id")
+@evals.external("erp.order", key_argument="order_id")
 def fetch_order_sync(order_id: str) -> dict:
     return {"id": order_id}
 
@@ -116,7 +116,7 @@ class TestReturns:
         assert sent(fixtures_and_trace)[2]["parent"] == "test_observe.py:test_the_step_ends_with_the_call"
 
     async def test_a_keyed_step_sends_its_key(self, eval_run, fixtures_and_trace):
-        @evals.observe("steps.check", key="order_id")
+        @evals.observe("steps.check", key_argument="order_id")
         async def check(order_id: str) -> bool:
             return True
 
