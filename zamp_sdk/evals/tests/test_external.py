@@ -106,6 +106,20 @@ class TestReturns:
 
         assert await fetch_pdf() == b"%PDF\xfb\xff"
 
+    async def test_a_return_type_pydantic_cannot_validate_returns_the_raw_value(
+        self, eval_run, fixtures_and_trace, returned
+    ):
+        class Session:
+            pass
+
+        @evals.external("erp.session")
+        async def open_session() -> Session:
+            raise NotImplementedError
+
+        fixtures_and_trace.return_value = returned({"id": "s1"})
+
+        assert await open_session() == {"id": "s1"}
+
     async def test_a_return_type_only_known_to_type_checkers_returns_the_raw_value(
         self, eval_run, fixtures_and_trace, returned
     ):

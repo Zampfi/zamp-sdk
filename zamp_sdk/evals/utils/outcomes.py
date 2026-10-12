@@ -5,7 +5,7 @@ from collections.abc import Callable
 from types import ModuleType
 from typing import TYPE_CHECKING
 
-from pydantic import ConfigDict, JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter
 
 from zamp_sdk.evals.constants import PLACEHOLDER_REQUEST_METHOD, PLACEHOLDER_REQUEST_URL
 from zamp_sdk.evals.models import FixtureResponse, Raised, Returned
@@ -39,14 +39,22 @@ def returned_value(func: Callable[..., object], value: JsonValue) -> object:
 
     loaded_httpx = sys.modules.get("httpx")
     if loaded_httpx is None or annotation not in (loaded_httpx.Response, loaded_httpx.Response | None):
-        config = _BYTES_AS_BASE64 if annotation in (bytes, bytes | None) else None
-
-        return TypeAdapter(annotation, config=config).validate_python(value)
+        return _to_return_type(annotation, value)
 
     if value is None and annotation is not loaded_httpx.Response:
         return None
 
     return _build_response(loaded_httpx, FixtureResponse.model_validate(value))
+
+
+def _to_return_type(annotation: object, value: JsonValue) -> object:
+    config = _BYTES_AS_BASE64 if annotation in (bytes, bytes | None) else None
+    try:
+        adapter: TypeAdapter[object] = TypeAdapter(annotation, config=config)
+    except PydanticSchemaGenerationError:
+        return value
+
+    return adapter.validate_python(value)
 
 
 def _return_annotation(func: Callable[..., object]) -> object:
