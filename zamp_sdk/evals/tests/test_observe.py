@@ -155,6 +155,19 @@ class TestRaises:
         (step,) = sent(execute_action)
         assert step["outcome"] == {"kind": "raised", "type": "builtins.ValueError", "message": "bad"}
 
+    async def test_a_key_error_records_its_key_unquoted(self, in_eval_trial, execute_action):
+        @evals.observe("steps.lookup")
+        async def lookup():
+            raise KeyError("order_id")
+
+        execute_action.return_value = None
+
+        with pytest.raises(KeyError):
+            await lookup()
+
+        (step,) = sent(execute_action)
+        assert step["outcome"] == {"kind": "raised", "type": "builtins.KeyError", "message": "order_id"}
+
     async def test_async_raises_its_own_error_when_the_trace_send_fails(self, in_eval_trial, execute_action):
         execute_action.side_effect = ConnectionError("gateway down")
 

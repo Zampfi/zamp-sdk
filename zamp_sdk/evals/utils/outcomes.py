@@ -21,7 +21,10 @@ _BYTES_AS_BASE64 = ConfigDict(val_json_bytes="base64")
 
 
 def to_raised(error: Exception) -> Raised:
-    return Raised(kind="raised", type=f"{type(error).__module__}.{type(error).__name__}", message=str(error))
+    # str() of a KeyError quotes its key, so rebuilding one from that text would quote it twice.
+    message = str(error.args[0]) if isinstance(error, KeyError) and error.args else str(error)
+
+    return Raised(kind="raised", type=f"{type(error).__module__}.{type(error).__name__}", message=message)
 
 
 def to_returned(result: object) -> Returned:
