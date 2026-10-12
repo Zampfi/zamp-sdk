@@ -520,9 +520,9 @@ class TestOnTheExecutor:
             await fetch_order("O1")
 
     async def test_a_failed_action_raises(self, in_eval_trial_on_actions_hub, execute_action, action_response):
-        execute_action.return_value = action_response(status="FAILED", error="no eval run")
+        execute_action.return_value = action_response(status="FAILED", error="no eval trial")
 
-        with pytest.raises(RuntimeError, match="^eval_external_call action-1 FAILED: no eval run$"):
+        with pytest.raises(RuntimeError, match="^eval_external_call action-1 FAILED: no eval trial$"):
             await fetch_order("O1")
 
     def test_sync_runs_untouched_outside_a_trial(self, on_actions_hub_outside_a_trial, execute_action):

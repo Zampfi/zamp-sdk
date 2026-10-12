@@ -403,7 +403,7 @@ class TestExecuteAction:
             await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
         assert client_cls.call_args.kwargs["default_headers"] == {"Authorization": "Bearer tok"}
 
-    async def test_sends_eval_trial_header_in_an_eval_run(self, monkeypatch):
+    async def test_sends_eval_trial_header_in_an_eval_trial(self, monkeypatch):
         monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
         monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
         monkeypatch.delenv("ZAMP_BRANCH_ID", raising=False)

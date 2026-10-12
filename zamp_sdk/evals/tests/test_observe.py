@@ -225,10 +225,10 @@ class TestOnTheExecutor:
     ):
         execute_action.side_effect = [
             action_response(returned({"id": "O1"})),
-            action_response(status="FAILED", error="no eval run"),
+            action_response(status="FAILED", error="no eval trial"),
         ]
 
-        with pytest.raises(RuntimeError, match="^eval_observed_step action-1 FAILED: no eval run$"):
+        with pytest.raises(RuntimeError, match="^eval_observed_step action-1 FAILED: no eval trial$"):
             await load("O1")
 
     def test_sync_runs_untouched_outside_a_trial(self, on_actions_hub_outside_a_trial, execute_action):
