@@ -58,11 +58,7 @@ show_error_context = true
 pretty = true
 
 [[tool.mypy.overrides]]
-module = "zamp_public_workflow_sdk.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "temporalio.*"
+module = ["zamp_public_workflow_sdk.*", "temporalio.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
