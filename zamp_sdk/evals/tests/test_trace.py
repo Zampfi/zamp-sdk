@@ -71,6 +71,14 @@ class TestReadTrace:
 
         assert (entry.name, entry.key, entry.outcome.type) == ("Mail.Fetch", "notes #2.msg", "TimeoutError")
 
+    async def test_a_field_the_engine_adds_later_is_ignored(self, eval_run, fixtures_and_trace, returned):
+        entry = traced("external", "erp.order", {**returned(1), "took_ms": 3}, key="O1") | {"attempt": 2}
+        fixtures_and_trace.return_value = {"entries": [entry], "truncated": False}
+
+        (read,) = await evals.read_trace()
+
+        assert (read.key, read.outcome.value) == ("O1", 1)
+
     async def test_reads_through_the_gateway_envelope_on_the_executor(
         self, executor_eval_run, fixtures_and_trace, envelope, returned
     ):

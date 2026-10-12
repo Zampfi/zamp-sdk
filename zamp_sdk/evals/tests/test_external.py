@@ -89,6 +89,11 @@ class TestReturns:
 
         assert await fetch_status() == {"state": "down"}
 
+    async def test_a_field_the_engine_adds_later_is_ignored(self, eval_run, fixtures_and_trace, returned):
+        fixtures_and_trace.return_value = returned({"id": "O1", "total": 7}) | {"fixture_file": "erp.order.json"}
+
+        assert await fetch_order("O1") == Order(id="O1", total=7)
+
     async def test_a_human_ask_returns_none(self, eval_run, fixtures_and_trace, returned):
         @evals.external("ask.decision")
         async def ask() -> None: ...
@@ -154,6 +159,11 @@ class TestHttpResponse:
         fixtures_and_trace.return_value = returned({"status": 200, "content": "JVBERvv_"})
 
         assert (await get_page("https://erp.invalid")).content == b"%PDF\xfb\xff"
+
+    async def test_a_field_the_response_does_not_know_is_ignored(self, eval_run, fixtures_and_trace, returned):
+        fixtures_and_trace.return_value = returned({"status": 200, "body": {"id": "O1"}, "reason": "OK"})
+
+        assert (await get_page("https://erp.invalid")).json() == {"id": "O1"}
 
     async def test_an_http_error_raises_on_raise_for_status(self, eval_run, fixtures_and_trace, returned):
         fixtures_and_trace.return_value = returned({"status": 503, "body": {"error": "busy"}})

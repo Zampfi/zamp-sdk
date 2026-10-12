@@ -6,8 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from zamp_sdk.evals.models.outcomes import ExternalCallOutcome, ObservedStepOutcome
 
 
+# Replies come from the engine, so a field it adds later is ignored rather than failing an older SDK.
 class TracedCall(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     name: str
     key: str | None = Field(description="Value of the parameter the decorator names as key, if it names one")
@@ -37,6 +38,6 @@ TraceEntry: TypeAlias = Annotated[ExternalCall | ObservedStep, Field(discriminat
 
 
 class ReadTraceResult(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     entries: list[TraceEntry]

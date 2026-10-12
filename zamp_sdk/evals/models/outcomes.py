@@ -5,15 +5,16 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from zamp_sdk.evals.constants import FixtureErrorCode
 
 
+# Replies come from the engine, so a field it adds later is ignored rather than failing an older SDK.
 class Returned(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     kind: Literal["returned"]
     value: JsonValue
 
 
 class Raised(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     kind: Literal["raised"]
     type: str
@@ -21,7 +22,7 @@ class Raised(BaseModel):
 
 
 class FixtureLookupFailed(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     kind: Literal["fixture_failed"]
     code: FixtureErrorCode
