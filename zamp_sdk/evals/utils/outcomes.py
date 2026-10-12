@@ -5,7 +5,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import is_dataclass
 from types import ModuleType
-from typing import TYPE_CHECKING, is_typeddict
+from typing import TYPE_CHECKING, Annotated, get_args, get_origin, is_typeddict
 
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter
 
@@ -66,6 +66,9 @@ def _return_type_adapter(func: Callable[..., object]) -> TypeAdapter[object] | N
 
 
 def _has_own_config(annotation: object) -> bool:
+    if get_origin(annotation) is Annotated:
+        annotation = get_args(annotation)[0]
+
     return isinstance(annotation, type) and (
         issubclass(annotation, BaseModel) or is_dataclass(annotation) or is_typeddict(annotation)
     )

@@ -1,12 +1,12 @@
 import asyncio
 import base64
 import inspect
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Annotated, Optional, TypedDict
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 
 from zamp_sdk import AgentDbError, configure_auto_action_logs, evals
 from zamp_sdk.action_executor import ActionExecutor
@@ -119,6 +119,27 @@ class TestReturns:
         execute_action.return_value = returned({"O1": ["JVBERvv_"]})
 
         assert await fetch_pdfs() == {"O1": [b"%PDF\xfb\xff"]}
+
+    async def test_an_annotated_model_is_returned_as_the_model(self, in_eval_trial, execute_action, returned):
+        @evals.external_call("erp.order")
+        async def fetch() -> Annotated[Order, Field(description="the order")]:
+            raise NotImplementedError
+
+        execute_action.return_value = returned({"id": "O1", "total": 5})
+
+        assert await fetch() == Order(id="O1", total=5)
+
+    async def test_an_annotated_typed_dict_is_returned_as_the_dict(self, in_eval_trial, execute_action, returned):
+        class Invoice(TypedDict):
+            id: str
+
+        @evals.external_call("erp.invoice")
+        async def fetch() -> Annotated[Invoice, Field(description="the invoice")]:
+            raise NotImplementedError
+
+        execute_action.return_value = returned({"id": "I1"})
+
+        assert await fetch() == {"id": "I1"}
 
     async def test_a_return_type_pydantic_cannot_validate_returns_the_raw_value(
         self, in_eval_trial, execute_action, returned
