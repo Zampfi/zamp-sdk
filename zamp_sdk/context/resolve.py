@@ -65,14 +65,13 @@ def current_eval_trial_id() -> str | None:
     if current_execution_host() is not ExecutionHost.ACTIONS_HUB:
         return os.environ.get(ENV_EVAL_TRIAL_ID) or None
 
-    from zamp_public_workflow_sdk.actions_hub.models.common_models import ZampMetadataContext
     from zamp_public_workflow_sdk.actions_hub.utils.context_utils import get_variable_from_context
 
     metadata = get_variable_from_context(_BOUND_METADATA_CONTEXT_KEY)
     if metadata is None:
         return None
 
-    return ZampMetadataContext.model_validate(metadata).eval_trial_id
+    return metadata.get("eval_trial_id")
 
 
 def resolve_channel_context() -> Optional[ChannelContext]:

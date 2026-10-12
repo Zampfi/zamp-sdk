@@ -3,13 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from pydantic import BaseModel
 
 EXECUTE = "zamp_sdk.action_executor.ActionExecutor.execute"
-
-
-class ZampMetadataContext(BaseModel):
-    eval_trial_id: str | None = None
 
 
 @pytest.fixture(autouse=True)
@@ -28,9 +23,6 @@ def executor_eval_run(monkeypatch):
     monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
     bound = {"zamp_metadata_context": {"eval_trial_id": "run1-1-item1-1"}}
     modules = {
-        "zamp_public_workflow_sdk.actions_hub.models.common_models": SimpleNamespace(
-            ZampMetadataContext=ZampMetadataContext
-        ),
         "zamp_public_workflow_sdk.actions_hub.utils.context_utils": SimpleNamespace(
             get_variable_from_context=bound.get
         ),

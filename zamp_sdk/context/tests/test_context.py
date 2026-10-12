@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from zamp_sdk.context import (
     ChannelContext,
@@ -96,19 +96,11 @@ class TestCurrentEvalExecutionId:
             assert current_eval_trial_id() is None
 
 
-class _ZampMetadataContext(BaseModel):
-    branch_id: str | None = None
-    eval_trial_id: str | None = None
-
-
 def _bound_metadata_context(metadata):
     bound = {"zamp_metadata_context": metadata}
     return patch.dict(
         sys.modules,
         {
-            "zamp_public_workflow_sdk.actions_hub.models.common_models": SimpleNamespace(
-                ZampMetadataContext=_ZampMetadataContext
-            ),
             "zamp_public_workflow_sdk.actions_hub.utils.context_utils": SimpleNamespace(
                 get_variable_from_context=bound.get
             ),
