@@ -31,7 +31,11 @@ def arguments_to_trace(arguments: dict[str, object]) -> dict[str, JsonValue]:
 
 
 def to_json_value(value: object) -> JsonValue:
-    return to_jsonable_python(value, fallback=repr, bytes_mode="base64")
+    try:
+        return to_jsonable_python(value, fallback=repr, bytes_mode="base64")
+    except ValueError:
+        # A value that contains itself has no JSON form ("Circular reference detected"); its repr still shows it.
+        return repr(value)
 
 
 def _is_untraced(name: str) -> bool:

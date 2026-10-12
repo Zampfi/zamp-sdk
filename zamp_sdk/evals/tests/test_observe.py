@@ -135,6 +135,22 @@ class TestReturns:
         assert await render() == b"%PDF\xff"
         assert sent(execute_action)[0]["outcome"] == {"kind": "returned", "value": "JVBERv8="}
 
+    async def test_a_result_that_contains_itself_is_returned_and_recorded_as_its_repr(
+        self, in_eval_trial, execute_action
+    ):
+        @evals.observe("steps.build")
+        async def build() -> list:
+            lines: list = []
+            lines.append(lines)
+            return lines
+
+        execute_action.return_value = None
+
+        result = await build()
+
+        assert result[0] is result
+        assert sent(execute_action)[0]["outcome"] == {"kind": "returned", "value": "[[...]]"}
+
 
 class TestRaises:
     async def test_async_records_the_error_and_raises_it(self, in_eval_trial, execute_action):

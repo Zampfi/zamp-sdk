@@ -399,6 +399,17 @@ class TestRequest:
 
         assert sent(execute_action)[0]["args"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
 
+    def test_an_argument_that_contains_itself_is_sent_as_its_repr(self, in_eval_trial, execute_action, returned):
+        @evals.external_call("erp.post")
+        def post(lines: list, page: int): ...
+
+        lines: list = []
+        lines.append(lines)
+        execute_action.return_value = returned(None)
+        post(lines, 2)
+
+        assert sent(execute_action)[0]["args"] == {"lines": "[[...]]", "page": 2}
+
     def test_bytes_are_sent_as_base64(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.upload")
         def upload(name: bytes, content: bytes): ...
