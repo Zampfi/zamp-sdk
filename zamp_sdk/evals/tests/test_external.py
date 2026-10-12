@@ -97,6 +97,15 @@ class TestReturns:
 
         assert await ask() is None
 
+    async def test_bytes_are_read_back_from_base64(self, eval_run, fixtures_and_trace, returned):
+        @evals.external("erp.pdf")
+        async def fetch_pdf() -> bytes:
+            raise NotImplementedError
+
+        fixtures_and_trace.return_value = returned("JVBERvv_")
+
+        assert await fetch_pdf() == b"%PDF\xfb\xff"
+
     async def test_a_return_type_only_known_to_type_checkers_returns_the_raw_value(
         self, eval_run, fixtures_and_trace, returned
     ):

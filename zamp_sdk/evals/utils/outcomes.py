@@ -5,7 +5,7 @@ from collections.abc import Callable
 from types import ModuleType
 from typing import TYPE_CHECKING
 
-from pydantic import JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 from zamp_sdk.evals.constants import PLACEHOLDER_REQUEST_METHOD, PLACEHOLDER_REQUEST_URL
 from zamp_sdk.evals.models import FixtureResponse, Raised, Returned
@@ -13,6 +13,9 @@ from zamp_sdk.evals.utils.arguments import to_json_value
 
 if TYPE_CHECKING:
     import httpx
+
+# Traces write bytes as base64, so a bytes return reads its fixture value back the same way.
+_BYTES_AS_BASE64 = ConfigDict(val_json_bytes="base64")
 
 
 def to_raised(error: Exception) -> Raised:
@@ -36,7 +39,9 @@ def returned_value(func: Callable[..., object], value: JsonValue) -> object:
 
     loaded_httpx = sys.modules.get("httpx")
     if loaded_httpx is None or annotation not in (loaded_httpx.Response, loaded_httpx.Response | None):
-        return TypeAdapter(annotation).validate_python(value)
+        config = _BYTES_AS_BASE64 if annotation in (bytes, bytes | None) else None
+
+        return TypeAdapter(annotation, config=config).validate_python(value)
 
     if value is None and annotation is not loaded_httpx.Response:
         return None
