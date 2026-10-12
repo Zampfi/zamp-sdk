@@ -40,7 +40,7 @@ def build_call_input(
     )
 
 
-async def send_to_trial(action_name: str, params: dict[str, JsonValue]) -> JsonValue:
+async def call_eval_action(action_name: str, params: dict[str, JsonValue]) -> JsonValue:
     response = await ActionExecutor.execute(action_name, params)
 
     # The executor's gateway returns {id, status, result, error} and reports a failure as a value

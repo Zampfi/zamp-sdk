@@ -7,8 +7,8 @@ from pydantic import JsonValue
 
 from zamp_sdk.evals.models import ObservedStepInput, ObservedStepOutcome, TracedCallInput
 from zamp_sdk.evals.utils.blocking import ResultT, run_blocking
+from zamp_sdk.evals.utils.eval_actions import call_eval_action
 from zamp_sdk.evals.utils.outcomes import to_raised, to_returned
-from zamp_sdk.evals.utils.trial_actions import send_to_trial
 from zamp_sdk.logging.constants import EVAL_OBSERVED_STEP_ACTION_NAME
 
 _enclosing_observe_name: ContextVar[str | None] = ContextVar("zamp_eval_enclosing_observe", default=None)
@@ -23,12 +23,12 @@ async def run_observed(call: TracedCallInput, invoke: Callable[[], Awaitable[Res
     try:
         result = await invoke()
     except Exception as error:
-        await send_to_trial(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
+        await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
         raise
     finally:
         _enclosing_observe_name.reset(reset_token)
 
-    await send_to_trial(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result)))
+    await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result)))
 
     return result
 
@@ -38,12 +38,12 @@ def run_observed_sync(call: TracedCallInput, invoke: Callable[[], ResultT]) -> R
     try:
         result = invoke()
     except Exception as error:
-        run_blocking(send_to_trial(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error))))
+        run_blocking(call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error))))
         raise
     finally:
         _enclosing_observe_name.reset(reset_token)
 
-    run_blocking(send_to_trial(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result))))
+    run_blocking(call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result))))
 
     return result
 

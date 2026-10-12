@@ -20,13 +20,13 @@ from zamp_sdk.evals.utils import (
     FixtureLookupError,
     build_call_input,
     build_exception,
+    call_eval_action,
     parent_of,
     raise_if_on_actions_hub,
     returned_value,
     run_blocking,
     run_observed,
     run_observed_sync,
-    send_to_trial,
 )
 from zamp_sdk.logging.constants import EVAL_EXTERNAL_CALL_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME
 
@@ -50,7 +50,7 @@ async def read_trace() -> list[TraceEntry]:
     if current_eval_trial_id() is None:
         return []
 
-    return ReadTraceResult.model_validate(await send_to_trial(EVAL_READ_TRACE_ACTION_NAME, {})).entries
+    return ReadTraceResult.model_validate(await call_eval_action(EVAL_READ_TRACE_ACTION_NAME, {})).entries
 
 
 def _decorator(
@@ -97,7 +97,7 @@ def _decorator(
 
 async def _answer_from_fixture(func: Callable[..., Any], call: TracedCallInput) -> Any:
     outcome = _external_call_outcome.validate_python(
-        await send_to_trial(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
+        await call_eval_action(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
     )
     if isinstance(outcome, FixtureLookupFailed):
         raise FixtureLookupError(outcome.message)
