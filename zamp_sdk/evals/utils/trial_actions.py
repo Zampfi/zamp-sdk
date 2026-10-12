@@ -5,9 +5,10 @@ from pydantic import JsonValue
 
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants import ACTION_ENVELOPE_KEYS, SUCCESS_STATUSES
+from zamp_sdk.action_executor.models import ActionResponse
 from zamp_sdk.context import ExecutionHost, current_execution_host
 from zamp_sdk.evals.constants import EVAL_ACTION_FAILED_ERROR
-from zamp_sdk.evals.models import GatewayEnvelope, TracedCallInput
+from zamp_sdk.evals.models import TracedCallInput
 from zamp_sdk.evals.utils.arguments import bind_arguments, key_value, trace_arguments
 
 
@@ -46,12 +47,15 @@ async def send_to_trial(action_name: str, params: dict[str, JsonValue]) -> JsonV
     if not (isinstance(response, dict) and ACTION_ENVELOPE_KEYS.issubset(response)):
         return response
 
-    envelope = GatewayEnvelope.model_validate(response)
-    if envelope.status not in SUCCESS_STATUSES:
+    action_response = ActionResponse.model_validate(response)
+    if action_response.status not in SUCCESS_STATUSES:
         raise RuntimeError(
             EVAL_ACTION_FAILED_ERROR.format(
-                action_name=action_name, action_id=envelope.id, status=envelope.status, error=envelope.error
+                action_name=action_name,
+                action_id=action_response.id,
+                status=action_response.status,
+                error=action_response.error,
             )
         )
 
-    return envelope.result
+    return action_response.result

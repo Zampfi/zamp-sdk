@@ -168,17 +168,17 @@ class TestRaises:
 
 class TestOnTheExecutor:
     async def test_async_records_the_step_with_workflow_invocation_ids(
-        self, executor_eval_run, fixtures_and_trace, returned, envelope
+        self, executor_eval_run, fixtures_and_trace, returned, action_response
     ):
-        fixtures_and_trace.side_effect = [envelope(returned({"id": "O1"})), envelope()]
+        fixtures_and_trace.side_effect = [action_response(returned({"id": "O1"})), action_response()]
 
         assert await load("O1") == {"order": {"id": "O1"}}
         assert [call["invocation_id"] for call in sent(fixtures_and_trace)] == ["workflow-uuid", "workflow-uuid"]
 
-    async def test_a_failed_action_raises(self, executor_eval_run, fixtures_and_trace, returned, envelope):
+    async def test_a_failed_action_raises(self, executor_eval_run, fixtures_and_trace, returned, action_response):
         fixtures_and_trace.side_effect = [
-            envelope(returned({"id": "O1"})),
-            envelope(status="FAILED", error="no eval run"),
+            action_response(returned({"id": "O1"})),
+            action_response(status="FAILED", error="no eval run"),
         ]
 
         with pytest.raises(RuntimeError, match="^eval_observed_step action-1 FAILED: no eval run$"):

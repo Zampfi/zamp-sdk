@@ -79,11 +79,11 @@ class TestReadTrace:
 
         assert (read.key, read.outcome.value) == ("O1", 1)
 
-    async def test_reads_through_the_gateway_envelope_on_the_executor(
-        self, executor_eval_run, fixtures_and_trace, envelope, returned
+    async def test_reads_through_the_action_response_on_the_executor(
+        self, executor_eval_run, fixtures_and_trace, action_response, returned
     ):
         entry = traced("observe", "steps.load", returned(None))
-        fixtures_and_trace.return_value = envelope({"entries": [entry]})
+        fixtures_and_trace.return_value = action_response({"entries": [entry]})
 
         (observed,) = await evals.read_trace()
 

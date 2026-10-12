@@ -406,24 +406,26 @@ class TestRequest:
 
 
 class TestOnTheExecutor:
-    async def test_async_reads_the_bound_id_through_the_gateway_envelope(
-        self, executor_eval_run, fixtures_and_trace, returned, envelope
+    async def test_async_reads_the_bound_id_through_the_action_response(
+        self, executor_eval_run, fixtures_and_trace, returned, action_response
     ):
-        fixtures_and_trace.return_value = envelope(returned({"id": "O1", "total": 7}))
+        fixtures_and_trace.return_value = action_response(returned({"id": "O1", "total": 7}))
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
         assert sent(fixtures_and_trace)[0]["invocation_id"] == "workflow-uuid"
 
     async def test_a_fixture_failure_raises_fixture_lookup_error(
-        self, executor_eval_run, fixtures_and_trace, fixture_failed, envelope
+        self, executor_eval_run, fixtures_and_trace, fixture_failed, action_response
     ):
-        fixtures_and_trace.return_value = envelope(fixture_failed("FIXTURE_MISSING", "erp.order:O1#1: no fixture"))
+        fixtures_and_trace.return_value = action_response(
+            fixture_failed("FIXTURE_MISSING", "erp.order:O1#1: no fixture")
+        )
 
         with pytest.raises(evals.FixtureLookupError, match="^erp.order:O1#1: no fixture$"):
             await fetch_order("O1")
 
-    async def test_a_failed_action_raises(self, executor_eval_run, fixtures_and_trace, envelope):
-        fixtures_and_trace.return_value = envelope(status="FAILED", error="no eval run")
+    async def test_a_failed_action_raises(self, executor_eval_run, fixtures_and_trace, action_response):
+        fixtures_and_trace.return_value = action_response(status="FAILED", error="no eval run")
 
         with pytest.raises(RuntimeError, match="^eval_external_call action-1 FAILED: no eval run$"):
             await fetch_order("O1")

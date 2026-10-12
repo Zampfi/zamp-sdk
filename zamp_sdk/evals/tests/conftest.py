@@ -52,7 +52,7 @@ def fixtures_and_trace():
 
 
 @pytest.fixture
-def envelope():
+def action_response():
     def build(result=None, status="COMPLETED", error=None):
         return {"id": "action-1", "status": status, "result": result, "error": error}
 
