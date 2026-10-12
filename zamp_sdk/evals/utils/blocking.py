@@ -11,6 +11,7 @@ ResultT = TypeVar("ResultT")
 
 
 def run_blocking(coroutine: Coroutine[object, object, ResultT]) -> ResultT:
+    # A sync caller may already be inside a running loop, where asyncio.run refuses to start; a new thread has none.
     with ThreadPoolExecutor(max_workers=1) as pool:
         return pool.submit(contextvars.copy_context().run, asyncio.run, coroutine).result()
 

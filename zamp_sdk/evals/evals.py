@@ -78,6 +78,7 @@ def _build_decorator(
                 if current_eval_trial_id() is None:
                     return func(*args, **kwargs)
 
+                # Frame 1 is the caller, the parent when no observed step encloses the call; cheaper than inspect.stack().
                 call = build_traced_call_input(name, key_argument, signature, args, kwargs, parent_of(sys._getframe(1)))
                 if kind is DecoratedCallKind.OBSERVE:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
@@ -93,6 +94,7 @@ def _build_decorator(
 
             raise_if_on_actions_hub(name, func)
 
+            # Frame 1 is the caller, the parent when no observed step encloses the call; cheaper than inspect.stack().
             call = build_traced_call_input(name, key_argument, signature, args, kwargs, parent_of(sys._getframe(1)))
             if kind is DecoratedCallKind.OBSERVE:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
