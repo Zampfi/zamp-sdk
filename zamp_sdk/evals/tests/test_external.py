@@ -171,20 +171,20 @@ class TestRaises:
         with pytest.raises(httpx.ConnectTimeout, match="timed out"):
             await get_page("https://erp.invalid")
 
-    async def test_a_fixture_failure_raises_fixture_error_with_the_engine_message(
+    async def test_a_fixture_failure_raises_fixture_lookup_error_with_the_engine_message(
         self, eval_run, fixtures_and_trace, fixture_failed
     ):
         fixtures_and_trace.return_value = fixture_failed(
             "FIXTURE_EXHAUSTED", "erp.order:O1#3: the fixture list for this call ran out"
         )
 
-        with pytest.raises(evals.FixtureException, match="^erp.order:O1#3: the fixture list for this call ran out$"):
+        with pytest.raises(evals.FixtureLookupError, match="^erp.order:O1#3: the fixture list for this call ran out$"):
             await fetch_order("O1")
 
-    def test_a_sync_fixture_failure_raises_fixture_error(self, eval_run, fixtures_and_trace, fixture_failed):
+    def test_a_sync_fixture_failure_raises_fixture_lookup_error(self, eval_run, fixtures_and_trace, fixture_failed):
         fixtures_and_trace.return_value = fixture_failed("FIXTURE_MISSING", "erp.status#1: no fixture")
 
-        with pytest.raises(evals.FixtureException, match="^erp.status#1: no fixture$"):
+        with pytest.raises(evals.FixtureLookupError, match="^erp.status#1: no fixture$"):
             fetch_status_sync()
 
     async def test_a_failed_request_propagates(self, eval_run, fixtures_and_trace):
@@ -337,12 +337,12 @@ class TestOnTheExecutor:
         assert await fetch_order("O1") == Order(id="O1", total=7)
         assert sent(fixtures_and_trace)[0]["invocation_id"] == "workflow-uuid"
 
-    async def test_a_fixture_failure_raises_fixture_error(
+    async def test_a_fixture_failure_raises_fixture_lookup_error(
         self, executor_eval_run, fixtures_and_trace, fixture_failed, envelope
     ):
         fixtures_and_trace.return_value = envelope(fixture_failed("FIXTURE_MISSING", "erp.order:O1#1: no fixture"))
 
-        with pytest.raises(evals.FixtureException, match="^erp.order:O1#1: no fixture$"):
+        with pytest.raises(evals.FixtureLookupError, match="^erp.order:O1#1: no fixture$"):
             await fetch_order("O1")
 
     async def test_a_failed_action_raises(self, executor_eval_run, fixtures_and_trace, envelope):

@@ -28,14 +28,14 @@ from zamp_sdk.evals.utils import (
 )
 from zamp_sdk.logging.constants import EVAL_EXTERNAL_CALL_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME
 
-__all__ = ["FixtureException", "TraceEntry", "external", "observe", "read_trace"]
+__all__ = ["FixtureLookupError", "TraceEntry", "external", "observe", "read_trace"]
 
 _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 
 _external_call_outcome: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalCallOutcome)
 
 
-class FixtureException(Exception):
+class FixtureLookupError(Exception):
     pass
 
 
@@ -93,7 +93,7 @@ async def _answer_from_fixture(func: Callable[..., Any], call: TracedCallInput) 
         await send_to_trial(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
     )
     if isinstance(outcome, FixtureLookupFailed):
-        raise FixtureException(outcome.message)
+        raise FixtureLookupError(outcome.message)
 
     if isinstance(outcome, Raised):
         raise build_exception(outcome)

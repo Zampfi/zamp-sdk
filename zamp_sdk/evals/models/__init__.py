@@ -12,16 +12,16 @@ from zamp_sdk.evals.models.trace import ExternalCall, ObservedStep, ReadTraceRes
 
 __all__ = [
     "ExternalCall",
-    "TracedCallInput",
     "ExternalCallOutcome",
     "FixtureLookupFailed",
     "FixtureResponse",
     "GatewayEnvelope",
-    "ObservedStepOutcome",
     "ObservedStep",
     "ObservedStepInput",
+    "ObservedStepOutcome",
     "Raised",
     "ReadTraceResult",
     "Returned",
     "TraceEntry",
+    "TracedCallInput",
 ]
