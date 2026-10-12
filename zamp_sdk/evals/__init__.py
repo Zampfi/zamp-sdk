@@ -7,7 +7,7 @@ from typing import Any, TypeVar, cast
 from pydantic import TypeAdapter
 
 from zamp_sdk.context import current_eval_trial_id
-from zamp_sdk.evals.constants import DecoratedCallKind
+from zamp_sdk.evals.constants import GENERATOR_FUNCTION_ERROR, DecoratedCallKind
 from zamp_sdk.evals.models import (
     ExternalCallOutcome,
     FixtureLookupFailed,
@@ -58,6 +58,9 @@ def _decorator(
     key: str | None,
 ) -> Callable[[_FunctionT], _FunctionT]:
     def decorate(func: _FunctionT) -> _FunctionT:
+        if inspect.isgeneratorfunction(func) or inspect.isasyncgenfunction(func):
+            raise TypeError(GENERATOR_FUNCTION_ERROR.format(name=name, function=func.__qualname__))
+
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)

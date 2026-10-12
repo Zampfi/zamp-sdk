@@ -40,6 +40,14 @@ def fail_sync(reason: str):
     raise ValueError(reason)
 
 
+def pages():
+    yield 1
+
+
+async def stream():
+    yield 1
+
+
 def sent(fixtures_and_trace):
     return [call.args[1] for call in fixtures_and_trace.call_args_list]
 
@@ -66,6 +74,14 @@ class TestOutsideAnEvalRun:
             fail_sync("bad")
 
         fixtures_and_trace.assert_not_called()
+
+
+class TestDecorating:
+    @pytest.mark.parametrize("decorator", [evals.external, evals.observe])
+    @pytest.mark.parametrize("generator", [pages, stream])
+    def test_a_generator_is_refused(self, decorator, generator):
+        with pytest.raises(TypeError, match=f"^steps.pages: {generator.__qualname__} is a generator"):
+            decorator("steps.pages")(generator)
 
 
 class TestReturns:

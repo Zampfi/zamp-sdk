@@ -6,12 +6,17 @@ from zamp_sdk.evals.constants.constants import (
     DecoratedCallKind,
     FixtureErrorCode,
 )
-from zamp_sdk.evals.constants.messages import EVAL_ACTION_FAILED_ERROR, SYNC_CALL_IN_WORKFLOW_ERROR
+from zamp_sdk.evals.constants.messages import (
+    EVAL_ACTION_FAILED_ERROR,
+    GENERATOR_FUNCTION_ERROR,
+    SYNC_CALL_IN_WORKFLOW_ERROR,
+)
 
 __all__ = [
     "EVAL_ACTION_FAILED_ERROR",
     "FIXTURE_REQUEST_METHOD",
     "FIXTURE_REQUEST_URL",
+    "GENERATOR_FUNCTION_ERROR",
     "SYNC_CALL_IN_WORKFLOW_ERROR",
     "UNTRACED_ARGUMENT_NAME_PARTS",
     "UNTRACED_ARGUMENT_NAMES",
