@@ -5,12 +5,12 @@ import pytest
 from zamp_sdk import evals
 
 
-@evals.external("erp.order", key_argument="order_id")
+@evals.external_call("erp.order", key_argument="order_id")
 async def fetch_order(order_id: str) -> dict:
     return {"id": order_id}
 
 
-@evals.external("erp.order", key_argument="order_id")
+@evals.external_call("erp.order", key_argument="order_id")
 def fetch_order_sync(order_id: str) -> dict:
     return {"id": order_id}
 

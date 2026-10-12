@@ -21,27 +21,27 @@ class Order(BaseModel):
     total: int
 
 
-@evals.external("erp.order", key_argument="order_id")
+@evals.external_call("erp.order", key_argument="order_id")
 async def fetch_order(order_id: str, realm: str = "prod") -> Order:
     return Order(id=order_id, total=-1)
 
 
-@evals.external("erp.order", key_argument="order_id")
+@evals.external_call("erp.order", key_argument="order_id")
 def fetch_order_sync(order_id: str, realm: str = "prod") -> Order:
     return Order(id=order_id, total=-1)
 
 
-@evals.external("erp.status")
+@evals.external_call("erp.status")
 async def fetch_status():
     return "live"
 
 
-@evals.external("erp.status")
+@evals.external_call("erp.status")
 def fetch_status_sync():
     return "live"
 
 
-@evals.external("erp.page")
+@evals.external_call("erp.page")
 async def get_page(url: str) -> httpx.Response:
     return httpx.Response(200)
 
@@ -95,7 +95,7 @@ class TestReturns:
         assert await fetch_order("O1") == Order(id="O1", total=7)
 
     async def test_a_human_ask_returns_none(self, in_eval_trial, execute_action, returned):
-        @evals.external("ask.decision")
+        @evals.external_call("ask.decision")
         async def ask() -> None: ...
 
         execute_action.return_value = returned(None)
@@ -103,7 +103,7 @@ class TestReturns:
         assert await ask() is None
 
     async def test_bytes_are_read_back_from_base64(self, in_eval_trial, execute_action, returned):
-        @evals.external("erp.pdf")
+        @evals.external_call("erp.pdf")
         async def fetch_pdf() -> bytes:
             raise NotImplementedError
 
@@ -112,7 +112,7 @@ class TestReturns:
         assert await fetch_pdf() == b"%PDF\xfb\xff"
 
     async def test_bytes_inside_a_return_type_are_read_back_from_base64(self, in_eval_trial, execute_action, returned):
-        @evals.external("erp.pdfs")
+        @evals.external_call("erp.pdfs")
         async def fetch_pdfs() -> dict[str, list[bytes]]:
             raise NotImplementedError
 
@@ -126,7 +126,7 @@ class TestReturns:
         class Session:
             pass
 
-        @evals.external("erp.session")
+        @evals.external_call("erp.session")
         async def open_session() -> Session:
             raise NotImplementedError
 
@@ -137,7 +137,7 @@ class TestReturns:
     async def test_a_return_type_only_known_to_type_checkers_returns_the_raw_value(
         self, in_eval_trial, execute_action, returned
     ):
-        @evals.external("erp.total")
+        @evals.external_call("erp.total")
         async def fetch_total() -> "Decimal":
             raise NotImplementedError
 
@@ -183,7 +183,7 @@ class TestHttpResponse:
             response.raise_for_status()
 
     async def test_any_call_name_builds_a_response(self, in_eval_trial, execute_action, returned):
-        @evals.external("erp:fetch")
+        @evals.external_call("erp:fetch")
         async def fetch() -> httpx.Response:
             raise NotImplementedError
 
@@ -193,7 +193,7 @@ class TestHttpResponse:
             (await fetch()).raise_for_status()
 
     async def test_an_optional_response(self, in_eval_trial, execute_action, returned):
-        @evals.external("erp.maybe")
+        @evals.external_call("erp.maybe")
         async def maybe() -> Optional[httpx.Response]: ...
 
         execute_action.return_value = returned({"status": 204})
@@ -296,7 +296,7 @@ class TestRequest:
         assert sent(execute_action)[0]["key"] is None
 
     def test_an_integer_key_is_sent_as_text(self, in_eval_trial, execute_action, returned):
-        @evals.external("erp.page", key_argument="page")
+        @evals.external_call("erp.page", key_argument="page")
         def get_page_number(page: int): ...
 
         execute_action.return_value = returned(None)
@@ -307,7 +307,7 @@ class TestRequest:
     def test_any_name_and_key_are_sent_as_written(self, in_eval_trial, execute_action, returned):
         name = f"Mail.Fetch_{'x' * 100}"
 
-        @evals.external(name, key_argument="file_name")
+        @evals.external_call(name, key_argument="file_name")
         def fetch_attachment(file_name: str): ...
 
         execute_action.return_value = returned(None)
@@ -317,7 +317,7 @@ class TestRequest:
         assert (call["name"], call["key"]) == (name, "notes #2.msg")
 
     def test_secret_arguments_are_never_sent(self, in_eval_trial, execute_action, returned):
-        @evals.external("erp.token")
+        @evals.external_call("erp.token")
         def fetch_token(url: str, headers: dict, auth: str, token: str, credentials: dict): ...
 
         execute_action.return_value = returned(None)
@@ -326,7 +326,7 @@ class TestRequest:
         assert sent(execute_action)[0]["args"] == {"url": "https://erp.invalid"}
 
     def test_secret_arguments_passed_through_kwargs_are_never_sent(self, in_eval_trial, execute_action, returned):
-        @evals.external("erp.request")
+        @evals.external_call("erp.request")
         def request(method: str, url: str, **kwargs): ...
 
         execute_action.return_value = returned(None)
@@ -335,7 +335,7 @@ class TestRequest:
         assert sent(execute_action)[0]["args"] == {"method": "GET", "url": "https://erp.invalid", "timeout": 5}
 
     def test_arguments_named_like_a_credential_are_never_sent(self, in_eval_trial, execute_action, returned):
-        @evals.external("erp.login")
+        @evals.external_call("erp.login")
         def login(url: str, api_key: str, Password: str, client_secret: str, **kwargs): ...
 
         execute_action.return_value = returned(None)
@@ -344,7 +344,7 @@ class TestRequest:
         assert sent(execute_action)[0]["args"] == {"url": "https://erp.invalid", "page": 2}
 
     def test_only_whole_credential_names_are_left_out(self, in_eval_trial, execute_action, returned):
-        @evals.external("llm.complete")
+        @evals.external_call("llm.complete")
         def complete(**kwargs): ...
 
         kept = ["max_tokens", "keys", "key", "sort_key", "keyword", "secretary", "authorization_id"]
@@ -359,12 +359,12 @@ class TestRequest:
             def __init__(self, token: str):
                 self.token = token
 
-            @evals.external("erp.order", key_argument="order_id")
+            @evals.external_call("erp.order", key_argument="order_id")
             async def fetch(self, order_id: str) -> dict:
                 return {}
 
             @classmethod
-            @evals.external("erp.status")
+            @evals.external_call("erp.status")
             def status(cls, realm: str) -> str:
                 return "live"
 
@@ -380,7 +380,7 @@ class TestRequest:
             def __repr__(self):
                 return "<Session>"
 
-        @evals.external("erp.post")
+        @evals.external_call("erp.post")
         def post(session: Session, order: Order): ...
 
         execute_action.return_value = returned(None)
@@ -389,7 +389,7 @@ class TestRequest:
         assert sent(execute_action)[0]["args"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
 
     def test_bytes_are_sent_as_base64(self, in_eval_trial, execute_action, returned):
-        @evals.external("erp.upload")
+        @evals.external_call("erp.upload")
         def upload(name: bytes, content: bytes): ...
 
         execute_action.return_value = returned(None)

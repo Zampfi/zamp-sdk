@@ -35,7 +35,7 @@ _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 _external_call_outcome_adapter: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalCallOutcome)
 
 
-def external(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
+def external_call(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
     """In an eval trial, answer the call from its fixture instead of running it; outside one, run it as written."""
     return _build_decorator(DecoratedCallKind.EXTERNAL, name, key_argument)
 
