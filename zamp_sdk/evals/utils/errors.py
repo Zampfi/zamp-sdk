@@ -1,0 +1,2 @@
+class FixtureLookupError(Exception):
+    pass
