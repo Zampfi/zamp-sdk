@@ -41,7 +41,7 @@ def returned_value(func: Callable[..., object], value: JsonValue) -> object:
 
     loaded_httpx = sys.modules.get("httpx")
     if loaded_httpx is None or annotation not in (loaded_httpx.Response, loaded_httpx.Response | None):
-        return _to_return_type(annotation, value)
+        return _validate_as_annotation(annotation, value)
 
     if value is None and annotation is not loaded_httpx.Response:
         return None
@@ -49,7 +49,7 @@ def returned_value(func: Callable[..., object], value: JsonValue) -> object:
     return _build_response(loaded_httpx, FixtureResponse.model_validate(value))
 
 
-def _to_return_type(annotation: object, value: JsonValue) -> object:
+def _validate_as_annotation(annotation: object, value: JsonValue) -> object:
     config = None if _has_own_config(annotation) else _BYTES_AS_BASE64
     try:
         adapter: TypeAdapter[object] = TypeAdapter(annotation, config=config)
