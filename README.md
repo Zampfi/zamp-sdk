@@ -203,6 +203,48 @@ A script can be re-run, so say in the SQL when a write must be safe to repeat:
 constraint, which you declare in the `CREATE TABLE` or add later with
 `CREATE UNIQUE INDEX`.
 
+## Evals (`zamp_sdk.evals`)
+
+Mark the calls a script makes to the outside world, and the steps of its own logic, so an eval
+trial can replay the outside world from fixtures and grade what the script did. Outside a trial
+the decorators do nothing.
+
+```python
+import httpx
+from zamp_sdk import evals
+
+@evals.external_call("erp.order", key_argument="order_id")
+async def fetch_order(order_id: str) -> Order:
+    ...                                   # in a trial: answered from the fixture, never run
+
+@evals.external_call("erp.page")
+async def get_page(url: str) -> httpx.Response:
+    ...                                   # a fixture's status/body/content/headers become a Response
+
+@evals.observe("steps.review")
+async def review(order_id: str) -> Decision:
+    order = await fetch_order(order_id)   # traced with "steps.review" as its parent
+    ...
+
+entries = await evals.read_trace()        # the trial's calls so far; [] outside a trial
+```
+
+| Name | Does |
+|------|------|
+| `external_call(name, key_argument=None)` | In a trial, answer the call from its fixture instead of running it |
+| `observe(name, key_argument=None)` | In a trial, run the function and record what it returned or raised |
+| `read_trace()` | The calls this trial has traced so far, in order, as `TraceEntry` values |
+| `FixtureLookupError` | Raised when the trial has no fixture left for a call; the message says which and why |
+
+- **`key_argument`** names the parameter whose value tells calls of the same name apart (one
+  fixture per order id, say). It must be a parameter of the function.
+- **Arguments are recorded by name**, except credential-like ones (`token`, `headers`,
+  `api_key`, `*_secret`, ...), which are never written.
+- **Bytes are base64.** A `bytes` value is written to the trace as base64 text, and a fixture
+  value for a `bytes` return type must be base64 too.
+- **Sync functions** work in a sandbox. In workflow code on ActionsHub, make a decorated function
+  `async`: a sync one is refused inside a trial. Generator functions cannot be decorated.
+
 ## Error Handling
 
 | Exception | When |
