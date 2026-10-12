@@ -19,7 +19,7 @@ from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 
 _TASK_REFUSAL = (
     "RATE_LIMITED: this organization is creating agent tasks faster than its limit (150 per hour). "
-    "No task was created. Wait 24 s before retrying; do not retry in a loop or in parallel. "
+    "This request was NOT started. Wait 24 s before retrying; do not retry in a loop or in parallel. "
     "Otherwise finish without it."
 )
 _ACTION_REFUSAL = (
