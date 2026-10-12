@@ -25,8 +25,8 @@
     is refused with an error that says so. Generator functions are refused when decorated.
 - **The SDK knows when it runs in an eval trial.** `zamp_sdk.context.current_eval_trial_id()`
   reads `ZAMP_EVAL_TRIAL_ID` in a sandbox, or `eval_trial_id` from the bound metadata context on
-  ActionsHub, and every API-route action call in a trial carries it as `X-EVAL-TRIAL-ID`.
-  Nothing is sent outside a trial.
+  ActionsHub, and every API-route call to that deployment in a trial carries it as
+  `X-EVAL-TRIAL-ID`, like the branch headers. Nothing is sent outside a trial.
 - **`ActionResponse`** (`zamp_sdk.action_executor.models`) describes the `{id, status, result,
   error}` shape the action gateway answers with. `ActionExecutor.execute` still returns that
   shape unchanged.
