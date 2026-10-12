@@ -9,6 +9,7 @@ from zamp_sdk.evals.constants.constants import (
 from zamp_sdk.evals.constants.messages import (
     EVAL_ACTION_FAILED_ERROR,
     GENERATOR_FUNCTION_ERROR,
+    KEY_ARGUMENT_NOT_A_PARAMETER_ERROR,
     STEP_ERROR_NOT_TRACED_MESSAGE,
     SYNC_CALL_ON_ACTIONS_HUB_ERROR,
 )
@@ -16,6 +17,7 @@ from zamp_sdk.evals.constants.messages import (
 __all__ = [
     "EVAL_ACTION_FAILED_ERROR",
     "GENERATOR_FUNCTION_ERROR",
+    "KEY_ARGUMENT_NOT_A_PARAMETER_ERROR",
     "PLACEHOLDER_REQUEST_METHOD",
     "PLACEHOLDER_REQUEST_URL",
     "STEP_ERROR_NOT_TRACED_MESSAGE",

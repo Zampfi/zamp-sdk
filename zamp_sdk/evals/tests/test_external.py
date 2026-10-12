@@ -295,6 +295,25 @@ class TestRequest:
 
         assert sent(execute_action)[0]["key"] is None
 
+    def test_a_key_argument_of_none_sends_none(self, in_eval_trial, execute_action, returned):
+        @evals.external_call("erp.order", key_argument="order_id")
+        def fetch(order_id: str | None): ...
+
+        execute_action.return_value = returned(None)
+        fetch(None)
+        fetch("None")
+
+        assert [call["key"] for call in sent(execute_action)] == [None, "None"]
+
+    def test_a_key_argument_the_call_leaves_out_of_kwargs_sends_none(self, in_eval_trial, execute_action, returned):
+        @evals.external_call("erp.request", key_argument="order_id")
+        def request(**kwargs): ...
+
+        execute_action.return_value = returned(None)
+        request(page=2)
+
+        assert sent(execute_action)[0]["key"] is None
+
     def test_an_integer_key_is_sent_as_text(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.page", key_argument="page")
         def get_page_number(page: int): ...
