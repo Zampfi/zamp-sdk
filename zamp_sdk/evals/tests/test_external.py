@@ -135,6 +135,16 @@ class TestHttpResponse:
         with pytest.raises(httpx.HTTPStatusError, match="503"):
             response.raise_for_status()
 
+    async def test_any_call_name_builds_a_response(self, eval_run, fixtures_and_trace, returned):
+        @evals.external("erp:fetch")
+        async def fetch() -> httpx.Response:
+            raise NotImplementedError
+
+        fixtures_and_trace.return_value = returned({"status": 404})
+
+        with pytest.raises(httpx.HTTPStatusError, match="404"):
+            (await fetch()).raise_for_status()
+
     async def test_an_optional_response(self, eval_run, fixtures_and_trace, returned):
         @evals.external("erp.maybe")
         async def maybe() -> Optional[httpx.Response]: ...

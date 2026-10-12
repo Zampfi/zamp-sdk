@@ -104,4 +104,4 @@ async def _answer_from_fixture(func: Callable[..., Any], call: TracedCallInput) 
     if isinstance(outcome, Raised):
         raise build_exception(outcome)
 
-    return returned_value(func, call.name, outcome.value)
+    return returned_value(func, outcome.value)
