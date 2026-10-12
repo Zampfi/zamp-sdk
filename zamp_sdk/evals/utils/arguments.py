@@ -1,5 +1,4 @@
 import inspect
-from collections.abc import Callable
 
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
@@ -8,9 +7,9 @@ from zamp_sdk.evals.constants import UNTRACED_ARGUMENT_NAME_SUFFIXES, UNTRACED_A
 
 
 def bind_arguments(
-    func: Callable[..., object], args: tuple[object, ...], kwargs: dict[str, object]
+    signature: inspect.Signature, args: tuple[object, ...], kwargs: dict[str, object]
 ) -> dict[str, object]:
-    bound = inspect.signature(func).bind(*args, **kwargs)
+    bound = signature.bind(*args, **kwargs)
     bound.apply_defaults()
 
     arguments = dict(bound.arguments)

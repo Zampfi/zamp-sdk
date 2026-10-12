@@ -1,5 +1,5 @@
+import inspect
 import uuid
-from collections.abc import Callable
 
 from pydantic import JsonValue
 
@@ -24,12 +24,12 @@ def new_invocation_id() -> str:
 def build_traced_call_input(
     name: str,
     key_argument: str | None,
-    func: Callable[..., object],
+    signature: inspect.Signature,
     args: tuple[object, ...],
     kwargs: dict[str, object],
     parent: str,
 ) -> TracedCallInput:
-    arguments = bind_arguments(func, args, kwargs)
+    arguments = bind_arguments(signature, args, kwargs)
 
     return TracedCallInput(
         name=name,

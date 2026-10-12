@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from zamp_sdk import AgentDbError, configure_auto_action_logs, evals
 from zamp_sdk.action_executor import ActionExecutor
@@ -144,6 +144,25 @@ class TestReturns:
         execute_action.return_value = returned("12.50")
 
         assert await fetch_total() == "12.50"
+
+    async def test_the_signature_and_return_type_are_read_once_per_function(
+        self, in_eval_trial, execute_action, returned
+    ):
+        execute_action.return_value = returned({"id": "O1"})
+        with (
+            patch("inspect.signature", wraps=inspect.signature) as read_signature,
+            patch("zamp_sdk.evals.utils.outcomes.TypeAdapter", wraps=TypeAdapter) as build_adapter,
+        ):
+
+            @evals.external_call("erp.order", key_argument="order_id")
+            async def fetch(order_id: str) -> dict:
+                raise NotImplementedError
+
+            await fetch("O1")
+            await fetch("O2")
+
+        assert read_signature.call_count == 2
+        build_adapter.assert_called_once()
 
 
 class TestHttpResponse:

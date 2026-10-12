@@ -1,3 +1,4 @@
+import functools
 import importlib
 import inspect
 import sys
@@ -44,7 +45,9 @@ def as_return_type(func: Callable[..., object], value: JsonValue) -> object:
 
     loaded_httpx = sys.modules.get("httpx")
     if loaded_httpx is None or annotation not in (loaded_httpx.Response, loaded_httpx.Response | None):
-        return _validate_as_annotation(annotation, value)
+        adapter = _return_type_adapter(func)
+
+        return value if adapter is None else adapter.validate_python(value)
 
     if value is None and annotation is not loaded_httpx.Response:
         return None
@@ -52,14 +55,14 @@ def as_return_type(func: Callable[..., object], value: JsonValue) -> object:
     return _build_httpx_response(loaded_httpx, FixtureHttpResponse.model_validate(value))
 
 
-def _validate_as_annotation(annotation: object, value: JsonValue) -> object:
+@functools.cache
+def _return_type_adapter(func: Callable[..., object]) -> TypeAdapter[object] | None:
+    annotation = _return_annotation(func)
     config = None if _has_own_config(annotation) else _BYTES_AS_BASE64
     try:
-        adapter: TypeAdapter[object] = TypeAdapter(annotation, config=config)
+        return TypeAdapter(annotation, config=config)
     except PydanticSchemaGenerationError:
-        return value
-
-    return adapter.validate_python(value)
+        return None
 
 
 def _has_own_config(annotation: object) -> bool:
@@ -68,6 +71,8 @@ def _has_own_config(annotation: object) -> bool:
     )
 
 
+# Read on the first call, not at decoration: a return type may name a class defined after the function.
+@functools.cache
 def _return_annotation(func: Callable[..., object]) -> object:
     try:
         return inspect.signature(func, eval_str=True).return_annotation

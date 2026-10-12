@@ -63,7 +63,8 @@ def _build_decorator(
         if inspect.isgeneratorfunction(func) or inspect.isasyncgenfunction(func):
             raise TypeError(GENERATOR_FUNCTION_ERROR.format(name=name, function=func.__qualname__))
 
-        if key_argument is not None and not accepts_argument(inspect.signature(func), key_argument):
+        signature = inspect.signature(func)
+        if key_argument is not None and not accepts_argument(signature, key_argument):
             raise TypeError(
                 KEY_ARGUMENT_NOT_A_PARAMETER_ERROR.format(
                     name=name, function=func.__qualname__, key_argument=key_argument
@@ -77,7 +78,7 @@ def _build_decorator(
                 if current_eval_trial_id() is None:
                     return func(*args, **kwargs)
 
-                call = build_traced_call_input(name, key_argument, func, args, kwargs, parent_of(sys._getframe(1)))
+                call = build_traced_call_input(name, key_argument, signature, args, kwargs, parent_of(sys._getframe(1)))
                 if kind is DecoratedCallKind.OBSERVE:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
 
@@ -92,7 +93,7 @@ def _build_decorator(
 
             raise_if_on_actions_hub(name, func)
 
-            call = build_traced_call_input(name, key_argument, func, args, kwargs, parent_of(sys._getframe(1)))
+            call = build_traced_call_input(name, key_argument, signature, args, kwargs, parent_of(sys._getframe(1)))
             if kind is DecoratedCallKind.OBSERVE:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
 
