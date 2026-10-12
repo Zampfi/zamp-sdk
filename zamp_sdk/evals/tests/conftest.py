@@ -5,22 +5,22 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-EXECUTE = "zamp_sdk.action_executor.ActionExecutor.execute"
+ACTION_EXECUTOR_EXECUTE_PATH = "zamp_sdk.action_executor.ActionExecutor.execute"
 
 
 @pytest.fixture(autouse=True)
-def _api_host(monkeypatch):
+def _outside_any_eval_trial(monkeypatch):
     monkeypatch.delenv("ZAMP_SDK_EXECUTION_HOST", raising=False)
     monkeypatch.delenv("ZAMP_EVAL_TRIAL_ID", raising=False)
 
 
 @pytest.fixture
-def eval_run(monkeypatch):
+def in_eval_trial(monkeypatch):
     monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "run1-1-item1-1")
 
 
 @pytest.fixture
-def executor_eval_run(monkeypatch):
+def in_eval_trial_on_actions_hub(monkeypatch):
     with _on_actions_hub(monkeypatch, {"eval_trial_id": "run1-1-item1-1"}):
         yield
 
@@ -46,8 +46,8 @@ def _on_actions_hub(monkeypatch, metadata):
 
 
 @pytest.fixture
-def fixtures_and_trace():
-    with patch(EXECUTE, new=AsyncMock()) as execute:
+def execute_action():
+    with patch(ACTION_EXECUTOR_EXECUTE_PATH, new=AsyncMock()) as execute:
         yield execute
 
 
@@ -70,5 +70,5 @@ def raised():
 
 
 @pytest.fixture
-def fixture_failed():
+def fixture_lookup_failed():
     return lambda code, message: {"kind": "fixture_failed", "code": code, "message": message}

@@ -64,8 +64,8 @@ class TestCurrentBranchContext:
         assert current_branch_context() == {"branch_id": "feature-x"}
 
 
-class TestCurrentEvalExecutionId:
-    def test_none_outside_an_eval_run(self):
+class TestCurrentEvalTrialId:
+    def test_none_outside_an_eval_trial(self):
         assert current_eval_trial_id() is None
 
     def test_reads_the_injected_id(self, monkeypatch):
