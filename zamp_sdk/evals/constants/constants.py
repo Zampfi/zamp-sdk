@@ -12,10 +12,7 @@ UNTRACED_ARGUMENT_NAMES = frozenset(
         "token",
         "credentials",
         "password",
-        "passwd",
-        "pwd",
         "secret",
-        "cookie",
         "api_key",
         "apikey",
         "client_secret",
@@ -23,7 +20,7 @@ UNTRACED_ARGUMENT_NAMES = frozenset(
         "refresh_token",
     }
 )
-UNTRACED_ARGUMENT_NAME_SUFFIXES = ("_password", "_secret", "_token", "_api_key", "_credentials", "_headers")
+UNTRACED_ARGUMENT_NAME_SUFFIXES = ("_password", "_secret", "_token", "_api_key", "_credentials")
 
 # A faked httpx.Response has no real request, but raise_for_status() needs one, so it gets this stand-in.
 PLACEHOLDER_REQUEST_METHOD = "GET"

@@ -417,8 +417,20 @@ class TestRequest:
         @evals.external_call("llm.complete")
         def complete(**kwargs): ...
 
-        kept = ["max_tokens", "keys", "key", "sort_key", "keyword", "secretary", "authorization_id"]
-        dropped = ["access_token", "x_api_key", "db_password", "extra_headers", "cookie", "pwd"]
+        kept = [
+            "max_tokens",
+            "keys",
+            "key",
+            "sort_key",
+            "keyword",
+            "secretary",
+            "authorization_id",
+            "extra_headers",
+            "cookie",
+            "pwd",
+            "passwd",
+        ]
+        dropped = ["access_token", "x_api_key", "db_password", "client_credentials", "Secret"]
         execute_action.return_value = returned(None)
         complete(**{name: 1 for name in kept + dropped})
 
