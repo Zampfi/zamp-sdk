@@ -5,6 +5,7 @@ from types import FrameType
 
 from pydantic import JsonValue
 
+from zamp_sdk.evals.constants import STEP_ERROR_NOT_TRACED_MESSAGE
 from zamp_sdk.evals.models import ObservedStepInput, ObservedStepOutcome, TracedCallInput
 from zamp_sdk.evals.utils.blocking import ResultT, run_blocking
 from zamp_sdk.evals.utils.eval_actions import call_eval_action
@@ -23,7 +24,11 @@ async def run_observed(call: TracedCallInput, invoke: Callable[[], Awaitable[Res
     try:
         result = await invoke()
     except Exception as error:
-        await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
+        # Whatever the trace send raises, the caller still gets the function's own error, as outside a trial.
+        try:
+            await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
+        except Exception as trace_error:
+            error.add_note(STEP_ERROR_NOT_TRACED_MESSAGE.format(name=call.name, error=trace_error))
         raise
     finally:
         _enclosing_observed_step_name.reset(reset_token)
@@ -38,7 +43,12 @@ def run_observed_sync(call: TracedCallInput, invoke: Callable[[], ResultT]) -> R
     try:
         result = invoke()
     except Exception as error:
-        run_blocking(call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error))))
+        try:
+            run_blocking(
+                call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
+            )
+        except Exception as trace_error:
+            error.add_note(STEP_ERROR_NOT_TRACED_MESSAGE.format(name=call.name, error=trace_error))
         raise
     finally:
         _enclosing_observed_step_name.reset(reset_token)

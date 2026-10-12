@@ -3,3 +3,4 @@ SYNC_CALL_ON_ACTIONS_HUB_ERROR = (
 )
 GENERATOR_FUNCTION_ERROR = "{name}: {function} is a generator, which a trace cannot record; return the values instead"
 EVAL_ACTION_FAILED_ERROR = "{action_name} {action_id} {status}: {error}"
+STEP_ERROR_NOT_TRACED_MESSAGE = "{name}: the eval trace did not record this error, because {error}"

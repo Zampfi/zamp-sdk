@@ -155,6 +155,22 @@ class TestRaises:
         (step,) = sent(execute_action)
         assert step["outcome"] == {"kind": "raised", "type": "builtins.ValueError", "message": "bad"}
 
+    async def test_async_raises_its_own_error_when_the_trace_send_fails(self, in_eval_trial, execute_action):
+        execute_action.side_effect = ConnectionError("gateway down")
+
+        with pytest.raises(ValueError, match="bad") as raised:
+            await fail("bad")
+
+        assert raised.value.__notes__ == ["steps.fail: the eval trace did not record this error, because gateway down"]
+
+    def test_sync_raises_its_own_error_when_the_trace_send_fails(self, in_eval_trial, execute_action):
+        execute_action.side_effect = ConnectionError("gateway down")
+
+        with pytest.raises(ValueError, match="bad") as raised:
+            fail_sync("bad")
+
+        assert raised.value.__notes__ == ["steps.fail: the eval trace did not record this error, because gateway down"]
+
     async def test_a_cancelled_step_records_nothing(self, in_eval_trial, execute_action):
         @evals.observe("steps.wait")
         async def wait():
