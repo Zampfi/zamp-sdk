@@ -237,7 +237,8 @@ entries = await evals.read_trace()        # the trial's calls so far; [] outside
 | `FixtureLookupError` | Raised when the trial has no fixture left for a call; the message says which and why |
 
 - **`key_argument`** names the parameter whose value tells calls of the same name apart (one
-  fixture per order id, say). It must be a parameter of the function.
+  fixture per order id, say). It must be a parameter of the function, or a keyword the function
+  takes through `**kwargs`; a call that leaves it out, or passes `None`, has the key `None`.
 - **Arguments are recorded by name**, except credential-like ones (`token`, `headers`,
   `api_key`, `*_secret`, ...), which are never written.
 - **Bytes are base64.** A `bytes` value is written to the trace as base64 text, and a fixture

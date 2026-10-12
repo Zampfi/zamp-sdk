@@ -17,7 +17,8 @@
   - Each call is recorded with its arguments by name. Credential-like names (`token`, `headers`,
     `api_key`, `*_secret`, ...) and `self` / `cls` are never written. `key_argument` names the
     parameter whose value tells calls of the same name apart; it must be one of the function's
-    parameters, which is checked when the function is decorated.
+    parameters, or a keyword it takes through `**kwargs`, which is checked when the function is
+    decorated.
   - **Bytes are base64.** A trace writes `bytes` as base64 text at any depth, and a fixture value
     for a `bytes` return type is read as base64 (either alphabet), so a hand-written fixture for a
     `-> bytes` function must hold base64, not the raw text.
