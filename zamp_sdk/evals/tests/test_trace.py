@@ -19,6 +19,11 @@ def traced(kind, name, outcome, key=None, call_number=1, **args):
 
 
 class TestReadTrace:
+    async def test_outside_an_eval_trial_is_empty_and_sends_nothing(self, fixtures_and_trace):
+        assert await evals.read_trace() == []
+
+        fixtures_and_trace.assert_not_called()
+
     async def test_sends_an_empty_request_to_the_read_trace_action(self, eval_run, fixtures_and_trace):
         fixtures_and_trace.return_value = {"entries": []}
 

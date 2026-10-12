@@ -49,6 +49,9 @@ def observe(name: str, key: str | None = None) -> Callable[[_FunctionT], _Functi
 
 
 async def read_trace() -> list[TraceEntry]:
+    if current_eval_trial_id() is None:
+        return []
+
     return ReadTraceResult.model_validate(await send_to_trial(EVAL_READ_TRACE_ACTION_NAME, {})).entries
 
 
