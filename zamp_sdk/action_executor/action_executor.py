@@ -7,7 +7,7 @@ from typing import Any, Callable
 from zamp_sdk.action_executor.constants import (
     ACTION_ENVELOPE_KEYS,
     BRANCH_HEADERS,
-    EVAL_TRIAL_HEADER,
+    EVAL_TRIAL_ID_HEADER,
     IN_PROGRESS_STATUSES,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
@@ -313,7 +313,7 @@ class ActionExecutor:
         headers = {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
         eval_trial_id = current_eval_trial_id()
         if eval_trial_id is not None:
-            headers[EVAL_TRIAL_HEADER] = eval_trial_id
+            headers[EVAL_TRIAL_ID_HEADER] = eval_trial_id
 
         return headers
 
