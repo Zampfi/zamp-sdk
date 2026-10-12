@@ -1,6 +1,8 @@
 from enum import Enum
 
-UNTRACED_ARGUMENT_NAMES = frozenset({"self", "cls", "headers", "auth", "token", "credentials"})
+# A trace never holds the instance or a credential: these names exactly, or a name holding any of the parts.
+UNTRACED_ARGUMENT_NAMES = frozenset({"self", "cls", "headers", "auth"})
+UNTRACED_ARGUMENT_NAME_PARTS = ("authorization", "credential", "key", "password", "secret", "token")
 
 FIXTURE_REQUEST_METHOD = "GET"
 FIXTURE_REQUEST_URL = "https://{name}.invalid"

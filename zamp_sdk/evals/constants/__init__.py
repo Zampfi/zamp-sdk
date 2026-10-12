@@ -1,6 +1,7 @@
 from zamp_sdk.evals.constants.constants import (
     FIXTURE_REQUEST_METHOD,
     FIXTURE_REQUEST_URL,
+    UNTRACED_ARGUMENT_NAME_PARTS,
     UNTRACED_ARGUMENT_NAMES,
     DecoratedCallKind,
     FixtureErrorCode,
@@ -12,6 +13,7 @@ __all__ = [
     "FIXTURE_REQUEST_METHOD",
     "FIXTURE_REQUEST_URL",
     "SYNC_CALL_IN_WORKFLOW_ERROR",
+    "UNTRACED_ARGUMENT_NAME_PARTS",
     "UNTRACED_ARGUMENT_NAMES",
     "DecoratedCallKind",
     "FixtureErrorCode",

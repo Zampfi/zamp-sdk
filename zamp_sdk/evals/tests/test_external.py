@@ -275,6 +275,15 @@ class TestRequest:
 
         assert sent(fixtures_and_trace)[0]["args"] == {"method": "GET", "url": "https://erp.invalid", "timeout": 5}
 
+    def test_arguments_named_like_a_credential_are_never_sent(self, eval_run, fixtures_and_trace, returned):
+        @evals.external("erp.login")
+        def login(url: str, api_key: str, Password: str, client_secret: str, **kwargs): ...
+
+        fixtures_and_trace.return_value = returned(None)
+        login("https://erp.invalid", "k1", "p1", "cs1", Authorization="Bearer x", refresh_token="t0k", page=2)
+
+        assert sent(fixtures_and_trace)[0]["args"] == {"url": "https://erp.invalid", "page": 2}
+
     async def test_a_method_never_sends_its_instance(self, eval_run, fixtures_and_trace, returned):
         class Client:
             def __init__(self, token: str):

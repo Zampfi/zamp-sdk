@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
 
-from zamp_sdk.evals.constants import UNTRACED_ARGUMENT_NAMES
+from zamp_sdk.evals.constants import UNTRACED_ARGUMENT_NAME_PARTS, UNTRACED_ARGUMENT_NAMES
 
 
 def bind_arguments(
@@ -27,8 +27,14 @@ def key_value(arguments: dict[str, object], key: str | None) -> str | None:
 
 
 def trace_arguments(arguments: dict[str, object]) -> dict[str, JsonValue]:
-    return {name: to_json_value(value) for name, value in arguments.items() if name not in UNTRACED_ARGUMENT_NAMES}
+    return {name: to_json_value(value) for name, value in arguments.items() if not _is_untraced(name)}
 
 
 def to_json_value(value: object) -> JsonValue:
     return to_jsonable_python(value, fallback=repr, bytes_mode="base64")
+
+
+def _is_untraced(name: str) -> bool:
+    lowered = name.lower()
+
+    return lowered in UNTRACED_ARGUMENT_NAMES or any(part in lowered for part in UNTRACED_ARGUMENT_NAME_PARTS)
