@@ -332,6 +332,17 @@ class TestRequest:
 
         assert sent(fixtures_and_trace)[0]["args"] == {"url": "https://erp.invalid", "page": 2}
 
+    def test_only_whole_credential_names_are_left_out(self, eval_run, fixtures_and_trace, returned):
+        @evals.external("llm.complete")
+        def complete(**kwargs): ...
+
+        kept = ["max_tokens", "keys", "key", "sort_key", "keyword", "secretary", "authorization_id"]
+        dropped = ["access_token", "x_api_key", "db_password", "extra_headers", "cookie", "pwd"]
+        fixtures_and_trace.return_value = returned(None)
+        complete(**{name: 1 for name in kept + dropped})
+
+        assert sent(fixtures_and_trace)[0]["args"] == {name: 1 for name in kept}
+
     async def test_a_method_never_sends_its_instance(self, eval_run, fixtures_and_trace, returned):
         class Client:
             def __init__(self, token: str):

@@ -1,7 +1,7 @@
 from zamp_sdk.evals.constants.constants import (
     PLACEHOLDER_REQUEST_METHOD,
     PLACEHOLDER_REQUEST_URL,
-    UNTRACED_ARGUMENT_NAME_PARTS,
+    UNTRACED_ARGUMENT_NAME_SUFFIXES,
     UNTRACED_ARGUMENT_NAMES,
     DecoratedCallKind,
     FixtureErrorCode,
@@ -18,7 +18,7 @@ __all__ = [
     "PLACEHOLDER_REQUEST_METHOD",
     "PLACEHOLDER_REQUEST_URL",
     "SYNC_CALL_IN_WORKFLOW_ERROR",
-    "UNTRACED_ARGUMENT_NAME_PARTS",
+    "UNTRACED_ARGUMENT_NAME_SUFFIXES",
     "UNTRACED_ARGUMENT_NAMES",
     "DecoratedCallKind",
     "FixtureErrorCode",
