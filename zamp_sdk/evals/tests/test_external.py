@@ -351,13 +351,11 @@ class TestOnTheExecutor:
         with pytest.raises(RuntimeError, match="^eval_external_call action-1 FAILED: no eval run$"):
             await fetch_order("O1")
 
-    def test_sync_reads_the_bound_id_through_the_gateway_envelope(
-        self, executor_eval_run, fixtures_and_trace, returned, envelope
-    ):
-        fixtures_and_trace.return_value = envelope(returned({"id": "O1", "total": 7}))
+    def test_sync_refuses_in_workflow_code(self, executor_eval_run, fixtures_and_trace):
+        with pytest.raises(RuntimeError, match="^erp.order: a sync function .* make fetch_order_sync async$"):
+            fetch_order_sync("O1")
 
-        assert fetch_order_sync("O1") == Order(id="O1", total=7)
-        assert sent(fixtures_and_trace)[0]["invocation_id"] == "workflow-uuid"
+        fixtures_and_trace.assert_not_called()
 
 
 class TestTheActionLeavesNoTrace:

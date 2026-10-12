@@ -184,13 +184,8 @@ class TestOnTheExecutor:
         with pytest.raises(RuntimeError, match="^eval_observed_step action-1 FAILED: no eval run$"):
             await load("O1")
 
-    def test_sync_records_the_step_with_workflow_invocation_ids(
-        self, executor_eval_run, fixtures_and_trace, returned, envelope
-    ):
-        fixtures_and_trace.side_effect = [envelope(returned({"id": "O1"})), envelope()]
+    def test_sync_refuses_in_workflow_code(self, executor_eval_run, fixtures_and_trace):
+        with pytest.raises(RuntimeError, match="^steps.load: a sync function .* make load_sync async$"):
+            load_sync("O1")
 
-        assert load_sync("O1") == {"order": {"id": "O1"}}
-        assert [call["invocation_id"] for call in sent(fixtures_and_trace)] == [
-            "workflow-uuid",
-            "workflow-uuid",
-        ]
+        fixtures_and_trace.assert_not_called()

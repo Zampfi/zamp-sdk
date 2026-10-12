@@ -20,6 +20,7 @@ from zamp_sdk.evals.utils import (
     build_call_input,
     build_exception,
     parent_of,
+    raise_if_workflow_host,
     returned_value,
     run_blocking,
     run_observed,
@@ -76,6 +77,8 @@ def _decorator(
         def call_sync(*args: Any, **kwargs: Any) -> Any:
             if current_eval_trial_id() is None:
                 return func(*args, **kwargs)
+
+            raise_if_workflow_host(name, func)
 
             call = build_call_input(name, key, func, args, kwargs, parent_of(sys._getframe(1)))
             if kind is DecoratedCallKind.OBSERVE:
