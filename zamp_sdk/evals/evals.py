@@ -36,14 +36,17 @@ _external_call_outcome: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalC
 
 
 def external(name: str, key: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
+    """In an eval trial, answer the call from its fixture instead of running it; outside one, run it as written."""
     return _decorator(DecoratedCallKind.EXTERNAL, name, key)
 
 
 def observe(name: str, key: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
+    """In an eval trial, run the function and record what it returned or raised in the trace."""
     return _decorator(DecoratedCallKind.OBSERVE, name, key)
 
 
 async def read_trace() -> list[TraceEntry]:
+    """The calls this eval trial has traced so far, in order; empty outside a trial."""
     if current_eval_trial_id() is None:
         return []
 
