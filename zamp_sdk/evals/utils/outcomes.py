@@ -55,6 +55,7 @@ def as_return_type(func: Callable[..., object], value: JsonValue) -> object:
     return _build_httpx_response(loaded_httpx, FixtureHttpResponse.model_validate(value))
 
 
+# Both caches hold one entry per decorated function object, so they are bounded by decoration at import.
 @functools.cache
 def _return_type_adapter(func: Callable[..., object]) -> TypeAdapter[object] | None:
     annotation = _return_annotation(func)

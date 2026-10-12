@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
+from zamp_sdk.context.constants import ZAMP_METADATA_CONTEXT_KEY
 from zamp_sdk.logging import log_control
 
 
@@ -28,7 +29,7 @@ def reset_logging_state(monkeypatch):
 @pytest.fixture
 def bind_metadata_context():
     def bind(metadata):
-        bound = {"zamp_metadata_context": metadata}
+        bound = {ZAMP_METADATA_CONTEXT_KEY: metadata}
         context_utils = SimpleNamespace(get_variable_from_context=bound.get)
         return patch.dict(sys.modules, {"zamp_public_workflow_sdk.actions_hub.utils.context_utils": context_utils})
 
