@@ -1,4 +1,5 @@
 import sys
+from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -20,8 +21,20 @@ def eval_run(monkeypatch):
 
 @pytest.fixture
 def executor_eval_run(monkeypatch):
+    with _on_actions_hub(monkeypatch, {"eval_trial_id": "run1-1-item1-1"}):
+        yield
+
+
+@pytest.fixture
+def on_actions_hub_outside_a_trial(monkeypatch):
+    with _on_actions_hub(monkeypatch, {"branch_id": "b1"}):
+        yield
+
+
+@contextmanager
+def _on_actions_hub(monkeypatch, metadata):
     monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
-    bound = {"zamp_metadata_context": {"eval_trial_id": "run1-1-item1-1"}}
+    bound = {"zamp_metadata_context": metadata}
     modules = {
         "zamp_public_workflow_sdk.actions_hub.utils.context_utils": SimpleNamespace(
             get_variable_from_context=bound.get

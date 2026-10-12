@@ -200,6 +200,11 @@ class TestOnTheExecutor:
         with pytest.raises(RuntimeError, match="^eval_observed_step action-1 FAILED: no eval run$"):
             await load("O1")
 
+    def test_sync_runs_untouched_outside_a_trial(self, on_actions_hub_outside_a_trial, fixtures_and_trace):
+        assert load_sync("O1") == {"order": {"id": "O1"}}
+
+        fixtures_and_trace.assert_not_called()
+
     def test_sync_refuses_in_workflow_code(self, executor_eval_run, fixtures_and_trace):
         with pytest.raises(RuntimeError, match="^steps.load: a sync function .* make load_sync async$"):
             load_sync("O1")
