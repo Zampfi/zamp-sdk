@@ -1,7 +1,4 @@
-import sys
 import uuid
-from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 from pydantic import ValidationError
@@ -76,36 +73,24 @@ class TestCurrentEvalTrialId:
         monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "")
         assert current_eval_trial_id() is None
 
-    def test_actions_hub_reads_the_bound_metadata_context(self, monkeypatch):
+    def test_actions_hub_reads_the_bound_metadata_context(self, monkeypatch, bind_metadata_context):
         monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
         monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "from-env")
 
-        with _bound_metadata_context({"eval_trial_id": "run1-1-item1-1"}):
+        with bind_metadata_context({"eval_trial_id": "run1-1-item1-1"}):
             assert current_eval_trial_id() == "run1-1-item1-1"
 
-    def test_actions_hub_none_when_the_context_has_no_id(self, monkeypatch):
+    def test_actions_hub_none_when_the_context_has_no_id(self, monkeypatch, bind_metadata_context):
         monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
 
-        with _bound_metadata_context({"branch_id": "b1"}):
+        with bind_metadata_context({"branch_id": "b1"}):
             assert current_eval_trial_id() is None
 
-    def test_actions_hub_none_when_no_context_is_bound(self, monkeypatch):
+    def test_actions_hub_none_when_no_context_is_bound(self, monkeypatch, bind_metadata_context):
         monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
 
-        with _bound_metadata_context(None):
+        with bind_metadata_context(None):
             assert current_eval_trial_id() is None
-
-
-def _bound_metadata_context(metadata):
-    bound = {"zamp_metadata_context": metadata}
-    return patch.dict(
-        sys.modules,
-        {
-            "zamp_public_workflow_sdk.actions_hub.utils.context_utils": SimpleNamespace(
-                get_variable_from_context=bound.get
-            ),
-        },
-    )
 
 
 class TestResolveContext:

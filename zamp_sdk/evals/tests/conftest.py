@@ -20,28 +20,22 @@ def in_eval_trial(monkeypatch):
 
 
 @pytest.fixture
-def in_eval_trial_on_actions_hub(monkeypatch):
-    with _on_actions_hub(monkeypatch, {"eval_trial_id": "run1-1-item1-1"}):
+def in_eval_trial_on_actions_hub(monkeypatch, bind_metadata_context):
+    with _on_actions_hub(monkeypatch, bind_metadata_context({"eval_trial_id": "run1-1-item1-1"})):
         yield
 
 
 @pytest.fixture
-def on_actions_hub_outside_a_trial(monkeypatch):
-    with _on_actions_hub(monkeypatch, {"branch_id": "b1"}):
+def on_actions_hub_outside_a_trial(monkeypatch, bind_metadata_context):
+    with _on_actions_hub(monkeypatch, bind_metadata_context({"branch_id": "b1"})):
         yield
 
 
 @contextmanager
-def _on_actions_hub(monkeypatch, metadata):
+def _on_actions_hub(monkeypatch, bound_metadata_context):
     monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
-    bound = {"zamp_metadata_context": metadata}
-    modules = {
-        "zamp_public_workflow_sdk.actions_hub.utils.context_utils": SimpleNamespace(
-            get_variable_from_context=bound.get
-        ),
-        "temporalio": SimpleNamespace(workflow=SimpleNamespace(uuid4=lambda: SimpleNamespace(hex="workflow-uuid"))),
-    }
-    with patch.dict(sys.modules, modules):
+    temporalio = SimpleNamespace(workflow=SimpleNamespace(uuid4=lambda: SimpleNamespace(hex="workflow-uuid")))
+    with bound_metadata_context, patch.dict(sys.modules, {"temporalio": temporalio}):
         yield
 
 
