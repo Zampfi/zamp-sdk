@@ -5,7 +5,7 @@ from pydantic import JsonValue
 
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants import ACTION_RESPONSE_KEYS, SUCCESS_STATUSES
-from zamp_sdk.action_executor.models import ActionResponse
+from zamp_sdk.action_executor.models.action_response import ActionResponse
 from zamp_sdk.context import ExecutionHost, current_execution_host
 from zamp_sdk.evals.constants import EVAL_ACTION_FAILED_ERROR
 from zamp_sdk.evals.models import TracedCallInput

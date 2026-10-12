@@ -27,9 +27,6 @@
   reads `ZAMP_EVAL_TRIAL_ID` in a sandbox, or `eval_trial_id` from the bound metadata context on
   ActionsHub, and every API-route call to that deployment in a trial carries it as
   `X-EVAL-TRIAL-ID`, like the branch headers. Nothing is sent outside a trial.
-- **`ActionResponse`** (`zamp_sdk.action_executor.models`) describes the `{id, status, result,
-  error}` shape the action gateway answers with. `ActionExecutor.execute` still returns that
-  shape unchanged.
 
 ## 1.4.0
 
