@@ -20,7 +20,7 @@ class Raised(BaseModel):
     message: str
 
 
-class FixtureFailed(BaseModel):
+class FixtureLookupFailed(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["fixture_failed"]
@@ -28,5 +28,5 @@ class FixtureFailed(BaseModel):
     message: str
 
 
-ExternalCallOutcome: TypeAlias = Annotated[Returned | Raised | FixtureFailed, Field(discriminator="kind")]
-ObservedOutcome: TypeAlias = Annotated[Returned | Raised, Field(discriminator="kind")]
+ExternalCallOutcome: TypeAlias = Annotated[Returned | Raised | FixtureLookupFailed, Field(discriminator="kind")]
+ObservedStepOutcome: TypeAlias = Annotated[Returned | Raised, Field(discriminator="kind")]

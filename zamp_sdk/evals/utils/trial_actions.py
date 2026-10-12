@@ -7,7 +7,7 @@ from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants import ACTION_ENVELOPE_KEYS, SUCCESS_STATUSES
 from zamp_sdk.context import ExecutionHost, current_execution_host
 from zamp_sdk.evals.constants import EVAL_ACTION_FAILED_ERROR
-from zamp_sdk.evals.models import ExternalCallInput, GatewayEnvelope
+from zamp_sdk.evals.models import GatewayEnvelope, TracedCallInput
 from zamp_sdk.evals.utils.arguments import bind_arguments, key_value, trace_arguments
 
 
@@ -27,10 +27,10 @@ def build_call_input(
     args: tuple[object, ...],
     kwargs: dict[str, object],
     parent: str,
-) -> ExternalCallInput:
+) -> TracedCallInput:
     arguments = bind_arguments(func, args, kwargs)
 
-    return ExternalCallInput(
+    return TracedCallInput(
         name=name,
         key=key_value(arguments, key),
         invocation_id=new_invocation_id(),

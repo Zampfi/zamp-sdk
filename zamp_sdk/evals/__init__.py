@@ -9,12 +9,12 @@ from pydantic import TypeAdapter
 from zamp_sdk.context import current_eval_trial_id
 from zamp_sdk.evals.constants import DecoratedCallKind
 from zamp_sdk.evals.models import (
-    ExternalCallInput,
     ExternalCallOutcome,
-    FixtureFailed,
+    FixtureLookupFailed,
     Raised,
     ReadTraceResult,
-    TraceLine,
+    TracedCallInput,
+    TraceEntry,
 )
 from zamp_sdk.evals.utils import (
     build_call_input,
@@ -28,14 +28,14 @@ from zamp_sdk.evals.utils import (
 )
 from zamp_sdk.logging.constants import EVAL_EXTERNAL_CALL_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME
 
-__all__ = ["FixtureError", "TraceLine", "external", "observe", "read_trace"]
+__all__ = ["FixtureException", "TraceEntry", "external", "observe", "read_trace"]
 
 _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 
 _external_call_outcome: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalCallOutcome)
 
 
-class FixtureError(Exception):
+class FixtureException(Exception):
     pass
 
 
@@ -47,8 +47,8 @@ def observe(name: str, key: str | None = None) -> Callable[[_FunctionT], _Functi
     return _decorator(DecoratedCallKind.OBSERVE, name, key)
 
 
-async def read_trace() -> list[TraceLine]:
-    return ReadTraceResult.model_validate(await send_to_trial(EVAL_READ_TRACE_ACTION_NAME, {})).lines
+async def read_trace() -> list[TraceEntry]:
+    return ReadTraceResult.model_validate(await send_to_trial(EVAL_READ_TRACE_ACTION_NAME, {})).entries
 
 
 def _decorator(
@@ -88,12 +88,12 @@ def _decorator(
     return decorate
 
 
-async def _answer_from_fixture(func: Callable[..., Any], call: ExternalCallInput) -> Any:
+async def _answer_from_fixture(func: Callable[..., Any], call: TracedCallInput) -> Any:
     outcome = _external_call_outcome.validate_python(
         await send_to_trial(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
     )
-    if isinstance(outcome, FixtureFailed):
-        raise FixtureError(outcome.message)
+    if isinstance(outcome, FixtureLookupFailed):
+        raise FixtureException(outcome.message)
 
     if isinstance(outcome, Raised):
         raise build_exception(outcome)

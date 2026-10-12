@@ -1,21 +1,27 @@
-from zamp_sdk.evals.models.call_inputs import ExternalCallInput, ObservedStepInput
+from zamp_sdk.evals.models.call_inputs import ObservedStepInput, TracedCallInput
 from zamp_sdk.evals.models.gateway_envelope import GatewayEnvelope
-from zamp_sdk.evals.models.outcomes import ExternalCallOutcome, FixtureFailed, ObservedOutcome, Raised, Returned
+from zamp_sdk.evals.models.outcomes import (
+    ExternalCallOutcome,
+    FixtureLookupFailed,
+    ObservedStepOutcome,
+    Raised,
+    Returned,
+)
 from zamp_sdk.evals.models.response import FixtureResponse
-from zamp_sdk.evals.models.trace import ExternalCall, ObservedStep, ReadTraceResult, TraceLine
+from zamp_sdk.evals.models.trace import ExternalCall, ObservedStep, ReadTraceResult, TraceEntry
 
 __all__ = [
     "ExternalCall",
-    "ExternalCallInput",
+    "TracedCallInput",
     "ExternalCallOutcome",
-    "FixtureFailed",
+    "FixtureLookupFailed",
     "FixtureResponse",
     "GatewayEnvelope",
-    "ObservedOutcome",
+    "ObservedStepOutcome",
     "ObservedStep",
     "ObservedStepInput",
     "Raised",
     "ReadTraceResult",
     "Returned",
-    "TraceLine",
+    "TraceEntry",
 ]

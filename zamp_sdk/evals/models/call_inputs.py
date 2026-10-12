@@ -1,9 +1,9 @@
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from zamp_sdk.evals.models.outcomes import ObservedOutcome
+from zamp_sdk.evals.models.outcomes import ObservedStepOutcome
 
 
-class ExternalCallInput(BaseModel):
+class TracedCallInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
@@ -13,5 +13,5 @@ class ExternalCallInput(BaseModel):
     args: dict[str, JsonValue]
 
 
-class ObservedStepInput(ExternalCallInput):
-    outcome: ObservedOutcome
+class ObservedStepInput(TracedCallInput):
+    outcome: ObservedStepOutcome

@@ -5,7 +5,7 @@ from types import FrameType
 
 from pydantic import JsonValue
 
-from zamp_sdk.evals.models import ExternalCallInput, ObservedOutcome, ObservedStepInput
+from zamp_sdk.evals.models import ObservedStepInput, ObservedStepOutcome, TracedCallInput
 from zamp_sdk.evals.utils.blocking import ResultT, run_blocking
 from zamp_sdk.evals.utils.outcomes import to_raised, to_returned
 from zamp_sdk.evals.utils.trial_actions import send_to_trial
@@ -18,7 +18,7 @@ def parent_of(frame: FrameType) -> str:
     return _enclosing_observe_name.get() or f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_code.co_name}"
 
 
-async def run_observed(call: ExternalCallInput, invoke: Callable[[], Awaitable[ResultT]]) -> ResultT:
+async def run_observed(call: TracedCallInput, invoke: Callable[[], Awaitable[ResultT]]) -> ResultT:
     reset_token = _enclosing_observe_name.set(call.name)
     try:
         result = await invoke()
@@ -33,7 +33,7 @@ async def run_observed(call: ExternalCallInput, invoke: Callable[[], Awaitable[R
     return result
 
 
-def run_observed_sync(call: ExternalCallInput, invoke: Callable[[], ResultT]) -> ResultT:
+def run_observed_sync(call: TracedCallInput, invoke: Callable[[], ResultT]) -> ResultT:
     reset_token = _enclosing_observe_name.set(call.name)
     try:
         result = invoke()
@@ -48,5 +48,5 @@ def run_observed_sync(call: ExternalCallInput, invoke: Callable[[], ResultT]) ->
     return result
 
 
-def _observed_step_params(call: ExternalCallInput, outcome: ObservedOutcome) -> dict[str, JsonValue]:
+def _observed_step_params(call: TracedCallInput, outcome: ObservedStepOutcome) -> dict[str, JsonValue]:
     return ObservedStepInput(**call.model_dump(), outcome=outcome).model_dump(mode="json")

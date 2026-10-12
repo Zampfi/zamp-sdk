@@ -178,13 +178,13 @@ class TestRaises:
             "FIXTURE_EXHAUSTED", "erp.order:O1#3: the fixture list for this call ran out"
         )
 
-        with pytest.raises(evals.FixtureError, match="^erp.order:O1#3: the fixture list for this call ran out$"):
+        with pytest.raises(evals.FixtureException, match="^erp.order:O1#3: the fixture list for this call ran out$"):
             await fetch_order("O1")
 
     def test_a_sync_fixture_failure_raises_fixture_error(self, eval_run, fixtures_and_trace, fixture_failed):
         fixtures_and_trace.return_value = fixture_failed("FIXTURE_MISSING", "erp.status#1: no fixture")
 
-        with pytest.raises(evals.FixtureError, match="^erp.status#1: no fixture$"):
+        with pytest.raises(evals.FixtureException, match="^erp.status#1: no fixture$"):
             fetch_status_sync()
 
     async def test_a_failed_request_propagates(self, eval_run, fixtures_and_trace):
@@ -342,7 +342,7 @@ class TestOnTheExecutor:
     ):
         fixtures_and_trace.return_value = envelope(fixture_failed("FIXTURE_MISSING", "erp.order:O1#1: no fixture"))
 
-        with pytest.raises(evals.FixtureError, match="^erp.order:O1#1: no fixture$"):
+        with pytest.raises(evals.FixtureException, match="^erp.order:O1#1: no fixture$"):
             await fetch_order("O1")
 
     async def test_a_failed_action_raises(self, executor_eval_run, fixtures_and_trace, envelope):

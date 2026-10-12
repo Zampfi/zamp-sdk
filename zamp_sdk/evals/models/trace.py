@@ -3,7 +3,7 @@ from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from zamp_sdk.evals.models.outcomes import ExternalCallOutcome, ObservedOutcome
+from zamp_sdk.evals.models.outcomes import ExternalCallOutcome, ObservedStepOutcome
 
 
 class TracedCall(BaseModel):
@@ -11,11 +11,13 @@ class TracedCall(BaseModel):
 
     name: str
     key: str | None = Field(description="Value of the parameter the decorator names as key, if it names one")
-    n: int = Field(ge=1, description="Calls of this name and key so far in the trial, this one included")
-    invocation_id: str
+    call_number: int = Field(ge=1, description="Calls of this name and key so far in the trial, this one included")
+    invocation_id: str = Field(
+        description="Id the SDK gives this call; a retry of the call has the same id, so it keeps its call_number"
+    )
     parent: str = Field(description="Enclosing observe step, else file:function; for reading only, never matched")
     args: dict[str, JsonValue] = Field(description="Arguments by name; headers and credentials are never written")
-    at: datetime
+    recorded_at: datetime
 
 
 class ExternalCall(TracedCall):
@@ -25,13 +27,13 @@ class ExternalCall(TracedCall):
 
 class ObservedStep(TracedCall):
     kind: Literal["observe"]
-    outcome: ObservedOutcome
+    outcome: ObservedStepOutcome
 
 
-TraceLine: TypeAlias = Annotated[ExternalCall | ObservedStep, Field(discriminator="kind")]
+TraceEntry: TypeAlias = Annotated[ExternalCall | ObservedStep, Field(discriminator="kind")]
 
 
 class ReadTraceResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    lines: list[TraceLine]
+    entries: list[TraceEntry]
