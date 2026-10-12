@@ -10,7 +10,7 @@ class Returned(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     kind: Literal["returned"]
-    value: JsonValue
+    value: JsonValue = Field(description="What the call returned as JSON; bytes at any depth are base64 text")
 
 
 class Raised(BaseModel):

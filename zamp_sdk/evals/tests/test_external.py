@@ -111,6 +111,15 @@ class TestReturns:
 
         assert await fetch_pdf() == b"%PDF\xfb\xff"
 
+    async def test_bytes_inside_a_return_type_are_read_back_from_base64(self, eval_run, fixtures_and_trace, returned):
+        @evals.external("erp.pdfs")
+        async def fetch_pdfs() -> dict[str, list[bytes]]:
+            raise NotImplementedError
+
+        fixtures_and_trace.return_value = returned({"O1": ["JVBERvv_"]})
+
+        assert await fetch_pdfs() == {"O1": [b"%PDF\xfb\xff"]}
+
     async def test_a_return_type_pydantic_cannot_validate_returns_the_raw_value(
         self, eval_run, fixtures_and_trace, returned
     ):

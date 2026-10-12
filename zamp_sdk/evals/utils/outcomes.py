@@ -2,10 +2,11 @@ import importlib
 import inspect
 import sys
 from collections.abc import Callable
+from dataclasses import is_dataclass
 from types import ModuleType
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, is_typeddict
 
-from pydantic import ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter
 
 from zamp_sdk.evals.constants import PLACEHOLDER_REQUEST_METHOD, PLACEHOLDER_REQUEST_URL
 from zamp_sdk.evals.models import FixtureResponse, Raised, Returned
@@ -14,7 +15,8 @@ from zamp_sdk.evals.utils.arguments import to_json_value
 if TYPE_CHECKING:
     import httpx
 
-# Traces write bytes as base64, so a bytes return reads its fixture value back the same way.
+# Traces write bytes as base64 at any depth, so a return type reads its fixture value back the same way. A model,
+# dataclass or TypedDict carries its own config, which pydantic will not let this one override.
 _BYTES_AS_BASE64 = ConfigDict(val_json_bytes="base64")
 
 
@@ -48,13 +50,19 @@ def returned_value(func: Callable[..., object], value: JsonValue) -> object:
 
 
 def _to_return_type(annotation: object, value: JsonValue) -> object:
-    config = _BYTES_AS_BASE64 if annotation in (bytes, bytes | None) else None
+    config = None if _has_own_config(annotation) else _BYTES_AS_BASE64
     try:
         adapter: TypeAdapter[object] = TypeAdapter(annotation, config=config)
     except PydanticSchemaGenerationError:
         return value
 
     return adapter.validate_python(value)
+
+
+def _has_own_config(annotation: object) -> bool:
+    return isinstance(annotation, type) and (
+        issubclass(annotation, BaseModel) or is_dataclass(annotation) or is_typeddict(annotation)
+    )
 
 
 def _return_annotation(func: Callable[..., object]) -> object:
