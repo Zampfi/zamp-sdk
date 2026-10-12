@@ -11,22 +11,22 @@ from zamp_sdk.evals.utils.eval_actions import call_eval_action
 from zamp_sdk.evals.utils.outcomes import to_raised, to_returned
 from zamp_sdk.logging.constants import EVAL_OBSERVED_STEP_ACTION_NAME
 
-_enclosing_observe_name: ContextVar[str | None] = ContextVar("zamp_eval_enclosing_observe", default=None)
+_enclosing_observed_step_name: ContextVar[str | None] = ContextVar("zamp_eval_enclosing_observed_step", default=None)
 
 
 def parent_of(frame: FrameType) -> str:
-    return _enclosing_observe_name.get() or f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_code.co_name}"
+    return _enclosing_observed_step_name.get() or f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_code.co_name}"
 
 
 async def run_observed(call: TracedCallInput, invoke: Callable[[], Awaitable[ResultT]]) -> ResultT:
-    reset_token = _enclosing_observe_name.set(call.name)
+    reset_token = _enclosing_observed_step_name.set(call.name)
     try:
         result = await invoke()
     except Exception as error:
         await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
         raise
     finally:
-        _enclosing_observe_name.reset(reset_token)
+        _enclosing_observed_step_name.reset(reset_token)
 
     await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result)))
 
@@ -34,14 +34,14 @@ async def run_observed(call: TracedCallInput, invoke: Callable[[], Awaitable[Res
 
 
 def run_observed_sync(call: TracedCallInput, invoke: Callable[[], ResultT]) -> ResultT:
-    reset_token = _enclosing_observe_name.set(call.name)
+    reset_token = _enclosing_observed_step_name.set(call.name)
     try:
         result = invoke()
     except Exception as error:
         run_blocking(call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error))))
         raise
     finally:
-        _enclosing_observe_name.reset(reset_token)
+        _enclosing_observed_step_name.reset(reset_token)
 
     run_blocking(call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result))))
 

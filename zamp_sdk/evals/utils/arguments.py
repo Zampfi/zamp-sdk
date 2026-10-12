@@ -22,11 +22,11 @@ def bind_arguments(
     return arguments
 
 
-def key_value(arguments: dict[str, object], key_argument: str | None) -> str | None:
+def key_from_arguments(arguments: dict[str, object], key_argument: str | None) -> str | None:
     return None if key_argument is None else str(arguments[key_argument])
 
 
-def trace_arguments(arguments: dict[str, object]) -> dict[str, JsonValue]:
+def arguments_to_trace(arguments: dict[str, object]) -> dict[str, JsonValue]:
     return {name: to_json_value(value) for name, value in arguments.items() if not _is_untraced(name)}
 
 

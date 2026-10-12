@@ -18,12 +18,12 @@ from zamp_sdk.evals.models import (
 )
 from zamp_sdk.evals.utils import (
     FixtureLookupError,
-    build_call_input,
+    as_return_type,
     build_exception,
+    build_traced_call_input,
     call_eval_action,
     parent_of,
     raise_if_on_actions_hub,
-    returned_value,
     run_blocking,
     run_observed,
     run_observed_sync,
@@ -32,17 +32,17 @@ from zamp_sdk.logging.constants import EVAL_EXTERNAL_CALL_ACTION_NAME, EVAL_READ
 
 _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 
-_external_call_outcome: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalCallOutcome)
+_external_call_outcome_adapter: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalCallOutcome)
 
 
 def external(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
     """In an eval trial, answer the call from its fixture instead of running it; outside one, run it as written."""
-    return _decorator(DecoratedCallKind.EXTERNAL, name, key_argument)
+    return _build_decorator(DecoratedCallKind.EXTERNAL, name, key_argument)
 
 
 def observe(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
     """In an eval trial, run the function and record what it returned or raised in the trace."""
-    return _decorator(DecoratedCallKind.OBSERVE, name, key_argument)
+    return _build_decorator(DecoratedCallKind.OBSERVE, name, key_argument)
 
 
 async def read_trace() -> list[TraceEntry]:
@@ -53,7 +53,7 @@ async def read_trace() -> list[TraceEntry]:
     return ReadTraceResult.model_validate(await call_eval_action(EVAL_READ_TRACE_ACTION_NAME, {})).entries
 
 
-def _decorator(
+def _build_decorator(
     kind: DecoratedCallKind,
     name: str,
     key_argument: str | None,
@@ -69,7 +69,7 @@ def _decorator(
                 if current_eval_trial_id() is None:
                     return func(*args, **kwargs)
 
-                call = build_call_input(name, key_argument, func, args, kwargs, parent_of(sys._getframe(1)))
+                call = build_traced_call_input(name, key_argument, func, args, kwargs, parent_of(sys._getframe(1)))
                 if kind is DecoratedCallKind.OBSERVE:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
 
@@ -84,7 +84,7 @@ def _decorator(
 
             raise_if_on_actions_hub(name, func)
 
-            call = build_call_input(name, key_argument, func, args, kwargs, parent_of(sys._getframe(1)))
+            call = build_traced_call_input(name, key_argument, func, args, kwargs, parent_of(sys._getframe(1)))
             if kind is DecoratedCallKind.OBSERVE:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
 
@@ -96,7 +96,7 @@ def _decorator(
 
 
 async def _answer_from_fixture(func: Callable[..., Any], call: TracedCallInput) -> Any:
-    outcome = _external_call_outcome.validate_python(
+    outcome = _external_call_outcome_adapter.validate_python(
         await call_eval_action(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
     )
     if isinstance(outcome, FixtureLookupFailed):
@@ -105,4 +105,4 @@ async def _answer_from_fixture(func: Callable[..., Any], call: TracedCallInput) 
     if isinstance(outcome, Raised):
         raise build_exception(outcome)
 
-    return returned_value(func, outcome.value)
+    return as_return_type(func, outcome.value)

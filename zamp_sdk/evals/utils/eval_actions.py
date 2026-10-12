@@ -9,7 +9,7 @@ from zamp_sdk.action_executor.models import ActionResponse
 from zamp_sdk.context import ExecutionHost, current_execution_host
 from zamp_sdk.evals.constants import EVAL_ACTION_FAILED_ERROR
 from zamp_sdk.evals.models import TracedCallInput
-from zamp_sdk.evals.utils.arguments import bind_arguments, key_value, trace_arguments
+from zamp_sdk.evals.utils.arguments import arguments_to_trace, bind_arguments, key_from_arguments
 
 
 def new_invocation_id() -> str:
@@ -21,7 +21,7 @@ def new_invocation_id() -> str:
     return uuid.uuid4().hex
 
 
-def build_call_input(
+def build_traced_call_input(
     name: str,
     key_argument: str | None,
     func: Callable[..., object],
@@ -33,10 +33,10 @@ def build_call_input(
 
     return TracedCallInput(
         name=name,
-        key=key_value(arguments, key_argument),
+        key=key_from_arguments(arguments, key_argument),
         invocation_id=new_invocation_id(),
         parent=parent,
-        args=trace_arguments(arguments),
+        args=arguments_to_trace(arguments),
     )
 
 
