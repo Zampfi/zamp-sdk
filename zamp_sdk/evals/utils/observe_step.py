@@ -5,12 +5,11 @@ from types import FrameType
 
 from pydantic import JsonValue
 
-from zamp_sdk.evals.constants import STEP_ERROR_NOT_TRACED_MESSAGE
+from zamp_sdk.evals.constants import EVAL_OBSERVED_STEP_ACTION_NAME, STEP_ERROR_NOT_TRACED_MESSAGE
 from zamp_sdk.evals.models import ObservedStepInput, ObservedStepOutcome, TracedCallInput
 from zamp_sdk.evals.utils.blocking import ResultT, run_blocking
 from zamp_sdk.evals.utils.eval_actions import call_eval_action
 from zamp_sdk.evals.utils.outcomes import to_raised, to_returned
-from zamp_sdk.logging.constants import EVAL_OBSERVED_STEP_ACTION_NAME
 
 _enclosing_observed_step_name: ContextVar[str | None] = ContextVar("zamp_eval_enclosing_observed_step", default=None)
 

@@ -1,14 +1,11 @@
+from zamp_sdk.evals.constants.constants import (
+    EVAL_EXTERNAL_CALL_ACTION_NAME,
+    EVAL_OBSERVED_STEP_ACTION_NAME,
+    EVAL_READ_TRACE_ACTION_NAME,
+)
+
 # Name of the action dispatched through ActionExecutor for every emitted block.
 EMIT_LOG_ACTION_NAME = "emit_log"
-
-# Name of the action a decorated external call goes through in an eval trial, to be answered from its fixture.
-EVAL_EXTERNAL_CALL_ACTION_NAME = "eval_external_call"
-
-# Name of the action an observed step goes through in an eval trial, to record its outcome in the trace.
-EVAL_OBSERVED_STEP_ACTION_NAME = "eval_observed_step"
-
-# Name of the action read_trace goes through in an eval trial.
-EVAL_READ_TRACE_ACTION_NAME = "eval_read_trace"
 
 # Prefix applied to identifiers generated for tool-call blocks emitted from a script.
 EMIT_ID_PREFIX = "emit_"

@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Annotated, get_args, get_origin, is_typeddict
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter
 
 from zamp_sdk.evals.constants import PLACEHOLDER_REQUEST_METHOD, PLACEHOLDER_REQUEST_URL
-from zamp_sdk.evals.models import FixtureHttpResponse, Raised, Returned
+from zamp_sdk.evals.models import FixtureHttpResponse, RaisedOutcome, ReturnedOutcome
 from zamp_sdk.evals.utils.arguments import to_json_value
 
 if TYPE_CHECKING:
@@ -21,18 +21,18 @@ if TYPE_CHECKING:
 _BYTES_AS_BASE64 = ConfigDict(val_json_bytes="base64")
 
 
-def to_raised(error: Exception) -> Raised:
+def to_raised(error: Exception) -> RaisedOutcome:
     # str() of a KeyError quotes its key, so rebuilding one from that text would quote it twice.
     message = str(error.args[0]) if isinstance(error, KeyError) and error.args else str(error)
 
-    return Raised(kind="raised", type=f"{type(error).__module__}.{type(error).__name__}", message=message)
+    return RaisedOutcome(kind="raised", type=f"{type(error).__module__}.{type(error).__name__}", message=message)
 
 
-def to_returned(result: object) -> Returned:
-    return Returned(kind="returned", value=to_json_value(result))
+def to_returned(result: object) -> ReturnedOutcome:
+    return ReturnedOutcome(kind="returned", value=to_json_value(result))
 
 
-def build_exception(raised: Raised) -> Exception:
+def build_exception(raised: RaisedOutcome) -> Exception:
     module_name, _, class_name = raised.type.rpartition(".")
 
     return getattr(importlib.import_module(module_name), class_name)(raised.message)

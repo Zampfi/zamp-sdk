@@ -6,14 +6,14 @@ from zamp_sdk.evals.constants import FixtureErrorCode
 
 
 # Replies come from the engine, so a field it adds later is ignored rather than failing an older SDK.
-class Returned(BaseModel):
+class ReturnedOutcome(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     kind: Literal["returned"]
     value: JsonValue = Field(description="What the call returned as JSON; bytes at any depth are base64 text")
 
 
-class Raised(BaseModel):
+class RaisedOutcome(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     kind: Literal["raised"]
@@ -21,7 +21,7 @@ class Raised(BaseModel):
     message: str
 
 
-class FixtureLookupFailed(BaseModel):
+class FixtureLookupFailedOutcome(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     kind: Literal["fixture_failed"]
@@ -29,5 +29,7 @@ class FixtureLookupFailed(BaseModel):
     message: str
 
 
-ExternalCallOutcome: TypeAlias = Annotated[Returned | Raised | FixtureLookupFailed, Field(discriminator="kind")]
-ObservedStepOutcome: TypeAlias = Annotated[Returned | Raised, Field(discriminator="kind")]
+ExternalCallOutcome: TypeAlias = Annotated[
+    ReturnedOutcome | RaisedOutcome | FixtureLookupFailedOutcome, Field(discriminator="kind")
+]
+ObservedStepOutcome: TypeAlias = Annotated[ReturnedOutcome | RaisedOutcome, Field(discriminator="kind")]

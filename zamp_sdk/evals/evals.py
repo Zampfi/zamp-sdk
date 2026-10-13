@@ -7,11 +7,17 @@ from typing import Any, TypeVar, cast
 from pydantic import TypeAdapter
 
 from zamp_sdk.context import current_eval_trial_id
-from zamp_sdk.evals.constants import GENERATOR_FUNCTION_ERROR, KEY_ARGUMENT_NOT_A_PARAMETER_ERROR, DecoratedCallKind
+from zamp_sdk.evals.constants import (
+    EVAL_EXTERNAL_CALL_ACTION_NAME,
+    EVAL_READ_TRACE_ACTION_NAME,
+    GENERATOR_FUNCTION_ERROR,
+    KEY_ARGUMENT_NOT_A_PARAMETER_ERROR,
+    DecoratedCallKind,
+)
 from zamp_sdk.evals.models import (
     ExternalCallOutcome,
-    FixtureLookupFailed,
-    Raised,
+    FixtureLookupFailedOutcome,
+    RaisedOutcome,
     ReadTraceResult,
     TracedCallInput,
     TraceEntry,
@@ -29,7 +35,6 @@ from zamp_sdk.evals.utils import (
     run_observed,
     run_observed_sync,
 )
-from zamp_sdk.logging.constants import EVAL_EXTERNAL_CALL_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME
 
 _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 
@@ -110,10 +115,10 @@ async def _answer_from_fixture(func: Callable[..., Any], call: TracedCallInput) 
     outcome = _external_call_outcome_adapter.validate_python(
         await call_eval_action(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
     )
-    if isinstance(outcome, FixtureLookupFailed):
+    if isinstance(outcome, FixtureLookupFailedOutcome):
         raise FixtureLookupError(outcome.message)
 
-    if isinstance(outcome, Raised):
+    if isinstance(outcome, RaisedOutcome):
         raise build_exception(outcome)
 
     return as_return_type(func, outcome.value)
