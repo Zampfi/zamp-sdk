@@ -4,7 +4,7 @@ import os
 from typing import Any, Optional
 
 from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
-from zamp_sdk.context.constants import EVAL_TRIAL_ID_METADATA_KEY, ZAMP_METADATA_CONTEXT_KEY
+from zamp_sdk.context.constants import EVAL_TRIAL_ID_FIELD, ZAMP_METADATA_CONTEXT_KEY
 from zamp_sdk.context.env import (
     ENV_BRANCH_ID,
     ENV_CHANNEL_ID,
@@ -69,7 +69,7 @@ def current_eval_trial_id() -> str | None:
     if metadata is None:
         return None
 
-    return metadata.get(EVAL_TRIAL_ID_METADATA_KEY)
+    return metadata.get(EVAL_TRIAL_ID_FIELD)
 
 
 def resolve_channel_context() -> Optional[ChannelContext]:
