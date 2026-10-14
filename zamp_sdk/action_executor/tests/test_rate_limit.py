@@ -57,6 +57,13 @@ class _SpawnResult(BaseModel):
     task_id: str | None = None
 
 
+class _Output(BaseModel):
+    """A caller's ``return_type`` for an action whose own output has a ``result``."""
+
+    result: dict | None = None
+    saved: bool = False
+
+
 class _Envelope(BaseModel):
     """A ``return_type`` the gateway applied to its envelope."""
 
@@ -227,6 +234,9 @@ class TestNotARefusal:
             # The prefix is the contract: the word anywhere else is not a refusal.
             {"error": "upstream said RATE_LIMITED: but this is a quote"},
             {"id": "wf-9", "status": "COMPLETED", "result": ["not", "a", "mapping"], "error": None},
+            # Outside the gateway's envelope, a nested ``result`` is the action's own output.
+            {"result": {"error": _TASK_REFUSAL}, "saved": True},
+            _Output(result={"error": _TASK_REFUSAL}, saved=True),
             _SpawnResult(task_id="t-1"),
             _Envelope(id="wf-10", status="COMPLETED", result={"task_id": "t-2"}),
         ],

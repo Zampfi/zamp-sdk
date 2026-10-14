@@ -133,7 +133,8 @@ class ActionExecutor:
         the refusal as its ``error``, and through the gateway a refused call is a FAILED envelope
         with it as ``error`` (a refused agent task, a COMPLETED envelope whose ``result`` has
         it). The refusal starts with ``RATE_LIMITED:``. ``result`` is read as a dict or as the
-        model a ``return_type`` made of it.
+        model a ``return_type`` made of it. Its own ``result`` is read only when it is the
+        gateway's envelope: anywhere else, that is the action's output.
         """
 
         def field(value: Any, name: str) -> Any:
@@ -141,7 +142,12 @@ class ActionExecutor:
                 return value.get(name)
             return getattr(value, name, None) if isinstance(value, BaseModel) else None
 
-        for value in (result, field(result, "result")):
+        def is_envelope(value: Any) -> bool:
+            if isinstance(value, BaseModel):
+                return ACTION_ENVELOPE_KEYS.issubset(type(value).model_fields)
+            return isinstance(value, dict) and ACTION_ENVELOPE_KEYS.issubset(value)
+
+        for value in (result, field(result, "result")) if is_envelope(result) else (result,):
             error = field(value, "error")
             if isinstance(error, str) and error.startswith(RATE_LIMITED_PREFIX):
                 raise RateLimitedError.from_in_band(error)
