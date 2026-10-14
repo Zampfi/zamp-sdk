@@ -52,6 +52,22 @@ def sent(execute_action):
     return [call.args[1] for call in execute_action.call_args_list]
 
 
+SKILL_CODE = """
+class OrderLockedError(Exception):
+    pass
+
+@evals.external_call("erp.cancel", key_argument="order_id")
+async def cancel_order(order_id: str) -> None:
+    raise OrderLockedError(order_id)
+"""
+
+
+def _exec_skill_code():
+    skill_globals = {"__name__": "skill_code_run_by_exec", "evals": evals}
+    exec(SKILL_CODE, skill_globals)
+    return skill_globals
+
+
 class TestOutsideAnEvalTrial:
     async def test_async_runs_untouched(self, execute_action):
         assert await fetch_order("O1") == Order(id="O1", total=-1)
@@ -306,6 +322,26 @@ class TestRaises:
             await fetch_order("O1")
 
         lazy_module.__getattr__.assert_not_called()
+
+    async def test_an_exception_defined_in_code_run_by_exec_is_read_from_its_globals(
+        self, in_eval_trial, execute_action, raised
+    ):
+        cancel_order = _exec_skill_code()["cancel_order"]
+        execute_action.return_value = raised("skill_code_run_by_exec.OrderLockedError", "locked")
+
+        with pytest.raises(Exception, match="^locked$") as error:
+            await cancel_order("O1")
+
+        assert type(error.value).__name__ == "OrderLockedError"
+
+    async def test_a_name_in_its_globals_that_is_not_an_exception_class_raises_the_lookup_error(
+        self, in_eval_trial, execute_action, raised
+    ):
+        cancel_order = _exec_skill_code()["cancel_order"]
+        execute_action.return_value = raised("skill_code_run_by_exec.cancel_order", "boom")
+
+        with pytest.raises(evals.FixtureLookupError, match="^skill_code_run_by_exec.cancel_order is not an exception"):
+            await cancel_order("O1")
 
     async def test_an_httpx_transport_error(self, in_eval_trial, execute_action, raised):
         execute_action.return_value = raised("httpx.ConnectTimeout", "timed out")

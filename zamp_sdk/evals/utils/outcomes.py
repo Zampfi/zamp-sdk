@@ -3,7 +3,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import is_dataclass
 from types import ModuleType
-from typing import TYPE_CHECKING, Annotated, ForwardRef, Literal, NamedTuple, get_args, get_origin, is_typeddict
+from typing import TYPE_CHECKING, Annotated, Any, ForwardRef, Literal, NamedTuple, get_args, get_origin, is_typeddict
 
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter
 
@@ -36,12 +36,17 @@ def to_returned(result: object) -> ReturnedOutcome:
     return ReturnedOutcome(kind="returned", value=to_json_value(result))
 
 
-def build_exception(raised: RaisedOutcome) -> Exception:
+def build_exception(raised: RaisedOutcome, function_globals: dict[str, Any]) -> Exception:
     module_name, _, class_name = raised.type.rpartition(".")
 
-    # vars() rather than getattr(), so a module's __getattr__ cannot import anything for the fixture
-    module = sys.modules.get(module_name)
-    error_class = vars(module).get(class_name) if module is not None else None
+    # Code run by exec() on the executor has no module in sys.modules, so its own classes are read from its globals
+    if module_name == function_globals.get("__name__"):
+        error_class = function_globals.get(class_name)
+    else:
+        # vars() rather than getattr(), so a module's __getattr__ cannot import anything for the fixture
+        module = sys.modules.get(module_name)
+        error_class = vars(module).get(class_name) if module is not None else None
+
     if isinstance(error_class, type) and issubclass(error_class, Exception):
         return error_class(raised.message)
 

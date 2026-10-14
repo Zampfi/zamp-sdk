@@ -95,7 +95,7 @@ def _build_decorator(
                 if kind is DecoratedCallKind.OBSERVED_STEP:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
 
-                return _answer_from_fixture(return_type, call)
+                return _answer_from_fixture(return_type, func.__globals__, call)
 
             return cast(_FunctionT, inspect.markcoroutinefunction(call_async))
 
@@ -110,14 +110,16 @@ def _build_decorator(
             if kind is DecoratedCallKind.OBSERVED_STEP:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
 
-            return run_blocking(_answer_from_fixture(return_type, call))
+            return run_blocking(_answer_from_fixture(return_type, func.__globals__, call))
 
         return cast(_FunctionT, call_sync)
 
     return decorate
 
 
-async def _answer_from_fixture(return_type: Callable[[], ReturnType], call: TracedCallInput) -> Any:
+async def _answer_from_fixture(
+    return_type: Callable[[], ReturnType], function_globals: dict[str, Any], call: TracedCallInput
+) -> Any:
     outcome = _external_call_outcome_adapter.validate_python(
         await call_eval_action(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
     )
@@ -125,6 +127,6 @@ async def _answer_from_fixture(return_type: Callable[[], ReturnType], call: Trac
         raise FixtureLookupError(outcome.message)
 
     if isinstance(outcome, RaisedOutcome):
-        raise build_exception(outcome)
+        raise build_exception(outcome, function_globals)
 
     return as_return_type(return_type(), outcome.value)
