@@ -207,7 +207,7 @@ constraint, which you declare in the `CREATE TABLE` or add later with
 
 | Exception | When |
 |-----------|------|
-| `RateLimitedError` | The platform refused the call for a rate limit (see [Rate limits](#rate-limits)). A subclass of `HttpClientError` |
+| `RateLimitedError` | `POST /actions` answered 429: the platform refused the call for a rate limit (see [Rate limits](#rate-limits)). A subclass of `HttpClientError` |
 | `HttpClientError` | HTTP request fails (non-2xx status, network error, timeout) |
 | `RuntimeError` | Action reaches a terminal failure state (FAILED, CANCELED, TERMINATED, TIMED_OUT) |
 | `TimeoutError` | Polling for action result exceeds the timeout limit |
@@ -232,15 +232,15 @@ except TimeoutError as e:
 ### Rate limits
 
 The platform limits how fast an organization (and, where a rule says so, one user or agent) can
-start each kind of work. A refused call was **not started**. The SDK raises `RateLimitedError` at
-once and never retries it: stop, or try again after `retry_after_seconds`, never in a loop.
+start each kind of work. A refused call was **not started**. When `POST /actions` is answered 429,
+the SDK raises `RateLimitedError` at once and never retries it: stop, or try again after
+`retry_after_seconds`, never in a loop.
 
 - `message` is the platform's explanation, `retry_after_seconds` the wait it named (`None` when
-  no wait was named, as when the call can never fit the limit), and `status_code` is 429.
-- `POST /actions` answered 429 reads `HTTP 429 from <url>: <message>`.
-- A refusal the platform reports in-band raises too, and reads as the platform's
-  `RATE_LIMITED: ...` string: a refused agent task, which completes with that `error`, and a call
-  refused through the code executor's gateway, a FAILED envelope with that `error`.
+  no wait was named, as when the call can never fit the limit), and `status_code` is 429. It reads
+  `HTTP 429 from <url>: <message>`.
+- A refusal the platform reports in-band is returned as a result, as before: a refused agent task
+  completes with an `error` that starts `RATE_LIMITED:`, for the caller to read.
 - A database call refused for a rate limit raises `AgentDbError` from the `RateLimitedError`
   (its `__cause__`).
 

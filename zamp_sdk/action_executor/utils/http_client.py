@@ -1,21 +1,18 @@
 import asyncio
 import json
 import math
-import re
 from typing import Any, Dict, NoReturn, Optional, Union
 
 import aiohttp
 from pydantic import BaseModel
 
-from zamp_sdk.action_executor.constants import HTTP_TOO_MANY_REQUESTS, RATE_LIMITED_PREFIX, RETRY_AFTER_HEADER
+from zamp_sdk.action_executor.constants import HTTP_TOO_MANY_REQUESTS, RETRY_AFTER_HEADER
 from zamp_sdk.logger import get_logger
 
 logger = get_logger(__name__)
 
 # The message of a 429 that carries none of its own: one from a proxy in front of the platform.
 _DEFAULT_RATE_LIMITED_MESSAGE = "Too many requests."
-# The wait an in-band refusal names: "... Wait 24 s before retrying; ...".
-_IN_BAND_WAIT_RE = re.compile(r"\bWait (\d+(?:\.\d+)?) s\b")
 
 
 class HttpClientError(Exception):
@@ -32,25 +29,23 @@ class HttpClientError(Exception):
 
 
 class RateLimitedError(HttpClientError):
-    """The platform refused to start a call for a rate limit. Nothing was started.
+    """A ``POST`` answered 429: the platform refused to start a call for a rate limit.
 
     ``message`` is the platform's own explanation (who is over which limit, how long to wait, not
     to retry in a loop) and ``retry_after_seconds`` the wait it named, or ``None`` when no wait was
     named, as when the call can never fit the limit. ``status_code`` is always 429.
 
-    The SDK raises it at once and never retries the call: for a ``POST`` answered 429, and for a
-    refusal reported in-band. A subclass of :class:`HttpClientError`, so a handler written for that
-    still catches it. A refusal over HTTP reads ``HTTP 429 from <url>: <message>``, starting as an
-    HTTP 429 always has; a refusal that arrived in-band, as an action's ``RATE_LIMITED: ...`` error,
-    reads as that error.
+    The SDK raises it at once and never retries the call. A subclass of :class:`HttpClientError`,
+    so a handler written for that still catches it, and it reads ``HTTP 429 from <url>: <message>``,
+    starting as an HTTP 429 always has.
     """
 
     def __init__(
         self,
         message: str,
         *,
+        url: str,
         retry_after_seconds: Optional[float] = None,
-        url: Optional[str] = None,
         response_body: Optional[str] = None,
     ):
         super().__init__(message, status_code=HTTP_TOO_MANY_REQUESTS, response_body=response_body)
@@ -58,8 +53,6 @@ class RateLimitedError(HttpClientError):
         self.url = url
 
     def __str__(self) -> str:
-        if self.url is None:
-            return f"{RATE_LIMITED_PREFIX} {self.message}"
         return f"HTTP {self.status_code} from {self.url}: {self.message}"
 
     @classmethod
@@ -81,13 +74,6 @@ class RateLimitedError(HttpClientError):
             url=url,
             response_body=body,
         )
-
-    @classmethod
-    def from_in_band(cls, error: str) -> "RateLimitedError":
-        """An action's ``RATE_LIMITED: ...`` error, with the wait its text names."""
-        message = error.removeprefix(RATE_LIMITED_PREFIX).strip()
-        wait = _IN_BAND_WAIT_RE.search(message)
-        return cls(message, retry_after_seconds=float(wait.group(1)) if wait else None)
 
 
 def _seconds(value: Any) -> Optional[float]:

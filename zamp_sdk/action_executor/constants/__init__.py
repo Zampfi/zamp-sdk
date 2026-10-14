@@ -12,7 +12,6 @@ from zamp_sdk.action_executor.constants.polling import (
 )
 from zamp_sdk.action_executor.constants.rate_limit import (
     HTTP_TOO_MANY_REQUESTS,
-    RATE_LIMITED_PREFIX,
     RETRY_AFTER_HEADER,
 )
 from zamp_sdk.action_executor.constants.routes import Route
@@ -37,7 +36,6 @@ __all__ = [
     "POST_RETRY_INITIAL_INTERVAL_SECONDS",
     "POST_RETRY_MAX_INTERVAL_SECONDS",
     "POST_RETRY_TIMEOUT_SECONDS",
-    "RATE_LIMITED_PREFIX",
     "RETRY_AFTER_HEADER",
     "Route",
     "SUCCESS_STATUSES",

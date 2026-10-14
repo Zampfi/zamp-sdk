@@ -4,8 +4,6 @@ import os
 from datetime import timedelta
 from typing import Any, Callable
 
-from pydantic import BaseModel
-
 from zamp_sdk.action_executor.constants import (
     ACTION_ENVELOPE_KEYS,
     BRANCH_HEADERS,
@@ -18,7 +16,6 @@ from zamp_sdk.action_executor.constants import (
     POST_RETRY_INITIAL_INTERVAL_SECONDS,
     POST_RETRY_MAX_INTERVAL_SECONDS,
     POST_RETRY_TIMEOUT_SECONDS,
-    RATE_LIMITED_PREFIX,
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
     Route,
@@ -26,7 +23,7 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.routing import resolve_route
-from zamp_sdk.action_executor.utils import HttpClient, HttpClientError, RateLimitedError
+from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
 from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import (
     ENV_AUTH_TOKEN,
@@ -95,10 +92,6 @@ class ActionExecutor:
         ``None`` is why it is not a plain ``bool``: "I did not say" has to stay distinct from
         "I said no", or a caller could never log one call without configuring the whole run.
         A local in-process call is never logged either way, and ``emit_log`` never is.
-
-        A call the platform refused for a rate limit raises :class:`RateLimitedError` at once,
-        and is never retried: a ``POST /actions`` answered 429, and a refusal reported in-band
-        (see :meth:`_raise_in_band_refusal`).
         """
         # Resolved before dispatch, not inside it, so one place names every route and one
         # place decides which of them log.
@@ -124,33 +117,6 @@ class ActionExecutor:
             raise
         cls._capture_action_step(action_name, params, result)
         return result
-
-    @staticmethod
-    def _raise_in_band_refusal(result: Any) -> None:
-        """Raise, as :class:`RateLimitedError`, a rate-limit refusal ``result`` reports in-band.
-
-        Some refused calls complete instead of failing over HTTP: a refused agent task returns
-        the refusal as its ``error``, and through the gateway a refused call is a FAILED envelope
-        with it as ``error`` (a refused agent task, a COMPLETED envelope whose ``result`` has
-        it). The refusal starts with ``RATE_LIMITED:``. ``result`` is read as a dict or as the
-        model a ``return_type`` made of it. Its own ``result`` is read only when it is the
-        gateway's envelope: anywhere else, that is the action's output.
-        """
-
-        def field(value: Any, name: str) -> Any:
-            if isinstance(value, dict):
-                return value.get(name)
-            return getattr(value, name, None) if isinstance(value, BaseModel) else None
-
-        def is_envelope(value: Any) -> bool:
-            if isinstance(value, BaseModel):
-                return ACTION_ENVELOPE_KEYS.issubset(type(value).model_fields)
-            return isinstance(value, dict) and ACTION_ENVELOPE_KEYS.issubset(value)
-
-        for value in (result, field(result, "result")) if is_envelope(result) else (result,):
-            error = field(value, "error")
-            if isinstance(error, str) and error.startswith(RATE_LIMITED_PREFIX):
-                raise RateLimitedError.from_in_band(error)
 
     @staticmethod
     def _unwrap_envelope(result: Any) -> Any:
@@ -281,8 +247,7 @@ class ActionExecutor:
     async def _execute_via_gateway(cls, request: ActionRequest, gateway: Callable[..., Any]) -> Any:
         """Hand the action to the host's gateway, showing the call in the live message.
 
-        Returns the gateway's envelope unchanged — only the block is unwrapped — unless it
-        reports a rate-limit refusal, which raises.
+        Returns the gateway's envelope unchanged — only the block is unwrapped.
         """
         block_id = await open_action_log(
             request.action_name,
@@ -299,7 +264,6 @@ class ActionExecutor:
                 action_retry_policy=request.action_retry_policy,
                 action_start_to_close_timeout=request.action_start_to_close_timeout,
             )
-            cls._raise_in_band_refusal(result)
         except Exception as exc:
             await fail_action_log(block_id, request.action_name, exc)
             raise
@@ -394,7 +358,7 @@ class ActionExecutor:
         ah_mode = resolve_ah_execution_mode(request.execution_mode)
         policy = request.action_retry_policy if request.action_retry_policy is not None else RetryPolicy.default()
 
-        result = await ActionsHub.execute_action(
+        return await ActionsHub.execute_action(
             request.action_name,
             request.params,
             summary=request.summary,
@@ -402,8 +366,6 @@ class ActionExecutor:
             action_retry_policy=AHRetryPolicy(**policy.model_dump()),
             action_start_to_close_timeout=request.action_start_to_close_timeout,
         )
-        cls._raise_in_band_refusal(result)
-        return result
 
     @classmethod
     async def _execute_action(
@@ -456,8 +418,6 @@ class ActionExecutor:
         if action_start_to_close_timeout is not None:
             poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
         result = await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
-        # Read before return_type: a model without an ``error`` field would drop the refusal.
-        cls._raise_in_band_refusal(result)
 
         if return_type and hasattr(return_type, "model_validate"):
             return return_type.model_validate(result)

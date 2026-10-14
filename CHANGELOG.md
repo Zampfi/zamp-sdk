@@ -2,22 +2,18 @@
 
 ## 1.5.0
 
-- **A rate-limit refusal raises `RateLimitedError`, at once.** When an organization (or one user
-  or agent) is over its rate limit, the platform refuses the call and nothing is started. The SDK
-  raises `RateLimitedError` straight away and never retries the call, so the caller decides what
-  to do. `message` is the platform's own explanation (who is over which limit, how long to wait,
-  not to retry in a loop), `retry_after_seconds` the wait it named (`None` when no wait was named,
-  as when the call can never fit the limit), and `status_code` is 429.
-  - **`POST /actions` answered 429.** The message and the wait come from the response body, the
-    wait from `Retry-After` when the body names none (a 429 from a proxy in front of the
-    platform). It still reads `HTTP 429 from <url>`, now followed by the platform's message, and
-    subclasses `HttpClientError`, so existing handlers keep catching it.
-  - **A refusal reported in-band.** A refused agent task completes with
-    `error="RATE_LIMITED: ..."`, and through the code executor's gateway a refused call is a
-    FAILED envelope with that error. These raise too, instead of coming back as a result, and
-    the error reads as the platform's `RATE_LIMITED: ...` string.
-- Polling `GET /actions/{id}`, which the platform never rate limits, and the 5xx retry on create
-  are unchanged.
+- **`POST /actions` answered 429 raises `RateLimitedError`, at once.** When an organization (or
+  one user or agent) is over its rate limit, the platform refuses the call and nothing is started.
+  The SDK raises `RateLimitedError` straight away and never retries the call, so the caller decides
+  what to do. `message` is the platform's own explanation (who is over which limit, how long to
+  wait, not to retry in a loop), `retry_after_seconds` the wait it named (from the response body,
+  or `Retry-After` when the body names none; `None` when no wait was named, as when the call can
+  never fit the limit), and `status_code` is 429. It still reads `HTTP 429 from <url>`, now
+  followed by the platform's message, and subclasses `HttpClientError`, so existing handlers keep
+  catching it.
+- A refusal reported in-band, such as a refused agent task's `error="RATE_LIMITED: ..."` or the
+  gateway's FAILED envelope, is returned as a result, as before. Polling `GET /actions/{id}`,
+  which the platform never rate limits, and the 5xx retry on create are unchanged.
 
 ## 1.4.0
 

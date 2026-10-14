@@ -5,7 +5,3 @@ HTTP_TOO_MANY_REQUESTS = 429
 
 # Sent with a 429: the seconds until the refused call can succeed.
 RETRY_AFTER_HEADER = "Retry-After"
-
-# A refusal that arrives in-band - inside a successful response, as an action's error string -
-# starts with this prefix. The prefix is the contract; the wording after it is not.
-RATE_LIMITED_PREFIX = "RATE_LIMITED:"
