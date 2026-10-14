@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.2
+
+- **An HTTP error carries the platform's message.** A 4xx or 5xx still raises `HttpClientError`
+  with the response's own `status_code`, and its text still starts `HTTP <status> from <url>`;
+  it now goes on with `: <message>` when the platform's JSON error body carries a `message`.
+  So `POST /actions` refused for a rate limit reads `HTTP 429 from <url>: <who is over which
+  limit, how long to wait>`. Nothing else changes: a 429 is raised at once and never retried
+  (only a 5xx is), and a refusal reported in-band, such as a refused agent task's
+  `error="RATE_LIMITED: ..."`, is returned as a result.
+
 ## 1.4.0
 
 - **`ChannelContext.tool_execution_mode` — whether a tool call runs in the agent's turn or in the
