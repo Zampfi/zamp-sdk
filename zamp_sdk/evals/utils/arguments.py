@@ -35,7 +35,9 @@ def key_from_arguments(arguments: dict[str, object], key_argument: str | None) -
 
 
 def arguments_to_trace(arguments: dict[str, object]) -> dict[str, JsonValue]:
-    return {name: to_json_value(value) for name, value in arguments.items() if not _is_untraced(name)}
+    return {
+        name: _without_credentials(to_json_value(value)) for name, value in arguments.items() if not _is_untraced(name)
+    }
 
 
 def to_json_value(value: object) -> JsonValue:
@@ -44,6 +46,15 @@ def to_json_value(value: object) -> JsonValue:
     except ValueError:
         # A value that contains itself has no JSON form ("Circular reference detected"); its repr still shows it.
         return repr(value)
+
+
+def _without_credentials(value: JsonValue) -> JsonValue:
+    if isinstance(value, dict):
+        return {name: _without_credentials(item) for name, item in value.items() if not _is_untraced(name)}
+    if isinstance(value, list):
+        return [_without_credentials(item) for item in value]
+
+    return value
 
 
 def _is_untraced(name: str) -> bool:

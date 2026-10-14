@@ -18,8 +18,9 @@ class TracedCall(BaseModel):
     parent: str = Field(description="Enclosing observed step, else file:function; for reading only, never matched")
     args: dict[str, JsonValue] = Field(
         description=(
-            "Arguments by name; self, cls and credential names (token, api_key, headers, ... or ending in _token,"
-            " _secret, _password, _api_key or _credentials; any case) are never written"
+            "Arguments by name; self, cls and credential names (token, api_key, headers, cookie, ... or ending in"
+            " _token, _secret, _password, _api_key, _access_key, ...; any case) are left out, also as keys inside"
+            " dicts at any depth. Return values and error messages are written as they are"
         )
     )
     recorded_at: datetime

@@ -49,7 +49,10 @@ def external_call(name: str, key_argument: str | None = None) -> Callable[[_Func
 
 
 def observe(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
-    """In an eval trial, run the function and record what it returned or raised in the trace."""
+    """In an eval trial, run the function and record what it returned or raised in the trace.
+
+    The return value and error message are written as they are, so a function that returns a credential is not observed.
+    """
     return _build_decorator(DecoratedCallKind.OBSERVED_STEP, name, key_argument)
 
 

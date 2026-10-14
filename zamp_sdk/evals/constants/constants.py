@@ -1,7 +1,7 @@
 from enum import Enum
 
-# A trace never holds the instance or a credential: an argument whose lowercased name is one of these names,
-# or ends in one of the suffixes, is left out. Whole names only, so max_tokens or sort_key stay in.
+# An argument, or a key inside a dict argument at any depth, whose lowercased name is one of these names or ends in
+# one of the suffixes is left out of the trace. Whole names only, so max_tokens or sort_key stay in.
 UNTRACED_ARGUMENT_NAMES = frozenset(
     {
         "self",
@@ -10,14 +10,34 @@ UNTRACED_ARGUMENT_NAMES = frozenset(
         "auth",
         "authorization",
         "token",
+        "jwt",
         "credentials",
         "password",
+        "passwd",
+        "pwd",
+        "passphrase",
         "secret",
+        "secret_key",
+        "private_key",
+        "access_key",
         "api_key",
         "apikey",
+        "cookie",
+        "cookies",
     }
 )
-UNTRACED_ARGUMENT_NAME_SUFFIXES = ("_password", "_secret", "_token", "_api_key", "_credentials")
+UNTRACED_ARGUMENT_NAME_SUFFIXES = (
+    "_password",
+    "_passphrase",
+    "_secret",
+    "_secret_key",
+    "_private_key",
+    "_access_key",
+    "_token",
+    "_api_key",
+    "_credentials",
+    "_cookie",
+)
 
 # A faked httpx.Response has no real request, but raise_for_status() needs one, so it gets this stand-in.
 PLACEHOLDER_REQUEST_METHOD = "GET"

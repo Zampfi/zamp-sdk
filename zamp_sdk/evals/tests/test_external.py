@@ -507,15 +507,41 @@ class TestRequest:
             "secretary",
             "authorization_id",
             "extra_headers",
-            "cookie",
-            "pwd",
-            "passwd",
         ]
-        dropped = ["access_token", "x_api_key", "db_password", "client_credentials", "Secret"]
+        dropped = [
+            "access_token",
+            "x_api_key",
+            "db_password",
+            "client_credentials",
+            "Secret",
+            "aws_secret_access_key",
+            "private_key",
+            "passphrase",
+            "passwd",
+            "pwd",
+            "cookie",
+            "session_cookie",
+            "jwt",
+        ]
         execute_action.return_value = returned(None)
         complete(**{name: 1 for name in kept + dropped})
 
         assert sent(execute_action)[0]["args"] == {name: 1 for name in kept}
+
+    def test_credential_keys_inside_a_dict_argument_are_never_sent(self, in_eval_trial, execute_action, returned):
+        @evals.external_call("erp.send")
+        def send(config: dict, requests: list): ...
+
+        execute_action.return_value = returned(None)
+        send(
+            {"region": "eu", "api_key": "k1", "nested": {"Authorization": "Bearer x", "page": 2}},
+            [{"headers": {"cookie": "c"}, "path": "/orders"}],
+        )
+
+        assert sent(execute_action)[0]["args"] == {
+            "config": {"region": "eu", "nested": {"page": 2}},
+            "requests": [{"path": "/orders"}],
+        }
 
     async def test_a_method_never_sends_its_instance(self, in_eval_trial, execute_action, returned):
         class Client:
