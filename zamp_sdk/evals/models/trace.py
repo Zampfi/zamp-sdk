@@ -6,7 +6,6 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from zamp_sdk.evals.models.outcomes import ExternalCallOutcome, ObservedStepOutcome
 
 
-# Replies come from the engine, so a field it adds later is ignored rather than failing an older SDK.
 class TracedCall(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

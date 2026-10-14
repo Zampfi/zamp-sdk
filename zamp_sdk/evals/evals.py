@@ -6,10 +6,9 @@ from typing import Any, TypeVar, cast
 
 from pydantic import TypeAdapter
 
+from zamp_sdk.constants import EVAL_EXTERNAL_CALL_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME
 from zamp_sdk.context import current_eval_trial_id
 from zamp_sdk.evals.constants import (
-    EVAL_EXTERNAL_CALL_ACTION_NAME,
-    EVAL_READ_TRACE_ACTION_NAME,
     GENERATOR_FUNCTION_ERROR,
     KEY_ARGUMENT_NOT_A_PARAMETER_ERROR,
     DecoratedCallKind,
@@ -24,6 +23,7 @@ from zamp_sdk.evals.models import (
 )
 from zamp_sdk.evals.utils import (
     FixtureLookupError,
+    ReturnType,
     accepts_argument,
     as_return_type,
     build_exception,
@@ -31,6 +31,7 @@ from zamp_sdk.evals.utils import (
     call_eval_action,
     parent_of,
     raise_if_on_actions_hub,
+    resolve_return_type,
     run_blocking,
     run_observed,
     run_observed_sync,
@@ -76,6 +77,11 @@ def _build_decorator(
                 )
             )
 
+        # Read on the first call, not at decoration: a return type may name a class defined after the function.
+        @functools.cache
+        def return_type() -> ReturnType:
+            return resolve_return_type(func)
+
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
@@ -88,7 +94,7 @@ def _build_decorator(
                 if kind is DecoratedCallKind.OBSERVE:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
 
-                return _answer_from_fixture(func, call)
+                return _answer_from_fixture(return_type, call)
 
             return cast(_FunctionT, inspect.markcoroutinefunction(call_async))
 
@@ -99,19 +105,18 @@ def _build_decorator(
 
             raise_if_on_actions_hub(name, func)
 
-            # Frame 1 is the caller: the parent unless an observed step encloses it. Cheaper than inspect.stack().
             call = build_traced_call_input(name, key_argument, signature, args, kwargs, parent_of(sys._getframe(1)))
             if kind is DecoratedCallKind.OBSERVE:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
 
-            return run_blocking(_answer_from_fixture(func, call))
+            return run_blocking(_answer_from_fixture(return_type, call))
 
         return cast(_FunctionT, call_sync)
 
     return decorate
 
 
-async def _answer_from_fixture(func: Callable[..., Any], call: TracedCallInput) -> Any:
+async def _answer_from_fixture(return_type: Callable[[], ReturnType], call: TracedCallInput) -> Any:
     outcome = _external_call_outcome_adapter.validate_python(
         await call_eval_action(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
     )
@@ -121,4 +126,4 @@ async def _answer_from_fixture(func: Callable[..., Any], call: TracedCallInput) 
     if isinstance(outcome, RaisedOutcome):
         raise build_exception(outcome)
 
-    return as_return_type(func, outcome.value)
+    return as_return_type(return_type(), outcome.value)

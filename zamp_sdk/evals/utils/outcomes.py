@@ -1,23 +1,27 @@
-import functools
-import importlib
 import inspect
 import sys
 from collections.abc import Callable
 from dataclasses import is_dataclass
 from types import ModuleType
-from typing import TYPE_CHECKING, Annotated, get_args, get_origin, is_typeddict
+from typing import TYPE_CHECKING, Annotated, NamedTuple, get_args, get_origin, is_typeddict
 
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter
 
-from zamp_sdk.evals.constants import PLACEHOLDER_REQUEST_METHOD, PLACEHOLDER_REQUEST_URL
+from zamp_sdk.context import ExecutionHost, current_execution_host
+from zamp_sdk.evals.constants import (
+    PLACEHOLDER_REQUEST_METHOD,
+    PLACEHOLDER_REQUEST_URL,
+    UNKNOWN_EXCEPTION_TYPE_ERROR,
+)
 from zamp_sdk.evals.models import FixtureHttpResponse, RaisedOutcome, ReturnedOutcome
 from zamp_sdk.evals.utils.arguments import to_json_value
+from zamp_sdk.evals.utils.errors import FixtureLookupError
 
 if TYPE_CHECKING:
     import httpx
 
-# Traces write bytes as base64 at any depth, so a return type reads its fixture value back the same way. A model,
-# dataclass or TypedDict carries its own config, which pydantic will not let this one override.
+# Traces write top-level and container bytes as base64, so a return type reads its fixture value back the same way.
+# A model, dataclass or TypedDict carries its own config, which pydantic will not let this one override.
 _BYTES_AS_BASE64 = ConfigDict(val_json_bytes="base64")
 
 
@@ -35,35 +39,43 @@ def to_returned(result: object) -> ReturnedOutcome:
 def build_exception(raised: RaisedOutcome) -> Exception:
     module_name, _, class_name = raised.type.rpartition(".")
 
-    return getattr(importlib.import_module(module_name), class_name)(raised.message)
+    error_class = getattr(sys.modules.get(module_name), class_name, None)
+    if isinstance(error_class, type) and issubclass(error_class, Exception):
+        return error_class(raised.message)
+
+    return FixtureLookupError(UNKNOWN_EXCEPTION_TYPE_ERROR.format(type=raised.type, message=raised.message))
 
 
-def as_return_type(func: Callable[..., object], value: JsonValue) -> object:
+class ReturnType(NamedTuple):
+    annotation: object
+    adapter: TypeAdapter[object] | None
+
+
+def resolve_return_type(func: Callable[..., object]) -> ReturnType:
     annotation = _return_annotation(func)
+    if annotation is inspect.Signature.empty:
+        return ReturnType(annotation, None)
+
+    config = None if _has_own_config(annotation) else _BYTES_AS_BASE64
+    try:
+        return ReturnType(annotation, TypeAdapter(annotation, config=config))
+    except PydanticSchemaGenerationError:
+        return ReturnType(annotation, None)
+
+
+def as_return_type(return_type: ReturnType, value: JsonValue) -> object:
+    annotation, adapter = return_type
     if annotation is inspect.Signature.empty:
         return value
 
     loaded_httpx = sys.modules.get("httpx")
     if loaded_httpx is None or annotation not in (loaded_httpx.Response, loaded_httpx.Response | None):
-        adapter = _return_type_adapter(func)
-
         return value if adapter is None else adapter.validate_python(value)
 
     if value is None and annotation is not loaded_httpx.Response:
         return None
 
     return _build_httpx_response(loaded_httpx, FixtureHttpResponse.model_validate(value))
-
-
-# Both caches hold one entry per decorated function object, so they are bounded by decoration at import.
-@functools.cache
-def _return_type_adapter(func: Callable[..., object]) -> TypeAdapter[object] | None:
-    annotation = _return_annotation(func)
-    config = None if _has_own_config(annotation) else _BYTES_AS_BASE64
-    try:
-        return TypeAdapter(annotation, config=config)
-    except PydanticSchemaGenerationError:
-        return None
 
 
 def _has_own_config(annotation: object) -> bool:
@@ -75,11 +87,17 @@ def _has_own_config(annotation: object) -> bool:
     )
 
 
-# Read on the first call, not at decoration: a return type may name a class defined after the function.
-@functools.cache
 def _return_annotation(func: Callable[..., object]) -> object:
+    annotation = inspect.get_annotations(func).get("return", inspect.Signature.empty)
+    if not isinstance(annotation, str):
+        return annotation
+
+    # On the executor, evaluating a string would run skill code outside the merge-time check.
+    if current_execution_host() is ExecutionHost.ACTIONS_HUB:
+        return inspect.Signature.empty
+
     try:
-        return inspect.signature(func, eval_str=True).return_annotation
+        return eval(annotation, func.__globals__)
     except NameError:
         return inspect.Signature.empty
 

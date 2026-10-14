@@ -3,10 +3,11 @@ from zamp_sdk.evals.utils.blocking import raise_if_on_actions_hub, run_blocking
 from zamp_sdk.evals.utils.errors import FixtureLookupError
 from zamp_sdk.evals.utils.eval_actions import build_traced_call_input, call_eval_action
 from zamp_sdk.evals.utils.observe_step import parent_of, run_observed, run_observed_sync
-from zamp_sdk.evals.utils.outcomes import as_return_type, build_exception
+from zamp_sdk.evals.utils.outcomes import ReturnType, as_return_type, build_exception, resolve_return_type
 
 __all__ = [
     "FixtureLookupError",
+    "ReturnType",
     "accepts_argument",
     "as_return_type",
     "build_exception",
@@ -14,6 +15,7 @@ __all__ = [
     "call_eval_action",
     "parent_of",
     "raise_if_on_actions_hub",
+    "resolve_return_type",
     "run_blocking",
     "run_observed",
     "run_observed_sync",

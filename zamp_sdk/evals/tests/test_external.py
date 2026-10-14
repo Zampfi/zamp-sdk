@@ -155,6 +155,28 @@ class TestReturns:
 
         assert await open_session() == {"id": "s1"}
 
+    async def test_an_unresolvable_parameter_annotation_keeps_the_return_type(
+        self, in_eval_trial, execute_action, returned
+    ):
+        @evals.external_call("erp.order")
+        async def fetch(client: "Decimal") -> Order:
+            raise NotImplementedError
+
+        execute_action.return_value = returned({"id": "O1", "total": 7})
+
+        assert await fetch(None) == Order(id="O1", total=7)
+
+    async def test_a_string_return_annotation_is_evaluated_off_the_executor(
+        self, in_eval_trial, execute_action, returned
+    ):
+        @evals.external_call("erp.order")
+        async def fetch() -> "Order":
+            raise NotImplementedError
+
+        execute_action.return_value = returned({"id": "O1", "total": 7})
+
+        assert await fetch() == Order(id="O1", total=7)
+
     async def test_a_return_type_only_known_to_type_checkers_returns_the_raw_value(
         self, in_eval_trial, execute_action, returned
     ):
@@ -182,7 +204,7 @@ class TestReturns:
             await fetch("O1")
             await fetch("O2")
 
-        assert read_signature.call_count == 2
+        assert read_signature.call_count == 1
         build_adapter.assert_called_once()
 
 
@@ -261,6 +283,14 @@ class TestRaises:
 
         with pytest.raises(AgentDbError, match="boom"):
             fetch_order_sync("O1")
+
+    async def test_a_type_that_is_not_an_exception_class_raises_the_lookup_error_without_running_it(
+        self, in_eval_trial, execute_action, raised
+    ):
+        execute_action.return_value = raised("os.system", "touch /tmp/pwned")
+
+        with pytest.raises(evals.FixtureLookupError, match="^os.system is not an exception class"):
+            await fetch_order("O1")
 
     async def test_an_httpx_transport_error(self, in_eval_trial, execute_action, raised):
         execute_action.return_value = raised("httpx.ConnectTimeout", "timed out")
@@ -518,6 +548,17 @@ class TestOnTheExecutor:
 
         with pytest.raises(evals.FixtureLookupError, match="^erp.order:O1#1: no fixture$"):
             await fetch_order("O1")
+
+    async def test_a_string_return_annotation_is_not_evaluated(
+        self, in_eval_trial_on_actions_hub, execute_action, returned, action_response
+    ):
+        @evals.external_call("erp.order")
+        async def fetch() -> "Order":
+            raise NotImplementedError
+
+        execute_action.return_value = action_response(returned({"id": "O1", "total": 7}))
+
+        assert await fetch() == {"id": "O1", "total": 7}
 
     async def test_a_failed_action_raises(self, in_eval_trial_on_actions_hub, execute_action, action_response):
         execute_action.return_value = action_response(status="FAILED", error="no eval trial")
