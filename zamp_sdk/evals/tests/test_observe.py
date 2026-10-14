@@ -135,7 +135,7 @@ class TestReturns:
         assert await render() == b"%PDF\xff"
         assert sent(execute_action)[0]["outcome"] == {"kind": "returned", "value": "JVBERv8="}
 
-    async def test_a_result_that_contains_itself_is_returned_and_recorded_as_its_repr(
+    async def test_a_result_that_contains_itself_is_returned_and_recorded_as_its_type_only(
         self, in_eval_trial, execute_action
     ):
         @evals.observe("steps.build")
@@ -149,7 +149,7 @@ class TestReturns:
         result = await build()
 
         assert result[0] is result
-        assert sent(execute_action)[0]["outcome"] == {"kind": "returned", "value": "[[...]]"}
+        assert sent(execute_action)[0]["outcome"] == {"kind": "returned", "value": "<list that contains itself>"}
 
 
 class TestRaises:

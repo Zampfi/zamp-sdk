@@ -577,7 +577,7 @@ class TestRequest:
 
         assert sent(execute_action)[0]["args"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
 
-    def test_an_argument_that_contains_itself_is_sent_as_its_repr(self, in_eval_trial, execute_action, returned):
+    def test_an_argument_that_contains_itself_is_sent_as_its_type_only(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.post")
         def post(lines: list, page: int): ...
 
@@ -586,7 +586,20 @@ class TestRequest:
         execute_action.return_value = returned(None)
         post(lines, 2)
 
-        assert sent(execute_action)[0]["args"] == {"lines": "[[...]]", "page": 2}
+        assert sent(execute_action)[0]["args"] == {"lines": "<list that contains itself>", "page": 2}
+
+    def test_an_argument_that_contains_itself_does_not_send_its_credentials(
+        self, in_eval_trial, execute_action, returned
+    ):
+        @evals.external_call("erp.connect")
+        def connect(config: dict): ...
+
+        config: dict = {"host": "erp", "password": "secret"}
+        config["self"] = config
+        execute_action.return_value = returned(None)
+        connect(config)
+
+        assert sent(execute_action)[0]["args"] == {"config": "<dict that contains itself>"}
 
     def test_bytes_are_sent_as_base64(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.upload")

@@ -3,7 +3,11 @@ import inspect
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
 
-from zamp_sdk.evals.constants import UNTRACED_ARGUMENT_NAME_SUFFIXES, UNTRACED_ARGUMENT_NAMES
+from zamp_sdk.evals.constants import (
+    PLACEHOLDER_CIRCULAR_VALUE,
+    UNTRACED_ARGUMENT_NAME_SUFFIXES,
+    UNTRACED_ARGUMENT_NAMES,
+)
 
 
 def bind_arguments(
@@ -44,8 +48,8 @@ def to_json_value(value: object) -> JsonValue:
     try:
         return to_jsonable_python(value, fallback=repr, bytes_mode="base64")
     except ValueError:
-        # A value that contains itself has no JSON form ("Circular reference detected"); its repr still shows it.
-        return repr(value)
+        # A value that contains itself ("Circular reference detected")
+        return PLACEHOLDER_CIRCULAR_VALUE.format(type=type(value).__name__)
 
 
 def _without_credentials(value: JsonValue) -> JsonValue:

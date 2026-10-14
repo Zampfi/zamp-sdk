@@ -43,6 +43,9 @@ UNTRACED_ARGUMENT_NAME_SUFFIXES = (
 PLACEHOLDER_REQUEST_METHOD = "GET"
 PLACEHOLDER_REQUEST_URL = "https://fixture.invalid"
 
+# A value that contains itself has no JSON form, and its repr could carry a credential the trace leaves out.
+PLACEHOLDER_CIRCULAR_VALUE = "<{type} that contains itself>"
+
 
 class DecoratedCallKind(str, Enum):
     EXTERNAL_CALL = "external_call"
