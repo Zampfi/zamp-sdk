@@ -1,4 +1,4 @@
-from zamp_sdk.action_executor.constants.action_response import ACTION_RESPONSE_KEYS
+from zamp_sdk.action_executor.constants.envelope import ACTION_ENVELOPE_KEYS
 from zamp_sdk.action_executor.constants.headers import BRANCH_HEADERS, EVAL_TRIAL_ID_HEADER
 from zamp_sdk.action_executor.constants.polling import (
     POLL_BACKOFF_COEFFICIENT,
@@ -19,7 +19,7 @@ from zamp_sdk.action_executor.constants.statuses import (
 )
 
 __all__ = [
-    "ACTION_RESPONSE_KEYS",
+    "ACTION_ENVELOPE_KEYS",
     "BRANCH_HEADERS",
     "EVAL_TRIAL_ID_HEADER",
     "ActionStatus",
