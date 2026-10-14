@@ -6,9 +6,10 @@ from typing import Any, TypeVar, cast
 
 from pydantic import TypeAdapter
 
-from zamp_sdk.constants import EVAL_EXTERNAL_CALL_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME
 from zamp_sdk.context import current_eval_trial_id
 from zamp_sdk.evals.constants import (
+    EVAL_EXTERNAL_CALL_ACTION_NAME,
+    EVAL_READ_TRACE_ACTION_NAME,
     GENERATOR_FUNCTION_ERROR,
     KEY_ARGUMENT_NOT_A_PARAMETER_ERROR,
     DecoratedCallKind,
