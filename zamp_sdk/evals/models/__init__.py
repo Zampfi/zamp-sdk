@@ -2,7 +2,7 @@ from zamp_sdk.evals.models.call_inputs import ObservedStepInput, TracedCallInput
 from zamp_sdk.evals.models.http_response import FixtureHttpResponse
 from zamp_sdk.evals.models.outcomes import (
     ExternalCallOutcome,
-    FixtureLookupFailedOutcome,
+    FixtureFailedOutcome,
     ObservedStepOutcome,
     RaisedOutcome,
     ReturnedOutcome,
@@ -13,7 +13,7 @@ __all__ = [
     "ExternalCall",
     "ExternalCallOutcome",
     "FixtureHttpResponse",
-    "FixtureLookupFailedOutcome",
+    "FixtureFailedOutcome",
     "ObservedStep",
     "ObservedStepInput",
     "ObservedStepOutcome",

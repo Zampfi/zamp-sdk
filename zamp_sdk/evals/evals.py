@@ -15,7 +15,7 @@ from zamp_sdk.evals.constants import (
 )
 from zamp_sdk.evals.models import (
     ExternalCallOutcome,
-    FixtureLookupFailedOutcome,
+    FixtureFailedOutcome,
     RaisedOutcome,
     ReadTraceResult,
     TracedCallInput,
@@ -49,7 +49,7 @@ def external_call(name: str, key_argument: str | None = None) -> Callable[[_Func
 
 def observe(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
     """In an eval trial, run the function and record what it returned or raised in the trace."""
-    return _build_decorator(DecoratedCallKind.OBSERVE, name, key_argument)
+    return _build_decorator(DecoratedCallKind.OBSERVED_STEP, name, key_argument)
 
 
 async def read_trace() -> list[TraceEntry]:
@@ -91,7 +91,7 @@ def _build_decorator(
 
                 # Frame 1 is the caller: the parent unless an observed step encloses it. Cheaper than inspect.stack().
                 call = build_traced_call_input(name, key_argument, signature, args, kwargs, parent_of(sys._getframe(1)))
-                if kind is DecoratedCallKind.OBSERVE:
+                if kind is DecoratedCallKind.OBSERVED_STEP:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
 
                 return _answer_from_fixture(return_type, call)
@@ -106,7 +106,7 @@ def _build_decorator(
             raise_if_on_actions_hub(name, func)
 
             call = build_traced_call_input(name, key_argument, signature, args, kwargs, parent_of(sys._getframe(1)))
-            if kind is DecoratedCallKind.OBSERVE:
+            if kind is DecoratedCallKind.OBSERVED_STEP:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
 
             return run_blocking(_answer_from_fixture(return_type, call))
@@ -120,7 +120,7 @@ async def _answer_from_fixture(return_type: Callable[[], ReturnType], call: Trac
     outcome = _external_call_outcome_adapter.validate_python(
         await call_eval_action(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
     )
-    if isinstance(outcome, FixtureLookupFailedOutcome):
+    if isinstance(outcome, FixtureFailedOutcome):
         raise FixtureLookupError(outcome.message)
 
     if isinstance(outcome, RaisedOutcome):

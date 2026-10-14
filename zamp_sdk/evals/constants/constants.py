@@ -15,9 +15,6 @@ UNTRACED_ARGUMENT_NAMES = frozenset(
         "secret",
         "api_key",
         "apikey",
-        "client_secret",
-        "access_token",
-        "refresh_token",
     }
 )
 UNTRACED_ARGUMENT_NAME_SUFFIXES = ("_password", "_secret", "_token", "_api_key", "_credentials")
@@ -28,8 +25,8 @@ PLACEHOLDER_REQUEST_URL = "https://fixture.invalid"
 
 
 class DecoratedCallKind(str, Enum):
-    EXTERNAL_CALL = "external"
-    OBSERVE = "observe"
+    EXTERNAL_CALL = "external_call"
+    OBSERVED_STEP = "observed_step"
 
 
 class FixtureErrorCode(str, Enum):

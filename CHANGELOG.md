@@ -2,32 +2,14 @@
 
 ## 1.5.0
 
-- **`zamp_sdk.evals` — run a script inside an eval trial without touching the outside world.** A
-  new public package with two decorators and one read. Outside a trial every one of them is a
-  plain pass-through, so decorating a function changes nothing about a normal run.
-  - **`@evals.external_call(name, key_argument=None)`** marks a call to the outside world. In a
-    trial it does not run: the platform answers it from the trial's fixture, read back as the
-    function's return type (an `httpx.Response` is built from the fixture's status, body, content
-    and headers), or raises the error the fixture describes. A call with no fixture left raises
-    `FixtureLookupError`, whose message names the call and why.
-  - **`@evals.observe(name, key_argument=None)`** marks a step of the script's own logic. In a
-    trial it runs as written and records what it returned or raised in the trial's trace.
-  - **`await evals.read_trace()`** returns the trial's calls so far, in order, as `TraceEntry`
-    values; `[]` outside a trial.
-  - Each call is recorded with its arguments by name. Credential-like names (`token`, `headers`,
-    `api_key`, `*_secret`, ...) and `self` / `cls` are never written. `key_argument` names the
-    parameter whose value tells calls of the same name apart; it must be one of the function's
-    parameters, or a keyword it takes through `**kwargs`, which is checked when the function is
-    decorated.
-  - **Bytes are base64.** A trace writes `bytes` as base64 text at any depth, and a fixture value
-    for a `bytes` return type is read as base64 (either alphabet), so a hand-written fixture for a
-    `-> bytes` function must hold base64, not the raw text.
-  - In workflow code on ActionsHub a decorated function must be `async` inside a trial; a sync one
-    is refused with an error that says so. Generator functions are refused when decorated.
-- **The SDK knows when it runs in an eval trial.** `zamp_sdk.context.current_eval_trial_id()`
-  reads `ZAMP_EVAL_TRIAL_ID` in a sandbox, or `eval_trial_id` from the bound metadata context on
-  ActionsHub, and every API-route call to that deployment in a trial carries it as
-  `X-EVAL-TRIAL-ID`, like the branch headers. Nothing is sent outside a trial.
+- **`zamp_sdk.evals`**: new public package for running a script inside an eval trial.
+  - `@evals.external_call(name, key_argument=None)` answers the call from the trial's fixture.
+  - `@evals.observe(name, key_argument=None)` runs the function and records what it returned or raised.
+  - `evals.read_trace()` returns the trial's traced calls as `TraceEntry` values.
+  - `FixtureLookupError` is raised when a call has no fixture left.
+  - Outside a trial the decorators change nothing.
+- **`zamp_sdk.context.current_eval_trial_id()`** reads the trial id; API-route calls in a trial send it as
+  `X-EVAL-TRIAL-ID`.
 
 ## 1.4.0
 

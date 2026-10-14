@@ -43,7 +43,7 @@ def build_traced_call_input(
 async def call_eval_action(action_name: str, params: dict[str, JsonValue]) -> JsonValue:
     response = await ActionExecutor.execute(action_name, params)
 
-    # The executor's gateway returns {id, status, result, error} and reports a failure as a value
+    # A failed action arrives as a returned value, not an exception
     if not (isinstance(response, dict) and ACTION_RESPONSE_KEYS.issubset(response)):
         return response
 

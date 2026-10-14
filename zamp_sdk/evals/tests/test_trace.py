@@ -36,8 +36,8 @@ class TestReadTrace:
     ):
         execute_action.return_value = {
             "entries": [
-                trace_entry("external", "erp.order", returned({"id": "O1"}), key="O1", order_id="O1"),
-                trace_entry("observe", "steps.load", raised("builtins.ValueError", "bad")),
+                trace_entry("external_call", "erp.order", returned({"id": "O1"}), key="O1", order_id="O1"),
+                trace_entry("observed_step", "steps.load", raised("builtins.ValueError", "bad")),
             ]
         }
 
@@ -60,7 +60,7 @@ class TestReadTrace:
         failed = fixture_lookup_failed(
             "FIXTURE_MISSING", "erp.order:O1#1: the item's fixture file has no key for this call"
         )
-        execute_action.return_value = {"entries": [trace_entry("external", "erp.order", failed, key="O1")]}
+        execute_action.return_value = {"entries": [trace_entry("external_call", "erp.order", failed, key="O1")]}
 
         (entry,) = await evals.read_trace()
 
@@ -68,7 +68,7 @@ class TestReadTrace:
 
     async def test_an_entry_keeps_any_name_key_and_error_type(self, in_eval_trial, execute_action, raised):
         execute_action.return_value = {
-            "entries": [trace_entry("external", "Mail.Fetch", raised("TimeoutError", "late"), key="notes #2.msg")]
+            "entries": [trace_entry("external_call", "Mail.Fetch", raised("TimeoutError", "late"), key="notes #2.msg")]
         }
 
         (entry,) = await evals.read_trace()
@@ -76,7 +76,7 @@ class TestReadTrace:
         assert (entry.name, entry.key, entry.outcome.type) == ("Mail.Fetch", "notes #2.msg", "TimeoutError")
 
     async def test_a_field_the_engine_adds_later_is_ignored(self, in_eval_trial, execute_action, returned):
-        entry = trace_entry("external", "erp.order", {**returned(1), "took_ms": 3}, key="O1") | {"attempt": 2}
+        entry = trace_entry("external_call", "erp.order", {**returned(1), "took_ms": 3}, key="O1") | {"attempt": 2}
         execute_action.return_value = {"entries": [entry], "truncated": False}
 
         (read,) = await evals.read_trace()
@@ -86,7 +86,7 @@ class TestReadTrace:
     async def test_reads_through_the_action_response_on_the_executor(
         self, in_eval_trial_on_actions_hub, execute_action, action_response, returned
     ):
-        entry = trace_entry("observe", "steps.load", returned(None))
+        entry = trace_entry("observed_step", "steps.load", returned(None))
         execute_action.return_value = action_response({"entries": [entry]})
 
         (observed,) = await evals.read_trace()
