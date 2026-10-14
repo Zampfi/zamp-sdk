@@ -1,12 +1,14 @@
 import asyncio
 import base64
 import inspect
-from typing import TYPE_CHECKING, Annotated, Optional, TypedDict
-from unittest.mock import AsyncMock, patch
+import sys
+import types
+from typing import TYPE_CHECKING, Annotated, Literal, Optional, TypedDict
+from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from zamp_sdk import AgentDbError, configure_auto_action_logs, evals
 from zamp_sdk.action_executor import ActionExecutor
@@ -292,6 +294,19 @@ class TestRaises:
         with pytest.raises(evals.FixtureLookupError, match="^os.system is not an exception class"):
             await fetch_order("O1")
 
+    async def test_a_module_getattr_is_not_called_for_the_type(
+        self, in_eval_trial, execute_action, raised, monkeypatch
+    ):
+        lazy_module = types.ModuleType("lazy_errors")
+        lazy_module.__getattr__ = Mock(side_effect=AttributeError)
+        monkeypatch.setitem(sys.modules, "lazy_errors", lazy_module)
+        execute_action.return_value = raised("lazy_errors.LazyError", "boom")
+
+        with pytest.raises(evals.FixtureLookupError, match="^lazy_errors.LazyError is not an exception class"):
+            await fetch_order("O1")
+
+        lazy_module.__getattr__.assert_not_called()
+
     async def test_an_httpx_transport_error(self, in_eval_trial, execute_action, raised):
         execute_action.return_value = raised("httpx.ConnectTimeout", "timed out")
 
@@ -559,6 +574,29 @@ class TestOnTheExecutor:
         execute_action.return_value = action_response(returned({"id": "O1", "total": 7}))
 
         assert await fetch() == {"id": "O1", "total": 7}
+
+    async def test_a_string_nested_in_the_return_annotation_is_not_evaluated(
+        self, in_eval_trial_on_actions_hub, execute_action, returned, action_response
+    ):
+        @evals.external_call("erp.orders")
+        async def fetch() -> list["Order"]:
+            raise NotImplementedError
+
+        execute_action.return_value = action_response(returned([{"id": "O1", "total": 7}]))
+
+        assert await fetch() == [{"id": "O1", "total": 7}]
+
+    async def test_a_literal_return_annotation_is_still_validated(
+        self, in_eval_trial_on_actions_hub, execute_action, returned, action_response
+    ):
+        @evals.external_call("erp.state")
+        async def fetch() -> Optional[Literal["open", "closed"]]:
+            raise NotImplementedError
+
+        execute_action.return_value = action_response(returned("pending"))
+
+        with pytest.raises(ValidationError):
+            await fetch()
 
     async def test_a_failed_action_raises(self, in_eval_trial_on_actions_hub, execute_action, action_response):
         execute_action.return_value = action_response(status="FAILED", error="no eval trial")

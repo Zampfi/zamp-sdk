@@ -3,7 +3,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import is_dataclass
 from types import ModuleType
-from typing import TYPE_CHECKING, Annotated, NamedTuple, get_args, get_origin, is_typeddict
+from typing import TYPE_CHECKING, Annotated, ForwardRef, Literal, NamedTuple, get_args, get_origin, is_typeddict
 
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter
 
@@ -39,7 +39,9 @@ def to_returned(result: object) -> ReturnedOutcome:
 def build_exception(raised: RaisedOutcome) -> Exception:
     module_name, _, class_name = raised.type.rpartition(".")
 
-    error_class = getattr(sys.modules.get(module_name), class_name, None)
+    # vars() rather than getattr(), so a module's __getattr__ cannot import anything for the fixture
+    module = sys.modules.get(module_name)
+    error_class = vars(module).get(class_name) if module is not None else None
     if isinstance(error_class, type) and issubclass(error_class, Exception):
         return error_class(raised.message)
 
@@ -78,6 +80,22 @@ def as_return_type(return_type: ReturnType, value: JsonValue) -> object:
     return _build_httpx_response(loaded_httpx, FixtureHttpResponse.model_validate(value))
 
 
+def _contains_string(annotation: object) -> bool:
+    if isinstance(annotation, str | ForwardRef):
+        return True
+
+    origin = get_origin(annotation)
+    if origin is Literal:
+        return False
+
+    args = get_args(annotation)
+    # Annotated metadata is never evaluated, only the type it wraps
+    if origin is Annotated:
+        args = args[:1]
+
+    return any(_contains_string(arg) for arg in args)
+
+
 def _has_own_config(annotation: object) -> bool:
     if get_origin(annotation) is Annotated:
         annotation = get_args(annotation)[0]
@@ -89,12 +107,13 @@ def _has_own_config(annotation: object) -> bool:
 
 def _return_annotation(func: Callable[..., object]) -> object:
     annotation = inspect.get_annotations(func).get("return", inspect.Signature.empty)
+
+    # On the executor, evaluating a string anywhere in the annotation would run skill code outside the merge-time check.
+    if current_execution_host() is ExecutionHost.ACTIONS_HUB and _contains_string(annotation):
+        return inspect.Signature.empty
+
     if not isinstance(annotation, str):
         return annotation
-
-    # On the executor, evaluating a string would run skill code outside the merge-time check.
-    if current_execution_host() is ExecutionHost.ACTIONS_HUB:
-        return inspect.Signature.empty
 
     try:
         return eval(annotation, func.__globals__)
