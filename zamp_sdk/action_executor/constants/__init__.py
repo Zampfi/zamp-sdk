@@ -1,10 +1,5 @@
 from zamp_sdk.action_executor.constants.envelope import ACTION_ENVELOPE_KEYS
-from zamp_sdk.action_executor.constants.headers import (
-    BRANCH_HEADERS,
-    RETRY_AFTER_HEADER,
-    USER_AGENT,
-    USER_AGENT_HEADER,
-)
+from zamp_sdk.action_executor.constants.headers import BRANCH_HEADERS
 from zamp_sdk.action_executor.constants.polling import (
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
@@ -14,13 +9,11 @@ from zamp_sdk.action_executor.constants.polling import (
     POST_RETRY_INITIAL_INTERVAL_SECONDS,
     POST_RETRY_MAX_INTERVAL_SECONDS,
     POST_RETRY_TIMEOUT_SECONDS,
-    RATE_LIMIT_RETRY_BUDGET_SECONDS,
-    RATE_LIMIT_RETRY_MAX_ATTEMPTS,
-    RETRY_JITTER_RATIO,
 )
 from zamp_sdk.action_executor.constants.rate_limit import (
     HTTP_TOO_MANY_REQUESTS,
     RATE_LIMITED_PREFIX,
+    RETRY_AFTER_HEADER,
 )
 from zamp_sdk.action_executor.constants.routes import Route
 from zamp_sdk.action_executor.constants.statuses import (
@@ -45,13 +38,8 @@ __all__ = [
     "POST_RETRY_MAX_INTERVAL_SECONDS",
     "POST_RETRY_TIMEOUT_SECONDS",
     "RATE_LIMITED_PREFIX",
-    "RATE_LIMIT_RETRY_BUDGET_SECONDS",
-    "RATE_LIMIT_RETRY_MAX_ATTEMPTS",
     "RETRY_AFTER_HEADER",
-    "RETRY_JITTER_RATIO",
     "Route",
     "SUCCESS_STATUSES",
     "TERMINAL_FAILURE_STATUSES",
-    "USER_AGENT",
-    "USER_AGENT_HEADER",
 ]

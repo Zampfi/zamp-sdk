@@ -2,39 +2,22 @@
 
 ## 1.5.0
 
-- **A rate-limit refusal is a typed `RateLimitedError`.** When an organization (or one user or
-  agent) is over its rate limit for a kind of work, the platform answers `POST /actions` with
-  HTTP 429. The SDK now reads that answer: the error's `message` is the platform's own text (who
-  is over which limit, how long to wait, not to retry in a loop), and `retry_after` (seconds),
-  `check` (`"org"` / `"principal"`) and `limit_class` (`"sdk.action"`, `"sdk.run"`, ...) come
-  from the body and the `Retry-After` header. The header is read as seconds or as an HTTP-date,
-  which a proxy in front of the platform may send; a date is counted from now, never negative.
-  - **Existing handlers keep working.** It subclasses `HttpClientError` with `status_code`
-    429, and its text still starts `HTTP 429 from <url>`, now followed by the platform's text.
-- **Creating an action retries a 429 briefly, then raises it.** A 429 means nothing was started,
-  so sending the create again cannot run the action twice: at most 3 refused attempts, each wait
-  honouring `Retry-After`, within 60 s of waiting on refusals. No retry when the platform names no
-  wait, which it does when a retry could never fit the limit. This covers every action call made
-  over the API, the SDK's own log calls included.
-- **A 429 while polling is never terminal.** A refused `GET /actions/{id}` says nothing about the
-  action, which is still running: the poll waits as told and carries on, within the same overall
-  timeout as before.
-- **A 5xx on create is retried for 5 minutes, not an hour,** on a budget independent of the 429
-  one (a create that meets both can be sent more than 3 times), and every retry wait (5xx or 429,
-  create or poll) is stretched by up to 50% at random, never shortened, so callers that failed
-  together do not all come back together. Each retry the platform admits counts against the
-  org's limit, so an hour of them through an outage spends that budget for nothing.
-- **`AgentDbError.status_code`** — the HTTP status when a database call failed as an HTTP error
-  (429 for a rate limit), `None` otherwise, so a script can tell a refusal from a SQL failure.
-- **`User-Agent: zamp-sdk/<version>`** on every request.
-- **`rate_limit_refusal(value)` finds a refusal that arrived in-band.** Some refusals are not
-  HTTP errors: a spawned agent task the platform refuses completes with
-  `error="RATE_LIMITED: ..."`, and inside the code executor a refused call returns a FAILED
-  envelope with that error. Those still arrive exactly as before — the SDK does not turn a
-  completed action into an exception, or change how a failure surfaces — and
-  `rate_limit_refusal()` returns a `RateLimitedError` for any of them, for a raised error that is
-  or was raised from one, or `None`. A result or envelope validated into a `return_type` model
-  is read too, as long as the model keeps its `error` field.
+- **A rate-limit refusal raises `RateLimitedError`, at once.** When an organization (or one user
+  or agent) is over its rate limit, the platform refuses the call and nothing is started. The SDK
+  raises `RateLimitedError` straight away and never retries the call, so the caller decides what
+  to do. `message` is the platform's own explanation (who is over which limit, how long to wait,
+  not to retry in a loop), `retry_after_seconds` the wait it named (`None` when no wait was named,
+  as when the call can never fit the limit), and `status_code` is 429.
+  - **`POST /actions` answered 429.** The message and the wait come from the response body, the
+    wait from `Retry-After` when the body names none (a 429 from a proxy in front of the
+    platform). It still reads `HTTP 429 from <url>`, now followed by the platform's message, and
+    subclasses `HttpClientError`, so existing handlers keep catching it.
+  - **A refusal reported in-band.** A refused agent task completes with
+    `error="RATE_LIMITED: ..."`, and through the code executor's gateway a refused call is a
+    FAILED envelope with that error. These raise too, instead of coming back as a result, and
+    the error reads as the platform's `RATE_LIMITED: ...` string.
+- Polling `GET /actions/{id}`, which the platform never rate limits, and the 5xx retry on create
+  are unchanged.
 
 ## 1.4.0
 

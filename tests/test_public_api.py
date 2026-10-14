@@ -122,8 +122,7 @@ class TestPublicApi:
             "emit_error",
             "configure_logging",
             "configure_auto_action_logs",
-            # Rate-limit refusals: the typed error and the in-band detector.
+            # A rate-limit refusal, over HTTP or in-band.
             "RateLimitedError",
-            "rate_limit_refusal",
         }
         assert set(zamp_sdk.__all__) == expected

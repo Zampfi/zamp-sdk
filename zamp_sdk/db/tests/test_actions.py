@@ -48,15 +48,21 @@ class TestErrorTranslation:
         assert exc.value is original
 
     @pytest.mark.asyncio
-    async def test_a_rate_limit_refusal_keeps_its_status_and_cause(self):
-        """Callers still catch one type, and can tell a 429 from other failures."""
-        refusal = RateLimitedError("over the limit", retry_after=1.0, url="https://api.zamp.test/actions")
+    async def test_a_rate_limit_refusal_still_reads_as_an_http_429(self):
+        """Agent prompts recognise a raised 429 by ``str(err).startswith("HTTP 429 from ")``,
+        and the refusal itself stays reachable as the cause."""
+        refusal = RateLimitedError(
+            "Your organization is using SDK actions faster than its limit (120 per minute).",
+            retry_after_seconds=1.0,
+            url="https://api.zamp.test/actions",
+        )
 
         with patch(_EXECUTE, new=AsyncMock(side_effect=refusal)):
             with pytest.raises(AgentDbError) as exc:
                 await actions.call("agent_db_execute_sql", {})
 
-        assert exc.value.status_code == 429
+        assert str(exc.value).startswith("HTTP 429 from https://api.zamp.test/actions: ")
+        assert exc.value.sqlstate is None
         assert exc.value.__cause__ is refusal
 
     @pytest.mark.asyncio

@@ -1,12 +1,9 @@
 import json
-from datetime import datetime, timedelta, timezone
-from email.utils import format_datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError, RateLimitedError
-from zamp_sdk.version import __version__
 
 
 class TestHttpClientUrlBuilding:
@@ -173,121 +170,101 @@ def _response(status: int, body: str, headers: dict | None = None) -> AsyncMock:
     return response
 
 
-# The platform's 429, as the rate limiter's handler renders it.
+# The platform's 429, as its rate limiter renders it.
 _REFUSAL_MESSAGE = (
     "Your organization is using SDK actions faster than its limit (120 per minute). This request was NOT "
     "started. Wait 2 s before retrying; do not retry in a loop or in parallel. If you need a higher limit, "
     "contact support."
 )
-_REFUSAL_BODY = json.dumps(
-    {
-        "type": "rate_limited",
-        "code": "RATE_LIMITED",
-        "message": _REFUSAL_MESSAGE,
-        "details": {
-            "limit_class": "sdk.action",
-            "check": "org",
-            "limit": 120,
-            "period_seconds": 60,
-            "burst": 30,
-            "retry_after_seconds": 2,
-        },
-    }
-)
+
+
+def _refusal_body(retry_after_seconds: int | None = 2) -> str:
+    return json.dumps(
+        {
+            "type": "rate_limited",
+            "code": "RATE_LIMITED",
+            "message": _REFUSAL_MESSAGE,
+            "details": {
+                "limit_class": "sdk.action",
+                "check": "org",
+                "limit": 120,
+                "period_seconds": 60,
+                "burst": 30,
+                "retry_after_seconds": retry_after_seconds,
+            },
+        }
+    )
 
 
 class TestHttpClientRateLimited:
-    async def _refusal(self, response) -> RateLimitedError:
+    async def _refusal(self, response, method: str = "post") -> RateLimitedError:
         client = HttpClient(base_url="https://api.zamp.test")
         with (
             patch("aiohttp.ClientSession", return_value=_session_returning(response)),
             pytest.raises(RateLimitedError) as exc_info,
         ):
-            await client.post("/actions", data={"action_name": "x"})
+            await getattr(client, method)("/actions")
         return exc_info.value
 
-    async def test_a_429_is_a_typed_refusal_carrying_the_platform_text(self):
-        error = await self._refusal(_response(429, _REFUSAL_BODY, {"Retry-After": "2", "Cache-Control": "no-store"}))
+    async def test_a_429_carries_the_platform_message_and_wait(self):
+        body = _refusal_body()
+
+        error = await self._refusal(_response(429, body, {"Retry-After": "2"}))
 
         assert error.message == _REFUSAL_MESSAGE
-        assert error.retry_after == 2.0
-        assert error.check == "org"
-        assert error.limit_class == "sdk.action"
+        assert error.retry_after_seconds == 2.0
         assert error.status_code == 429
-        assert error.response_body == _REFUSAL_BODY
+        assert error.url == "https://api.zamp.test/actions"
+        assert error.response_body == body
 
-    async def test_existing_http_error_handlers_still_catch_it(self):
-        error = await self._refusal(_response(429, _REFUSAL_BODY, {"Retry-After": "2"}))
+    async def test_it_still_reads_and_catches_as_an_http_429(self):
+        """Handlers and agent prompts written for earlier SDKs key on this type and text."""
+        error = await self._refusal(_response(429, _refusal_body(), {"Retry-After": "2"}))
 
         assert isinstance(error, HttpClientError)
-        # Agent prompts written for SDK 1.2 key on this text, so it still leads.
-        assert str(error).startswith("HTTP 429 from https://api.zamp.test/actions")
-        assert _REFUSAL_MESSAGE in str(error)
+        assert str(error) == f"HTTP 429 from https://api.zamp.test/actions: {_REFUSAL_MESSAGE}"
 
-    async def test_its_repr_carries_the_same_text(self):
-        """A script that prints the error with ``!r`` still shows ``HTTP 429``, as with SDK 1.2."""
-        error = await self._refusal(_response(429, _REFUSAL_BODY, {"Retry-After": "2"}))
+    async def test_the_body_gives_the_wait_before_the_header(self):
+        error = await self._refusal(_response(429, _refusal_body(retry_after_seconds=2), {"Retry-After": "5"}))
 
-        assert repr(error) == f"RateLimitedError({str(error)!r})"
-        assert "HTTP 429 from https://api.zamp.test/actions" in repr(error)
+        assert error.retry_after_seconds == 2.0
 
-    def test_an_in_band_refusal_reprs_with_its_prefix(self):
-        error = RateLimitedError("over the limit", status_code=None)
-
-        assert repr(error) == "RateLimitedError('RATE_LIMITED: over the limit')"
-
-    async def test_the_body_gives_the_wait_when_the_header_is_missing(self):
-        error = await self._refusal(_response(429, _REFUSAL_BODY))
-
-        assert error.retry_after == 2.0
-
-    async def test_the_header_wins_over_the_body(self):
-        error = await self._refusal(_response(429, _REFUSAL_BODY, {"Retry-After": "5"}))
-
-        assert error.retry_after == 5.0
-
-    @pytest.mark.parametrize("header", ["soon", "-1", "nan", "inf", "", "Wed, 32 Oct 2015 07:28:00 GMT"])
-    async def test_an_unusable_header_falls_back_to_the_body(self, header):
-        error = await self._refusal(_response(429, _REFUSAL_BODY, {"Retry-After": header}))
-
-        assert error.retry_after == 2.0
-
-    @pytest.mark.parametrize("names_its_zone", [True, False], ids=["gmt", "no-zone"])
-    async def test_an_http_date_header_is_the_seconds_from_now(self, names_its_zone):
-        """A proxy may send ``Retry-After`` as an HTTP-date; one that names no zone is in UTC."""
-        when = datetime.now(timezone.utc) + timedelta(seconds=30)
-        header = format_datetime(when, usegmt=True) if names_its_zone else format_datetime(when.replace(tzinfo=None))
-
-        error = await self._refusal(_response(429, "<html>Too Many Requests</html>", {"Retry-After": header}))
-
-        assert 25.0 <= error.retry_after <= 30.0
-
-    async def test_an_http_date_header_in_the_past_is_no_wait(self):
-        header = "Wed, 21 Oct 2015 07:28:00 GMT"
-
-        error = await self._refusal(_response(429, "<html>Too Many Requests</html>", {"Retry-After": header}))
-
-        assert error.retry_after == 0.0
-
-    async def test_no_wait_anywhere_is_none(self):
-        """The platform leaves both out when a retry could never fit the limit."""
-        body = json.loads(_REFUSAL_BODY)
-        body["details"]["retry_after_seconds"] = None
-
-        error = await self._refusal(_response(429, json.dumps(body)))
-
-        assert error.retry_after is None
-        assert error.check == "org"
-
-    async def test_a_429_from_in_front_of_the_platform_is_still_typed(self):
+    async def test_a_429_from_in_front_of_the_platform_is_typed_with_its_header_wait(self):
         """A proxy's 429 has no JSON body: still a RateLimitedError, with what it did say."""
         error = await self._refusal(_response(429, "<html>Too Many Requests</html>", {"Retry-After": "3"}))
 
-        assert error.retry_after == 3.0
-        assert error.check is None
-        assert error.limit_class is None
-        assert error.message == "Too many requests."
+        assert error.retry_after_seconds == 3.0
         assert str(error) == "HTTP 429 from https://api.zamp.test/actions: Too many requests."
+
+    @pytest.mark.parametrize("header", [None, "", "soon", "-1", "nan", "inf", "Wed, 21 Oct 2015 07:28:00 GMT"])
+    async def test_no_usable_wait_is_none(self, header):
+        """The platform names no wait when a retry could never fit the limit."""
+        headers = {} if header is None else {"Retry-After": header}
+
+        error = await self._refusal(_response(429, _refusal_body(retry_after_seconds=None), headers))
+
+        assert error.retry_after_seconds is None
+        assert error.message == _REFUSAL_MESSAGE
+
+    @pytest.mark.parametrize("body", ["[]", "null", json.dumps({"message": "", "details": "x"})])
+    async def test_a_body_of_another_shape_is_tolerated(self, body):
+        error = await self._refusal(_response(429, body))
+
+        assert error.message == "Too many requests."
+        assert error.retry_after_seconds is None
+
+    async def test_a_429_on_a_get_stays_a_plain_http_error(self):
+        """Only a POST asks to start something; a 429 on a read is not a refusal to start."""
+        client = HttpClient(base_url="https://api.zamp.test")
+        with (
+            patch("aiohttp.ClientSession", return_value=_session_returning(_response(429, _refusal_body()))),
+            pytest.raises(HttpClientError) as exc_info,
+        ):
+            await client.get("/actions/1")
+
+        assert not isinstance(exc_info.value, RateLimitedError)
+        assert exc_info.value.status_code == 429
+        assert str(exc_info.value) == "HTTP 429 from https://api.zamp.test/actions/1"
 
     async def test_other_http_errors_are_not_refusals(self):
         client = HttpClient(base_url="https://api.zamp.test")
@@ -298,18 +275,4 @@ class TestHttpClientRateLimited:
             await client.get("/actions/1")
 
         assert not isinstance(exc_info.value, RateLimitedError)
-        assert exc_info.value.status_code == 503
-
-
-class TestHttpClientUserAgent:
-    @pytest.mark.parametrize("method", ["get", "post"])
-    async def test_every_request_names_the_sdk_version(self, method):
-        client = HttpClient(base_url="https://api.zamp.test", default_headers={"Authorization": "Bearer t"})
-        session = _session_returning(_response(200, json.dumps({"id": "1"})))
-
-        with patch("aiohttp.ClientSession", return_value=session):
-            await getattr(client, method)("/actions")
-
-        headers = session.request.call_args.kwargs["headers"]
-        assert headers["User-Agent"] == f"zamp-sdk/{__version__}"
-        assert headers["Authorization"] == "Bearer t"
+        assert str(exc_info.value) == "HTTP 503 from https://api.zamp.test/actions/1"
