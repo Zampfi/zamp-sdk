@@ -1,4 +1,4 @@
-from zamp_sdk.action_executor import ActionExecutor, ExecutionMode, RateLimitedError
+from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
 from zamp_sdk.context import (
     ChannelContext,
@@ -65,7 +65,6 @@ __all__ = [
     "ExecutionMode",
     "LogLevel",
     "LoggingConfig",
-    "RateLimitedError",
     "UserInputResponse",
     "InputOption",
     "RetryPolicy",

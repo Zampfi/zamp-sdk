@@ -1,18 +1,13 @@
 import asyncio
 import json
-import math
 from typing import Any, Dict, NoReturn, Optional, Union
 
 import aiohttp
 from pydantic import BaseModel
 
-from zamp_sdk.action_executor.constants import HTTP_TOO_MANY_REQUESTS, RETRY_AFTER_HEADER
 from zamp_sdk.logger import get_logger
 
 logger = get_logger(__name__)
-
-# The message of a 429 that carries none of its own: one from a proxy in front of the platform.
-_DEFAULT_RATE_LIMITED_MESSAGE = "Too many requests."
 
 
 class HttpClientError(Exception):
@@ -28,61 +23,14 @@ class HttpClientError(Exception):
         super().__init__(self.message)
 
 
-class RateLimitedError(HttpClientError):
-    """A ``POST`` answered 429: the platform refused to start a call for a rate limit.
-
-    ``message`` is the platform's own explanation (who is over which limit, how long to wait, not
-    to retry in a loop) and ``retry_after_seconds`` the wait it named, or ``None`` when no wait was
-    named, as when the call can never fit the limit. ``status_code`` is always 429.
-
-    The SDK raises it at once and never retries the call. A subclass of :class:`HttpClientError`,
-    so a handler written for that still catches it, and it reads ``HTTP 429 from <url>: <message>``,
-    starting as an HTTP 429 always has.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        *,
-        url: str,
-        retry_after_seconds: Optional[float] = None,
-        response_body: Optional[str] = None,
-    ):
-        super().__init__(message, status_code=HTTP_TOO_MANY_REQUESTS, response_body=response_body)
-        self.retry_after_seconds = retry_after_seconds
-        self.url = url
-
-    def __str__(self) -> str:
-        return f"HTTP {self.status_code} from {self.url}: {self.message}"
-
-    @classmethod
-    def from_response(cls, *, url: str, body: str, retry_after_header: Optional[str]) -> "RateLimitedError":
-        """A 429: the message and the wait from the platform's JSON body, the wait from
-        ``Retry-After`` when the body names none (a 429 from a proxy in front of the platform)."""
-        try:
-            payload = json.loads(body)
-        except ValueError:
-            payload = None
-        if not isinstance(payload, dict):
-            payload = {}
-        details = payload.get("details")
-        message = payload.get("message")
-        retry_after = _seconds(details.get("retry_after_seconds")) if isinstance(details, dict) else None
-        return cls(
-            message if isinstance(message, str) and message.strip() else _DEFAULT_RATE_LIMITED_MESSAGE,
-            retry_after_seconds=retry_after if retry_after is not None else _seconds(retry_after_header),
-            url=url,
-            response_body=body,
-        )
-
-
-def _seconds(value: Any) -> Optional[float]:
-    """``value`` as a wait in seconds, or ``None`` when it is not a finite, non-negative number."""
+def _platform_message(body: str) -> Optional[str]:
+    """The ``message`` of the platform's JSON error body, or ``None`` when the body carries none."""
     try:
-        seconds = float(value)
-    except (TypeError, ValueError):
+        payload = json.loads(body)
+    except (ValueError, RecursionError):
         return None
-    return seconds if math.isfinite(seconds) and seconds >= 0 else None
+    message = payload.get("message") if isinstance(payload, dict) else None
+    return message.strip() if isinstance(message, str) and message.strip() else None
 
 
 class HttpClient:
@@ -150,17 +98,13 @@ class HttpClient:
                 ) as response:
                     response_text = await response.text()
 
-                    # Only a POST asks to start something, so only its 429 is a refusal to start;
-                    # a 429 on a read stays a plain HttpClientError.
-                    if response.status == HTTP_TOO_MANY_REQUESTS and method == "POST":
-                        raise RateLimitedError.from_response(
-                            url=url,
-                            body=response_text,
-                            retry_after_header=response.headers.get(RETRY_AFTER_HEADER),
-                        )
                     if not response.ok:
+                        error_message = f"HTTP {response.status} from {url}"
+                        platform_message = _platform_message(response_text)
+                        if platform_message:
+                            error_message = f"{error_message}: {platform_message}"
                         raise HttpClientError(
-                            f"HTTP {response.status} from {url}",
+                            error_message,
                             status_code=response.status,
                             response_body=response_text,
                         )

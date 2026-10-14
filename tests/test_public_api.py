@@ -122,7 +122,5 @@ class TestPublicApi:
             "emit_error",
             "configure_logging",
             "configure_auto_action_logs",
-            # A POST /actions answered 429.
-            "RateLimitedError",
         }
         assert set(zamp_sdk.__all__) == expected
