@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import os
 from datetime import timedelta
 from typing import Any, Callable
@@ -8,6 +9,8 @@ from zamp_sdk.action_executor.constants import (
     ACTION_ENVELOPE_KEYS,
     BRANCH_HEADERS,
     IN_PROGRESS_STATUSES,
+    INLINE_DEFAULT_TIMEOUT_SECONDS,
+    INLINE_HTTP_GRACE_SECONDS,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
@@ -88,6 +91,11 @@ class ActionExecutor:
         * ``None`` (default) — follow the run's ``auto_action_logs`` setting.
         * ``True`` — log this call even where the run has logging off.
         * ``False`` — do not log this call even where the run has it on.
+
+        ``execution_mode`` picks how the action runs. On the API route ``INLINE`` is forwarded to
+        the platform, which runs the action in-process and answers in the POST response; it needs
+        a platform-side opt-in per action (otherwise the platform returns 422). The gateway route
+        ignores ``execution_mode``. An older platform ignores ``INLINE`` and the SDK polls as usual.
 
         ``None`` is why it is not a plain ``bool``: "I did not say" has to stay distinct from
         "I said no", or a caller could never log one call without configuring the whole run.
@@ -340,6 +348,7 @@ class ActionExecutor:
                 summary=request.summary,
                 action_retry_policy=request.action_retry_policy,
                 action_start_to_close_timeout=request.action_start_to_close_timeout,
+                execution_mode=request.execution_mode,
             )
         except Exception as exc:
             await fail_action_log(block_id, request.action_name, exc)
@@ -379,8 +388,13 @@ class ActionExecutor:
         summary: str | None = None,
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
+        execution_mode: ExecutionMode | None = None,
     ) -> Any:
-        """Post to ``{config.base_url}/actions`` and poll until a terminal state."""
+        """Post to ``{config.base_url}/actions`` and poll until a terminal state.
+
+        With ``ExecutionMode.INLINE`` the platform answers in the POST response, so the result
+        is read from it; only a ``RUNNING`` answer (an older platform) falls back to polling.
+        """
         client = HttpClient(
             base_url=config.base_url,
             default_headers={
@@ -411,13 +425,34 @@ class ActionExecutor:
             body["summary"] = summary
         if action_start_to_close_timeout is not None:
             body["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
+        inline = execution_mode is ExecutionMode.INLINE
+        if inline:
+            body["execution_mode"] = ExecutionMode.INLINE.value
+            # Unset, the platform applies its own inline default, which this mirrors.
+            timeout_seconds = (
+                action_start_to_close_timeout.total_seconds()
+                if action_start_to_close_timeout is not None
+                else INLINE_DEFAULT_TIMEOUT_SECONDS
+            )
 
-        response = await cls._post_action(client, "/actions", body)
+        if inline:
+            # One POST, never the 5xx-retry helper: a failed inline POST may already have run
+            # the action, so a retry could run it twice.
+            response = await client.post(
+                "/actions",
+                data=body,
+                timeout=math.ceil(timeout_seconds + INLINE_HTTP_GRACE_SECONDS),
+            )
+        else:
+            response = await cls._post_action(client, "/actions", body)
         action_id = response["id"]
-        poll_timeout = POLL_TIMEOUT_SECONDS
-        if action_start_to_close_timeout is not None:
-            poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
-        result = await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
+        if inline and response["status"] not in IN_PROGRESS_STATUSES:
+            result = cls._result_or_raise(response, action_id)
+        else:
+            poll_timeout = POLL_TIMEOUT_SECONDS
+            if action_start_to_close_timeout is not None:
+                poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
+            result = await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
 
         if return_type and hasattr(return_type, "model_validate"):
             return return_type.model_validate(result)
@@ -478,6 +513,16 @@ class ActionExecutor:
         """Next create-retry backoff interval, capped at ``POST_RETRY_MAX_INTERVAL_SECONDS``."""
         return min(interval * POST_RETRY_BACKOFF_COEFFICIENT, POST_RETRY_MAX_INTERVAL_SECONDS)
 
+    @staticmethod
+    def _result_or_raise(data: dict, action_id: str) -> Any:
+        """The result of a terminal action response; a failed or unexpected one raises."""
+        action_status = data["status"]
+        if action_status in SUCCESS_STATUSES:
+            return data.get("result")
+        if action_status in TERMINAL_FAILURE_STATUSES:
+            raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
+        raise RuntimeError(f"Action {action_id} unexpected status: {action_status}")
+
     @classmethod
     async def _poll_action_result(
         cls,
@@ -516,14 +561,9 @@ class ActionExecutor:
                 interval = cls._next_poll_interval(interval)
                 continue
 
-            action_status = data["status"]
-
-            if action_status in SUCCESS_STATUSES:
-                return data.get("result")
-            if action_status in TERMINAL_FAILURE_STATUSES:
-                raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
-            if action_status not in IN_PROGRESS_STATUSES:
-                raise RuntimeError(f"Action {action_id} unexpected status: {action_status}")
-            interval = cls._next_poll_interval(interval)
+            if data["status"] in IN_PROGRESS_STATUSES:
+                interval = cls._next_poll_interval(interval)
+                continue
+            return cls._result_or_raise(data, action_id)
 
         raise TimeoutError(f"Action {action_id} did not complete within {poll_timeout}s")

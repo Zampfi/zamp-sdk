@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.5.0
+
+- **`ExecutionMode.INLINE` on the API route.** The SDK forwards `execution_mode: "INLINE"` (plus the caller's
+  `start_to_close_timeout_seconds`, if set; otherwise the platform's inline default applies) in a
+  single `POST /actions`, waits up to that timeout plus a 10s grace, and reads
+  the result off the response instead of polling. The POST is never retried on a 5xx, since the
+  action may already have run. A `RUNNING` answer (an older platform) falls back to polling.
+  Other modes send the same request as before.
+- **Agent DB helper now defaults to INLINE** (`zamp_sdk.db`): the platform opts all `agent_db_*`
+  actions in, so datasets calls skip the poll loop.
+- **Behaviour change:** `INLINE` on the API route used to be silently ignored. It is now honoured,
+  and the platform answers 422 when the action is not opted in. The gateway route still ignores it.
+
 ## 1.4.0
 
 - **`ChannelContext.tool_execution_mode` — whether a tool call runs in the agent's turn or in the

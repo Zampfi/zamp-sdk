@@ -1,6 +1,8 @@
 from zamp_sdk.action_executor.constants.envelope import ACTION_ENVELOPE_KEYS
 from zamp_sdk.action_executor.constants.headers import BRANCH_HEADERS
 from zamp_sdk.action_executor.constants.polling import (
+    INLINE_DEFAULT_TIMEOUT_SECONDS,
+    INLINE_HTTP_GRACE_SECONDS,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
@@ -23,6 +25,8 @@ __all__ = [
     "BRANCH_HEADERS",
     "ActionStatus",
     "IN_PROGRESS_STATUSES",
+    "INLINE_DEFAULT_TIMEOUT_SECONDS",
+    "INLINE_HTTP_GRACE_SECONDS",
     "POLL_BACKOFF_COEFFICIENT",
     "POLL_INITIAL_INTERVAL_SECONDS",
     "POLL_MAX_INTERVAL_SECONDS",

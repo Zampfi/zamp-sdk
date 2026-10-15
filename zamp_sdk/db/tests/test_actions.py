@@ -8,10 +8,21 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from zamp_sdk.action_executor import ExecutionMode
 from zamp_sdk.db.utils import actions
 from zamp_sdk.db.utils.errors import AgentDbError
 
 _EXECUTE = "zamp_sdk.db.utils.actions.ActionExecutor.execute"
+
+
+class TestExecutionMode:
+    @pytest.mark.asyncio
+    async def test_calls_run_inline(self):
+        mock = AsyncMock(return_value={"ok": True})
+        with patch(_EXECUTE, new=mock):
+            await actions.call("agent_db_execute_sql", {"q": 1})
+
+        mock.assert_awaited_once_with("agent_db_execute_sql", {"q": 1}, execution_mode=ExecutionMode.INLINE)
 
 
 class TestErrorTranslation:

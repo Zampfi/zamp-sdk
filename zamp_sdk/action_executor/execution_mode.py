@@ -3,7 +3,12 @@ from typing import Any
 
 
 class ExecutionMode(str, Enum):
-    """Public execution modes exposed by the Zamp SDK."""
+    """Public execution modes exposed by the Zamp SDK.
+
+    ``INLINE`` on the API route is forwarded to the platform, which runs the action in-process
+    and returns the result in the POST response. It needs a platform-side opt-in per action;
+    otherwise the platform returns 422. The gateway route ignores ``execution_mode``.
+    """
 
     SYNC = "SYNC"
     ASYNC = "ASYNC"

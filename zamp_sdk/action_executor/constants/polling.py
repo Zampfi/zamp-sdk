@@ -18,3 +18,10 @@ POST_RETRY_INITIAL_INTERVAL_SECONDS = 1.0
 POST_RETRY_BACKOFF_COEFFICIENT = 2.0
 POST_RETRY_MAX_INTERVAL_SECONDS = 30.0
 POST_RETRY_TIMEOUT_SECONDS = 3600.0
+
+# --- Inline execution: POST /actions with execution_mode=INLINE runs the action in the
+# platform's API process and answers in the POST response, so there is no poll. The
+# action gets a bounded default timeout when the caller sets none, and the HTTP call
+# waits that long plus a grace for the platform to answer.
+INLINE_DEFAULT_TIMEOUT_SECONDS = 60
+INLINE_HTTP_GRACE_SECONDS = 10

@@ -6,7 +6,9 @@ re-decided per call site:
 1. **Failures become AgentDbError.** Callers catch one type — whether the action
    failed outright or completed reporting ``success: false`` in its result, which is
    how ``agent_db_execute_sql`` returns a failed body.
-2. **No retry or timeout overrides are ever sent.** The platform's defaults exist
+2. **Runs INLINE.** The platform opts every ``agent_db_*`` action in, so the call is answered in
+   the POST response rather than polled; the platform's inline timeout applies.
+3. **No retry or timeout overrides are ever sent.** The platform's defaults exist
    because someone reasoned about the seam; a client-side override would silently
    replace that reasoning. Notably, write paths must not gain a retry the raw
    psycopg2 path never had.
@@ -16,14 +18,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from zamp_sdk.action_executor import ActionExecutor
+from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
 from zamp_sdk.db.utils.errors import AgentDbError
 
 
 async def call(action_name: str, params: dict[str, Any]) -> Any:
     """Execute a platform action, translating any failure to AgentDbError."""
     try:
-        response = await ActionExecutor.execute(action_name, params)
+        response = await ActionExecutor.execute(action_name, params, execution_mode=ExecutionMode.INLINE)
     except AgentDbError:
         raise
     except TimeoutError:

@@ -58,6 +58,7 @@ async def execute(
     auth_token: str | None = None,
     summary: str | None = None,
     return_type: type | None = None,
+    execution_mode: ExecutionMode | None = None,
     action_retry_policy: RetryPolicy | None = None,
     action_start_to_close_timeout: timedelta | None = None,
 ) -> Any
@@ -71,6 +72,7 @@ async def execute(
 | `auth_token` | `str \| None` | No | API authentication token. Falls back to `ZAMP_AUTH_TOKEN` env var |
 | `summary` | `str \| None` | No | Human-readable description of the execution |
 | `return_type` | `type \| None` | No | Pydantic model to validate the result against |
+| `execution_mode` | `ExecutionMode \| None` | No | `INLINE` runs the action in the platform's process and returns the result in one request (needs a platform-side opt-in per action, else 422; ignored by the gateway route) |
 | `action_retry_policy` | `RetryPolicy \| None` | No | Retry configuration for the action |
 | `action_start_to_close_timeout` | `timedelta \| None` | No | Maximum execution time for the action |
 
