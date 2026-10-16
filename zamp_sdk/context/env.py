@@ -26,6 +26,10 @@ ENV_BRANCH_ID = "ZAMP_BRANCH_ID"
 ENV_DB_BRANCH_MODE = "ZAMP_DB_BRANCH_MODE"
 ENV_ENVIRONMENT = "ZAMP_ENVIRONMENT"
 
+# The eval trial the run executes in, injected only during an eval; the evals decorators go through the eval
+# actions while it is set and run untouched otherwise.
+ENV_EVAL_TRIAL_ID = "ZAMP_EVAL_TRIAL_ID"
+
 # This run's LoggingConfig, one variable per field, for a process with no workflow input to
 # carry it on. Read independently rather than all-or-none like the channel variables above: a
 # missing field just keeps its default.

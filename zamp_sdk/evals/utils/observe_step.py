@@ -1,0 +1,61 @@
+import os
+from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
+from types import FrameType
+
+from pydantic import JsonValue
+
+from zamp_sdk.evals.constants import EVAL_OBSERVED_STEP_ACTION_NAME, STEP_ERROR_NOT_TRACED_MESSAGE
+from zamp_sdk.evals.models import ObservedStepInput, ObservedStepOutcome, TracedCallInput
+from zamp_sdk.evals.utils.blocking import ResultT, run_blocking
+from zamp_sdk.evals.utils.eval_actions import call_eval_action
+from zamp_sdk.evals.utils.outcomes import to_raised, to_returned
+
+_enclosing_observed_step_name: ContextVar[str | None] = ContextVar("zamp_eval_enclosing_observed_step", default=None)
+
+
+def parent_of(frame: FrameType) -> str:
+    return _enclosing_observed_step_name.get() or f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_code.co_name}"
+
+
+async def run_observed(call: TracedCallInput, invoke: Callable[[], Awaitable[ResultT]]) -> ResultT:
+    reset_token = _enclosing_observed_step_name.set(call.name)
+    try:
+        result = await invoke()
+    except Exception as error:
+        # Whatever the trace send raises, the caller still gets the function's own error, as outside a trial.
+        try:
+            await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
+        except Exception as trace_error:
+            error.add_note(STEP_ERROR_NOT_TRACED_MESSAGE.format(name=call.name, error=trace_error))
+        raise
+    finally:
+        _enclosing_observed_step_name.reset(reset_token)
+
+    await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result)))
+
+    return result
+
+
+def run_observed_sync(call: TracedCallInput, invoke: Callable[[], ResultT]) -> ResultT:
+    reset_token = _enclosing_observed_step_name.set(call.name)
+    try:
+        result = invoke()
+    except Exception as error:
+        try:
+            run_blocking(
+                call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
+            )
+        except Exception as trace_error:
+            error.add_note(STEP_ERROR_NOT_TRACED_MESSAGE.format(name=call.name, error=trace_error))
+        raise
+    finally:
+        _enclosing_observed_step_name.reset(reset_token)
+
+    run_blocking(call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result))))
+
+    return result
+
+
+def _observed_step_params(call: TracedCallInput, outcome: ObservedStepOutcome) -> dict[str, JsonValue]:
+    return ObservedStepInput(**call.model_dump(), outcome=outcome).model_dump(mode="json")

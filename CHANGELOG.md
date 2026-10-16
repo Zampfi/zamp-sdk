@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.5.0
+
+- **`zamp_sdk.evals`**: new public package for running a script inside an eval trial.
+  - `@evals.external_call(name, key_argument=None)` answers the call from the trial's fixture.
+  - `@evals.observe(name, key_argument=None)` runs the function and records what it returned or raised.
+  - `evals.read_trace()` returns the trial's traced calls as `TraceEntry` values.
+  - `FixtureLookupError` is raised when a call has no fixture left.
+  - Outside a trial the decorators change nothing.
+- **`zamp_sdk.context.current_eval_trial_id()`** reads the trial id; API-route calls in a trial send it as
+  `X-EVAL-TRIAL-ID`.
+
 ## 1.4.0
 
 - **`ChannelContext.tool_execution_mode` — whether a tool call runs in the agent's turn or in the
