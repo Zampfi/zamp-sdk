@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.6.0
+
+- **Adds `ExecutionMode.DURABLE`.** Runs the action durably, with retries. `SYNC` and `ASYNC` are unchanged.
+- **`ExecutionMode.INLINE` on the API route.** The SDK forwards `execution_mode: "INLINE"` in a
+  single `POST /actions` and reads the result off the response instead of polling. The POST is never
+  retried on a 5xx, since the action may already have run.
+  Other modes send the same request as before.
+- **Behaviour change:** `INLINE` on the API route used to be silently ignored. It is now honoured,
+  and the platform answers 422 when the action is not opted in. The gateway route still ignores it.
+
 ## 1.5.1
 
 - **An HTTP error carries the platform's message.** A 4xx or 5xx still raises `HttpClientError`
