@@ -52,7 +52,7 @@ result = await ActionExecutor.execute("send_invoice", {"invoice_id": "inv_123"})
 @staticmethod
 async def execute(
     action_name: str,
-    params: Any,
+    params: dict[str, Any],
     *,
     base_url: str | None = None,
     auth_token: str | None = None,
@@ -67,7 +67,7 @@ async def execute(
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action_name` | `str` | Yes | Name of the registered action to execute |
-| `params` | `Any` | Yes | Input parameters for the action |
+| `params` | `dict[str, Any]` | Yes | Input parameters for the action. A non-dict value raises `ValueError` (a Pydantic `ValidationError`) before anything is sent |
 | `base_url` | `str \| None` | No | Zamp API base URL. Falls back to `ZAMP_BASE_URL` env var |
 | `auth_token` | `str \| None` | No | API authentication token. Falls back to `ZAMP_AUTH_TOKEN` env var |
 | `summary` | `str \| None` | No | Human-readable description of the execution |
