@@ -1,4 +1,5 @@
 import json
+import math
 import uuid
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -7,6 +8,8 @@ import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants.polling import (
+    INLINE_RESPONSE_GRACE_SECONDS,
+    INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS,
     POST_RETRY_BACKOFF_COEFFICIENT,
     POST_RETRY_INITIAL_INTERVAL_SECONDS,
     POST_RETRY_MAX_INTERVAL_SECONDS,
@@ -753,7 +756,8 @@ class TestInlineExecution:
         assert client.post.await_count == 1
         client.get.assert_not_called()
 
-    async def test_body_carries_mode_without_timeout_changes(self):
+    async def test_without_a_timeout_waits_for_the_platform_default_plus_grace(self):
+        """The platform answers (TIMED_OUT included) before the client gives up."""
         client = AsyncMock()
         client.post.return_value = {"id": "i1", "status": "COMPLETED", "result": None}
 
@@ -762,16 +766,17 @@ class TestInlineExecution:
         body = client.post.call_args.kwargs["data"]
         assert body["execution_mode"] == "INLINE"
         assert "start_to_close_timeout_seconds" not in body
-        assert "timeout" not in client.post.call_args.kwargs
+        expected = math.ceil(INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS + INLINE_RESPONSE_GRACE_SECONDS)
+        assert client.post.call_args.kwargs["timeout"] == expected
 
-    async def test_caller_timeout_is_sent_as_before_with_default_http_timeout(self):
+    async def test_caller_timeout_is_sent_and_waited_for_plus_grace(self):
         client = AsyncMock()
         client.post.return_value = {"id": "i1", "status": "COMPLETED", "result": None}
 
         await self._run(client, ExecutionMode.INLINE, action_start_to_close_timeout=timedelta(seconds=5.5))
 
         assert client.post.call_args.kwargs["data"]["start_to_close_timeout_seconds"] == 5.5
-        assert "timeout" not in client.post.call_args.kwargs
+        assert client.post.call_args.kwargs["timeout"] == math.ceil(5.5 + INLINE_RESPONSE_GRACE_SECONDS)
 
     @pytest.mark.parametrize("status", ["FAILED", "TIMED_OUT"])
     async def test_terminal_failure_raises(self, status):
@@ -860,6 +865,24 @@ class TestInlineExecution:
             "action_retry_policy",
             "action_start_to_close_timeout",
         }
+
+
+class TestExecuteRejectsBadArguments:
+    """``execute`` validates its arguments before choosing a route, so nothing is sent."""
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"action_start_to_close_timeout": timedelta(0)},
+            {"execution_mode": "inline"},
+        ],
+    )
+    async def test_rejected_before_routing(self, kwargs):
+        with patch(f"{_MODULE}.resolve_route", new_callable=AsyncMock) as route:
+            with pytest.raises(ValueError):
+                await ActionExecutor.execute("a", {}, **kwargs)
+
+        route.assert_not_awaited()
 
 
 class TestResultOrRaise:

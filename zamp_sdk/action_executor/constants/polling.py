@@ -18,3 +18,10 @@ POST_RETRY_INITIAL_INTERVAL_SECONDS = 1.0
 POST_RETRY_BACKOFF_COEFFICIENT = 2.0
 POST_RETRY_MAX_INTERVAL_SECONDS = 30.0
 POST_RETRY_TIMEOUT_SECONDS = 3600.0
+
+# --- Inline: a single POST /actions that waits for the action's result. The wait
+# outlasts the platform's own inline timeout by a grace, so the platform's answer
+# (including TIMED_OUT) always arrives before the client gives up.
+# Mirrors the platform's inline default; change both together.
+INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS = 60.0
+INLINE_RESPONSE_GRACE_SECONDS = 10.0

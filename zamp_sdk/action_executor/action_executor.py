@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import os
 from datetime import timedelta
 from typing import Any, Callable
@@ -9,6 +10,8 @@ from zamp_sdk.action_executor.constants import (
     BRANCH_HEADERS,
     EVAL_TRIAL_ID_HEADER,
     IN_PROGRESS_STATUSES,
+    INLINE_RESPONSE_GRACE_SECONDS,
+    INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
@@ -432,7 +435,7 @@ class ActionExecutor:
             body["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
         if execution_mode is ExecutionMode.INLINE:
             body["execution_mode"] = ExecutionMode.INLINE.value
-            result = await cls._execute_inline(client, body)
+            result = await cls._execute_inline(client, body, action_start_to_close_timeout)
         else:
             result = await cls._execute_durable(client, body, action_start_to_close_timeout)
 
@@ -508,10 +511,19 @@ class ActionExecutor:
         return await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
 
     @classmethod
-    async def _execute_inline(cls, client: HttpClient, body: dict) -> Any:
+    async def _execute_inline(
+        cls, client: HttpClient, body: dict, action_start_to_close_timeout: timedelta | None
+    ) -> Any:
         """POST once and read the result from the response."""
+        server_timeout = (
+            action_start_to_close_timeout.total_seconds()
+            if action_start_to_close_timeout is not None
+            else INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS
+        )
         # Never the 5xx-retry helper: a failed inline POST may already have run the action.
-        response = await client.post("/actions", data=body)
+        response = await client.post(
+            "/actions", data=body, timeout=math.ceil(server_timeout + INLINE_RESPONSE_GRACE_SECONDS)
+        )
         return cls._result_or_raise(response, response["id"])
 
     @staticmethod
