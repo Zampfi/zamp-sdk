@@ -113,6 +113,8 @@ class TestPublicApi:
             # Agent-managed database access for scripts.
             "AgentDbError",
             "datasets",
+            # Fixtures and traces for eval runs.
+            "evals",
             # Levelled logging + the two independent gates.
             "LogLevel",
             "LoggingConfig",

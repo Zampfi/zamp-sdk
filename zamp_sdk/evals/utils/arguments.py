@@ -1,0 +1,67 @@
+import inspect
+
+from pydantic import JsonValue
+from pydantic_core import to_jsonable_python
+
+from zamp_sdk.evals.constants import (
+    PLACEHOLDER_CIRCULAR_VALUE,
+    UNTRACED_ARGUMENT_NAME_SUFFIXES,
+    UNTRACED_ARGUMENT_NAMES,
+)
+
+
+def bind_arguments(
+    signature: inspect.Signature, args: tuple[object, ...], kwargs: dict[str, object]
+) -> dict[str, object]:
+    bound = signature.bind(*args, **kwargs)
+    bound.apply_defaults()
+
+    arguments = dict(bound.arguments)
+    for parameter in bound.signature.parameters.values():
+        if parameter.kind is inspect.Parameter.VAR_KEYWORD:
+            extra_arguments = arguments.pop(parameter.name)
+            arguments.update({name: value for name, value in extra_arguments.items() if name not in arguments})
+
+    return arguments
+
+
+def accepts_argument(signature: inspect.Signature, argument_name: str) -> bool:
+    return any(
+        parameter.name == argument_name or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+
+
+def key_from_arguments(arguments: dict[str, object], key_argument: str | None) -> str | None:
+    value = None if key_argument is None else arguments.get(key_argument)
+
+    return None if value is None else str(value)
+
+
+def arguments_to_trace(arguments: dict[str, object]) -> dict[str, JsonValue]:
+    return {
+        name: _without_credentials(to_json_value(value)) for name, value in arguments.items() if not _is_untraced(name)
+    }
+
+
+def to_json_value(value: object) -> JsonValue:
+    try:
+        return to_jsonable_python(value, fallback=repr, bytes_mode="base64")
+    except ValueError:
+        # A value that contains itself ("Circular reference detected")
+        return PLACEHOLDER_CIRCULAR_VALUE.format(type=type(value).__name__)
+
+
+def _without_credentials(value: JsonValue) -> JsonValue:
+    if isinstance(value, dict):
+        return {name: _without_credentials(item) for name, item in value.items() if not _is_untraced(name)}
+    if isinstance(value, list):
+        return [_without_credentials(item) for item in value]
+
+    return value
+
+
+def _is_untraced(name: str) -> bool:
+    lowered = name.lower()
+
+    return lowered in UNTRACED_ARGUMENT_NAMES or lowered.endswith(UNTRACED_ARGUMENT_NAME_SUFFIXES)

@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.4.2
+## 1.5.1
 
 - **An HTTP error carries the platform's message.** A 4xx or 5xx still raises `HttpClientError`
   with the response's own `status_code`, and its text still starts `HTTP <status> from <url>`;
@@ -9,6 +9,17 @@
   limit, how long to wait>`. Nothing else changes: a 429 is raised at once and never retried
   (only a 5xx is), and a refusal reported in-band, such as a refused agent task's
   `error="RATE_LIMITED: ..."`, is returned as a result.
+
+## 1.5.0
+
+- **`zamp_sdk.evals`**: new public package for running a script inside an eval trial.
+  - `@evals.external_call(name, key_argument=None)` answers the call from the trial's fixture.
+  - `@evals.observe(name, key_argument=None)` runs the function and records what it returned or raised.
+  - `evals.read_trace()` returns the trial's traced calls as `TraceEntry` values.
+  - `FixtureLookupError` is raised when a call has no fixture left.
+  - Outside a trial the decorators change nothing.
+- **`zamp_sdk.context.current_eval_trial_id()`** reads the trial id; API-route calls in a trial send it as
+  `X-EVAL-TRIAL-ID`.
 
 ## 1.4.0
 

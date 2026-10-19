@@ -4,12 +4,14 @@ import os
 from typing import Any, Optional
 
 from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
+from zamp_sdk.context.constants import EVAL_TRIAL_ID_FIELD, ZAMP_METADATA_CONTEXT_KEY
 from zamp_sdk.context.env import (
     ENV_BRANCH_ID,
     ENV_CHANNEL_ID,
     ENV_CHANNEL_TYPE,
     ENV_DB_BRANCH_MODE,
     ENV_ENVIRONMENT,
+    ENV_EVAL_TRIAL_ID,
     ENV_MESSAGE_ID,
     ENV_RUN_ID,
     ENV_STREAMING_ID,
@@ -55,6 +57,19 @@ def current_branch_context() -> dict[str, str]:
         "environment": os.environ.get(ENV_ENVIRONMENT),
     }
     return {k: v for k, v in ctx.items() if v}
+
+
+def current_eval_trial_id() -> str | None:
+    if current_execution_host() is not ExecutionHost.ACTIONS_HUB:
+        return os.environ.get(ENV_EVAL_TRIAL_ID) or None
+
+    from zamp_public_workflow_sdk.actions_hub.utils.context_utils import get_variable_from_context
+
+    metadata = get_variable_from_context(ZAMP_METADATA_CONTEXT_KEY)
+    if metadata is None:
+        return None
+
+    return metadata.get(EVAL_TRIAL_ID_FIELD)
 
 
 def resolve_channel_context() -> Optional[ChannelContext]:

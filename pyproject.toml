@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "zamp-sdk"
-version = "1.4.2"
+version = "1.5.1"
 description = "Customer-facing SDK for executing actions on the Zamp platform"
 authors = ["Zamp Engineering <engineering@zamp.com>"]
 readme = "README.md"
@@ -39,6 +39,7 @@ ruff = "*"
 mypy = "*"
 pre-commit = "*"
 diff-cover = "*"
+httpx = "*"
 
 [build-system]
 requires = ["poetry-core"]
@@ -57,7 +58,7 @@ show_error_context = true
 pretty = true
 
 [[tool.mypy.overrides]]
-module = "zamp_public_workflow_sdk.*"
+module = ["zamp_public_workflow_sdk.*", "temporalio.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
