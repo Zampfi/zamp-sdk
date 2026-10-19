@@ -111,6 +111,7 @@ class TestEscalateInAPhase:
             ),
             ({"summary": "s", "files": [{"path": "/f", "size": 3}]}, "Extra inputs"),
             ({"summary": "s", "files": [3]}, "a file is a path"),
+            ({"summary": "s", "questions": [None]}, "a question is a dict"),
         ],
     )
     def test_invalid_escalations_are_refused(self, kwargs, match):
@@ -144,6 +145,20 @@ class TestEscalateInAScript:
         captured = capsys.readouterr()
         assert "resume_script" in captured.err
         assert SDK_ESCALATION_MARKER not in captured.out
+
+    def test_a_question_that_is_not_a_dict_exits_with_an_error(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            escalate("Blocked", questions=[None])
+        assert exc.value.code == 1
+        captured = capsys.readouterr()
+        assert "a question is a dict" in captured.err
+        assert SDK_ESCALATION_MARKER not in captured.out
+
+    def test_an_unserializable_escalation_exits_with_an_error(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            escalate("Blocked", answer_schema={"default": object()})
+        assert exc.value.code == 1
+        assert SDK_ESCALATION_MARKER not in capsys.readouterr().out
 
     def test_invalid_escalation_exits_with_an_error(self, capsys):
         with pytest.raises(SystemExit) as exc:

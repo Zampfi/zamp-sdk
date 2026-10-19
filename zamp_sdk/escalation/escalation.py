@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import NoReturn, Optional
+from typing import Any, NoReturn, Optional
 
 from pydantic import ValidationError
 
@@ -51,13 +51,13 @@ from zamp_sdk.context import ExecutionHost, current_execution_host, resolve_cont
 from zamp_sdk.escalation.constants import ESCALATION_KEY, ESCALATION_WORKFLOW_PARAMS_KEY, SDK_ESCALATION_MARKER
 from zamp_sdk.escalation.models import EscalationAnswer, EscalationFile, EscalationRequest
 from zamp_sdk.logger import get_logger
+from zamp_sdk.user_input import text_input
 from zamp_sdk.user_input.constants import (
     POST_ACTION_REQUIRED_FIELDS,
     POST_ACTION_RESUME_SCRIPT,
     POST_ACTION_RUN_CODE_EXECUTOR_WORKFLOW,
     SDK_USER_INPUT_EXIT_CODE,
 )
-from zamp_sdk.user_input.user_input import text_input
 from zamp_sdk.user_input.utils import resume_script
 
 logger = get_logger(__name__)
@@ -167,12 +167,14 @@ def _escalate_and_exit_script(
         )
         post_action.setdefault("run_id", resolve_context().get("run_id"))
         request = _build_request(summary, details, files, questions, answer_schema, requires_human, post_action)
-    except ValueError as exc:
-        # Exit rather than raise: a broad except around the call would carry on unanswered.
+        marker_line = f"{SDK_ESCALATION_MARKER} {json.dumps(request.model_dump(exclude_none=True))}"
+    except Exception as exc:
+        # Whatever went wrong, exit rather than raise: a raise is catchable, and an author's broad
+        # ``except Exception`` around the call would carry on without the blocker ever being sent.
         print(f"escalate failed: {exc}", file=sys.stderr)
         sys.exit(1)
     # The marker line is the contract the platform reads from stdout.
-    print(f"{SDK_ESCALATION_MARKER} {json.dumps(request.model_dump(exclude_none=True))}", flush=True)
+    print(marker_line, flush=True)
     logger.info("escalate: halting the script", num_questions=len(request.questions))
     sys.exit(SDK_USER_INPUT_EXIT_CODE)
 
@@ -192,7 +194,7 @@ def _build_request(
                 "summary": summary,
                 "details": details,
                 "files": [_file(f) for f in files or []],
-                "questions": [q if isinstance(q, dict) else dict(q) for q in questions or [text_input(summary)]],
+                "questions": [_question(q) for q in questions or [text_input(summary)]],
                 "answer_schema": answer_schema,
                 "requires_human": requires_human,
                 "post_action": post_action,
@@ -200,6 +202,17 @@ def _build_request(
         )
     except ValidationError as exc:
         raise ValueError(f"escalate: {exc}") from exc
+
+
+def _question(q: Any) -> dict:
+    if isinstance(q, dict):
+        return q
+    try:
+        return dict(q)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"escalate: a question is a dict built with select_one, multiple_choice or text_input, got {type(q).__name__}"
+        ) from exc
 
 
 def _file(f: object) -> dict:
