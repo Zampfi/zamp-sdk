@@ -180,6 +180,9 @@ async def request_user_input(
 ) -> None:
     """Ask the user one or more questions, then stop.
 
+    To let the agent that ran this code answer first, and ask the user only what it cannot
+    answer, use :func:`zamp_sdk.escalate` instead.
+
     Args:
         requests: A list of question dicts built via :func:`text_input`,
             :func:`select_one`, :func:`multiple_choice` (or raw dicts matching

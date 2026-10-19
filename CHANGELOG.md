@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.6.0
+
+- **`zamp_sdk.escalate(summary, *, details, files, questions, answer_schema, requires_human,
+  post_action)`**: stuck code hands its blocker to the agent that ran it, instead of asking a
+  person directly. The same agent run answers what it can and asks the user only for the rest,
+  with the summary, details and files on the card. Questions marked `requires_human` always go
+  to the user.
+  - In a code-executor phase, `return escalate(...)`. By default the same phase runs again with
+    the answers; `post_action=run_workflow(...)` starts another phase instead.
+  - In a sandbox script, the call prints `__ZAMP_SDK_ESCALATION__ {json}` and exits 42; the
+    script is re-run with the answers as its last argument.
+  - The next run reads the answers with `escalation_from(workflow_params)` (phase) or
+    `parse_escalation(value)` (script), as an `EscalationAnswer`. It extends `UserInputResponse`
+    with `escalation_id`, `note`, `value`, `answered_by_for(i)` and `human_text_for(i)`.
+  - Answers come back in the shape each question asked for: typed text against an options
+    question returns the option it meant, with the person's words in `human_text_for(i)`.
+- `request_user_input` is unchanged.
+
 ## 1.5.1
 
 - **An HTTP error carries the platform's message.** A 4xx or 5xx still raises `HttpClientError`
