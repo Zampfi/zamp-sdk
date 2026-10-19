@@ -23,6 +23,16 @@ class HttpClientError(Exception):
         super().__init__(self.message)
 
 
+def _platform_message(body: str) -> Optional[str]:
+    """The ``message`` of the platform's JSON error body, or ``None`` when the body carries none."""
+    try:
+        payload = json.loads(body)
+    except (ValueError, RecursionError):
+        return None
+    message = payload.get("message") if isinstance(payload, dict) else None
+    return message.strip() if isinstance(message, str) and message.strip() else None
+
+
 class HttpClient:
     """Lightweight async HTTP client for JSON API calls."""
 
@@ -89,8 +99,12 @@ class HttpClient:
                     response_text = await response.text()
 
                     if not response.ok:
+                        error_message = f"HTTP {response.status} from {url}"
+                        platform_message = _platform_message(response_text)
+                        if platform_message:
+                            error_message = f"{error_message}: {platform_message}"
                         raise HttpClientError(
-                            f"HTTP {response.status} from {url}",
+                            error_message,
                             status_code=response.status,
                             response_body=response_text,
                         )

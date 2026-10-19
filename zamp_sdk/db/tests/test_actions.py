@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from zamp_sdk.action_executor.utils import HttpClientError
 from zamp_sdk.db.utils import actions
 from zamp_sdk.db.utils.errors import AgentDbError
 
@@ -45,6 +46,24 @@ class TestErrorTranslation:
                 await actions.call("agent_db_execute_sql", {})
 
         assert exc.value is original
+
+    @pytest.mark.asyncio
+    async def test_a_rate_limit_refusal_still_reads_as_an_http_429(self):
+        """Agent prompts recognise a raised 429 by ``str(err).startswith("HTTP 429 from ")``,
+        and the refusal itself stays reachable as the cause."""
+        refusal = HttpClientError(
+            "HTTP 429 from https://api.zamp.test/actions: Your organization is using SDK actions "
+            "faster than its limit (120 per minute).",
+            status_code=429,
+        )
+
+        with patch(_EXECUTE, new=AsyncMock(side_effect=refusal)):
+            with pytest.raises(AgentDbError) as exc:
+                await actions.call("agent_db_execute_sql", {})
+
+        assert str(exc.value).startswith("HTTP 429 from https://api.zamp.test/actions: ")
+        assert exc.value.sqlstate is None
+        assert exc.value.__cause__ is refusal
 
     @pytest.mark.asyncio
     async def test_a_timeout_propagates_unwrapped(self):

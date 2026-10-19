@@ -250,7 +250,7 @@ entries = await evals.read_trace()        # the trial's calls so far; [] outside
 
 | Exception | When |
 |-----------|------|
-| `HttpClientError` | HTTP request fails (non-2xx status, network error, timeout) |
+| `HttpClientError` | HTTP request fails (non-2xx status, network error, timeout). On a 4xx or 5xx, `status_code` is the response's status and the text reads `HTTP <status> from <url>`, followed by `: <message>` when the platform's error body carries one |
 | `RuntimeError` | Action reaches a terminal failure state (FAILED, CANCELED, TERMINATED, TIMED_OUT) |
 | `TimeoutError` | Polling for action result exceeds the timeout limit |
 | `KeyError` | Required environment variable is missing and no explicit value was provided |
@@ -267,6 +267,23 @@ except RuntimeError as e:
 except TimeoutError as e:
     print(f"Timed out: {e}")
 ```
+
+### Rate limits
+
+The platform limits how fast an organization (and, where a rule says so, one user or agent) can
+start each kind of work. A refused call was **not started**.
+
+- `POST /actions` answered 429 raises `HttpClientError` with `status_code` 429 at once; the SDK
+  retries only a 5xx, never a 429. Recognise it by `status_code == 429`, then stop, or try again
+  after the wait it names, never in a loop.
+- When the platform refused the call, the text reads `HTTP 429 from <url>: <message>`. The message
+  says who is over which limit and how long to wait, or that the call can never fit the limit and
+  must not be retried. `response_body` holds the platform's JSON, whose
+  `details.retry_after_seconds` is that wait as a number (`null` when it can never fit).
+- A refusal the platform reports in-band is returned as a result: a refused agent task completes
+  with an `error` that starts `RATE_LIMITED:`, for the caller to read.
+- A database call over the API refused for a rate limit raises `AgentDbError` from the
+  `HttpClientError` (its `__cause__`).
 
 ## Development
 
