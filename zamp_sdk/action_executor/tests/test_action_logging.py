@@ -14,10 +14,11 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from conftest import drained_steps
 from zamp_sdk import configure_auto_action_logs
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.models import SdkConfig
-from zamp_sdk.capture import drain_log_capture, start_log_capture
+from zamp_sdk.capture import start_log_capture
 from zamp_sdk.context import resolve_channel_context
 from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME
 from zamp_sdk.logging.models import EmitLogResult
@@ -66,7 +67,7 @@ class TestFailureCapture:
     def test_a_failed_call_is_recorded_with_its_error(self):
         start_log_capture()
         ActionExecutor._capture_action_step("do_thing", {"a": 1}, None, error=RuntimeError("upstream down"))
-        assert drain_log_capture() == [
+        assert drained_steps() == [
             {
                 "sdk_version": __version__,
                 "event": "action",
@@ -80,13 +81,13 @@ class TestFailureCapture:
         """``output: None`` and "it failed" are different facts and must not look alike."""
         start_log_capture()
         ActionExecutor._capture_action_step("do_thing", {}, None, error=ValueError("bad"))
-        (entry,) = drain_log_capture()
+        (entry,) = drained_steps()
         assert "output" not in entry
 
     def test_a_successful_call_records_no_error_key(self):
         start_log_capture()
         ActionExecutor._capture_action_step("do_thing", {}, {"ok": True})
-        (entry,) = drain_log_capture()
+        (entry,) = drained_steps()
         assert "error" not in entry
         assert entry["output"] == {"ok": True}
 
@@ -98,7 +99,7 @@ class TestFailureCapture:
             with pytest.raises(RuntimeError, match="boom"):
                 await ActionExecutor.execute("do_thing", {"a": 1})
 
-        (entry,) = drain_log_capture()
+        (entry,) = drained_steps()
         assert entry["name"] == "do_thing"
         assert entry["error"] == "boom"
 
@@ -169,7 +170,7 @@ class TestTheEmitActionLeavesNoTrace:
             run.return_value = {}
             await ActionExecutor.execute(EMIT_LOG_ACTION_NAME, {"block": {}})
 
-        assert drain_log_capture() == []
+        assert drained_steps() == []
 
     @pytest.mark.asyncio
     async def test_a_failed_emit_records_nothing_either(self):
@@ -181,7 +182,7 @@ class TestTheEmitActionLeavesNoTrace:
             with pytest.raises(RuntimeError):
                 await ActionExecutor.execute(EMIT_LOG_ACTION_NAME, {"block": {}})
 
-        assert drain_log_capture() == []
+        assert drained_steps() == []
 
     @pytest.mark.asyncio
     async def test_an_ordinary_action_is_still_recorded(self):
@@ -190,7 +191,7 @@ class TestTheEmitActionLeavesNoTrace:
             run.return_value = {"ok": True}
             await ActionExecutor.execute("do_thing", {"a": 1})
 
-        assert [e["event"] for e in drain_log_capture()] == ["action"]
+        assert [e["event"] for e in drained_steps()] == ["action"]
 
 
 class TestWhatTheBlockShows:

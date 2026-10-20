@@ -1,5 +1,4 @@
 import asyncio
-import json
 import math
 import os
 from datetime import timedelta
@@ -155,53 +154,6 @@ class ActionExecutor:
             return await cls._execute_via_actions_hub(request)
         return await cls._execute_via_api(request)
 
-    @staticmethod
-    def _as_string(value: Any) -> str:
-        """Last-resort stand-in for a value that cannot be serialized."""
-        try:
-            return str(value)
-        except Exception:
-            return f"<unserializable {type(value).__name__}>"
-
-    @classmethod
-    def _value_or_string(cls, value: Any) -> Any:
-        """The value itself when it serializes, else a stringified stand-in."""
-        try:
-            json.dumps(value)
-            return value
-        except Exception:
-            return cls._as_string(value)
-
-    @classmethod
-    def _stringify_bad_values(cls, value: Any) -> Any:
-        """The same shape with only the parts that cannot serialize replaced by strings.
-
-        One bad field should cost that field, not the whole half of the step: an action
-        returning ``{"rows": [...], "at": datetime}`` keeps its rows. Containers are opened
-        one level only - a full walk would add latency to every action call, and a
-        self-referential value would not terminate."""
-        if isinstance(value, dict):
-            return {(k if isinstance(k, str) else cls._as_string(k)): cls._value_or_string(v) for k, v in value.items()}
-        if isinstance(value, (list, tuple)):
-            return [cls._value_or_string(v) for v in value]
-        return cls._as_string(value)
-
-    @classmethod
-    def _json_safe(cls, value: Any, *, half: str, action_name: str) -> Any:
-        """``value`` when it serializes as a whole, else a copy with the bad parts as strings."""
-        try:
-            json.dumps(value)
-            return value
-        except Exception as exc:
-            logger.warning(
-                "action step value is not JSON-serializable; capturing stringified parts",
-                action_name=action_name,
-                half=half,
-                value_type=type(value).__name__,
-                error=repr(exc),
-            )
-        return cls._stringify_bad_values(value)
-
     @classmethod
     def _capture_action_step(
         cls,
@@ -217,38 +169,33 @@ class ActionExecutor:
         recorded rather than omitted. A no-op unless capture is active (e.g. never inside a
         sandbox); emit_log suppresses this for its own call.
 
-        The host drains the buffer and may serialize it, so both halves have to be
-        JSON-safe. They are normally captured as-is; only if one isn't do we replace the
-        bad parts, so an unserializable value costs that value rather than the whole step.
-        Both halves are checked, not just the result: an in-process dispatch
-        (``ExecutionMode.INLINE``) hands params to the host without serializing them, so
-        reaching here is no proof they can be serialized. The whole value is checked with a
-        single cheap ``json.dumps`` first, so the happy path stays one call.
+        ``capture_step`` serializes the entry to JSON once, here, so the buffer holds an
+        immutable snapshot of what the action took and returned. A value that cannot be
+        serialized (a circular reference, say) leaves the whole step out of the log.
 
         An action in :data:`NON_LOGGABLE_ACTIONS` records nothing: sending a log *is* calling
         one, so it is how the run reports itself rather than a step of the run's work, and the
         same reasoning that keeps it out of the live message keeps it out of the file.
 
         Nothing here may raise into the caller. The action has already succeeded and its
-        result is about to be returned; a value that misbehaves while being inspected (a
-        mapping whose ``items()`` raises, a ``__str__`` that throws) must cost the log line,
-        not the call."""
+        result is about to be returned, so a step that cannot be serialized must cost the log
+        line, not the call."""
         try:
             if action_name in NON_LOGGABLE_ACTIONS or not capture_active():
                 return
             entry: dict[str, Any] = {
                 "event": "action",
                 "name": action_name,
-                "input": cls._json_safe(params, half="input", action_name=action_name),
+                "input": params,
             }
             if error is not None:
-                entry["error"] = cls._as_string(error)
+                entry["error"] = str(error)
             else:
-                entry["output"] = cls._json_safe(result, half="output", action_name=action_name)
+                entry["output"] = result
             capture_step(entry)
         except Exception as exc:
             logger.warning(
-                "could not capture the action step; the action itself is unaffected",
+                "action step left out of the log because it could not be serialized; the action itself is unaffected",
                 action_name=action_name,
                 error=repr(exc),
             )
