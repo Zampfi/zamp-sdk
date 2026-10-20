@@ -1,7 +1,5 @@
-from zamp_sdk.escalation.models.escalation import EscalationAnswer, EscalationFile, EscalationRequest
+from zamp_sdk.escalation.models.escalation import EscalationRequest
 
 __all__ = [
-    "EscalationAnswer",
-    "EscalationFile",
     "EscalationRequest",
 ]

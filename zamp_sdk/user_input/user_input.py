@@ -73,7 +73,6 @@ from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.context import ExecutionHost, current_execution_host, resolve_context
 from zamp_sdk.logger import get_logger
 from zamp_sdk.user_input.constants import (
-    POST_ACTION_REQUIRED_FIELDS,
     POST_ACTION_RESUME_SCRIPT,
     POST_ACTION_RUN_CODE_EXECUTOR_WORKFLOW,
     REQUEST_USER_INPUT_ACTION,
@@ -82,7 +81,7 @@ from zamp_sdk.user_input.constants import (
     USER_INPUT_WORKFLOW_PARAMS_KEY,
 )
 from zamp_sdk.user_input.models import UserInputResponse
-from zamp_sdk.user_input.utils import build_options, resume_script
+from zamp_sdk.user_input.utils import build_options, response_under, resume_script, validated_post_action
 
 logger = get_logger(__name__)
 
@@ -128,6 +127,8 @@ def parse_user_input(value: Optional[str]) -> Optional[UserInputResponse]:
       :class:`UserInputResponse`. Read answers by index with
       ``.selected_option_for(i)`` / ``.text_for(i)`` /
       ``.selected_options_for(i)`` / ``.files_for(i)``.
+
+    A script re-run after :func:`zamp_sdk.escalate` reads its answers here too.
     """
     if not value:
         return None
@@ -148,31 +149,6 @@ def parse_user_input(value: Optional[str]) -> Optional[UserInputResponse]:
 # ---------------------------------------------------------------------------
 
 
-def _validated_post_action(post_action: Optional[dict], *, expected: str, builder: str) -> dict:
-    """The post-action this runtime can act on, or ``ValueError`` naming the builder to use.
-
-    Rejected before the question is registered, because the reverse order gives the one
-    failure here that is silent: a recorded question, asked of a real person, that nothing can
-    ever act on when they answer. The platform validates the payload again when it stores it;
-    this is the early copy, and the only one that can name the builder to call instead.
-    """
-    if not post_action or post_action.get("type") != expected:
-        actual = (post_action or {}).get("type")
-        raise ValueError(
-            f"request_user_input: post_action must be {builder} here, got "
-            f"{actual or 'nothing'}. The two runtimes carry on differently — a script is "
-            f"re-run, a workflow's next phase is started — so a post-action is not "
-            f"interchangeable between them."
-        )
-    missing = [f for f in POST_ACTION_REQUIRED_FIELDS[expected] if not post_action.get(f)]
-    if missing:
-        raise ValueError(
-            f"request_user_input: {builder} does not say what to start — missing "
-            f"{', '.join(missing)}. Nothing would happen when the user answers."
-        )
-    return post_action
-
-
 async def request_user_input(
     requests: list,
     *,
@@ -181,7 +157,8 @@ async def request_user_input(
     """Ask the user one or more questions, then stop.
 
     To let the agent that ran this code answer first, and ask the user only what it cannot
-    answer, use :func:`zamp_sdk.escalate` instead.
+    answer, use :func:`zamp_sdk.escalate` instead: it takes the same questions and post-action,
+    plus the ``context`` the agent answers from.
 
     Args:
         requests: A list of question dicts built via :func:`text_input`,
@@ -227,8 +204,9 @@ async def _ask_and_exit_script(requests: list[dict], post_action: Optional[dict]
     # by the platform from the verified execution token, and is not sent from here.
     context = resolve_context()
     try:
-        post_action = _validated_post_action(
+        post_action = validated_post_action(
             post_action or resume_script(),
+            caller="request_user_input",
             expected=POST_ACTION_RESUME_SCRIPT,
             builder="resume_script(...)",
         )
@@ -274,8 +252,9 @@ async def _ask_and_end_phase(requests: list[dict], post_action: Optional[dict]) 
     a phase that returned quietly with no question recorded is a run nobody can answer and
     nothing will restart.
     """
-    post_action = _validated_post_action(
+    post_action = validated_post_action(
         post_action,
+        caller="request_user_input",
         expected=POST_ACTION_RUN_CODE_EXECUTOR_WORKFLOW,
         builder="run_workflow(...)",
     )
@@ -306,7 +285,4 @@ def user_input_from(workflow_params: dict) -> Optional[UserInputResponse]:
     Read answers by index with ``.selected_option_for(i)`` / ``.text_for(i)`` /
     ``.selected_options_for(i)`` — the same accessors the script path uses.
     """
-    payload = (workflow_params or {}).get(USER_INPUT_WORKFLOW_PARAMS_KEY)
-    if not isinstance(payload, dict):
-        return None
-    return UserInputResponse(responses=payload.get("responses") or [])
+    return response_under(workflow_params, USER_INPUT_WORKFLOW_PARAMS_KEY)

@@ -115,11 +115,9 @@ class TestPublicApi:
             "datasets",
             # Fixtures and traces for eval runs.
             "evals",
-            # A stuck phase or script hands its blocker to the agent that ran it.
-            "EscalationAnswer",
+            # A stuck phase or script hands its questions to the agent that ran it.
             "escalate",
             "escalation_from",
-            "parse_escalation",
             # Levelled logging + the two independent gates.
             "LogLevel",
             "LoggingConfig",
