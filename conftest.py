@@ -9,12 +9,14 @@ Metadata context: on the actions hub the executor binds a dict that `zamp_sdk.co
 `zamp_sdk.evals` both read, so the stand-in for it lives here once.
 """
 
+import json
 import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
+from zamp_sdk.capture import drain_log_capture
 from zamp_sdk.context.constants import ZAMP_METADATA_CONTEXT_KEY
 from zamp_sdk.logging import log_control
 
@@ -34,3 +36,8 @@ def bind_metadata_context():
         return patch.dict(sys.modules, {"zamp_public_workflow_sdk.actions_hub.utils.context_utils": context_utils})
 
     return bind
+
+
+def drained_steps() -> list[dict]:
+    """Drain the step buffer and parse each JSON line back into the step it recorded."""
+    return [json.loads(line) for line in drain_log_capture()]

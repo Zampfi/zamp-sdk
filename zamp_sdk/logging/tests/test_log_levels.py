@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from conftest import drained_steps
 from zamp_sdk import (
     LoggingConfig,
     LogLevel,
@@ -21,7 +22,7 @@ from zamp_sdk import (
     emit_tool_use,
 )
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.capture import drain_log_capture, start_log_capture
+from zamp_sdk.capture import start_log_capture
 from zamp_sdk.logging import log_control
 
 
@@ -269,7 +270,7 @@ class TestWhatReachesTheLogFile:
     def _capturing(self):
         start_log_capture()
         yield
-        drain_log_capture()
+        drained_steps()
 
     @pytest.mark.asyncio
     async def test_it_records_the_levelled_lines_and_not_the_progress_ones(self, execute):
@@ -281,7 +282,7 @@ class TestWhatReachesTheLogFile:
         await emit_debug("cursor=abc123")
         await emit_error("Vendor API returned 502")
 
-        captured = [(e["level"], e["content"]) for e in drain_log_capture()]
+        captured = [(e["level"], e["content"]) for e in drained_steps()]
 
         assert captured == [
             ("info", "Matched 87 of 90 rows"),
@@ -293,7 +294,7 @@ class TestWhatReachesTheLogFile:
         await emit_text("Step 1 of 3")
 
         assert execute.await_count == 1, "it still reaches the live message"
-        assert drain_log_capture() == [], "and leaves nothing in the file"
+        assert drained_steps() == [], "and leaves nothing in the file"
 
     @pytest.mark.asyncio
     async def test_lowering_the_level_adds_the_debug_line(self, execute):
@@ -301,7 +302,7 @@ class TestWhatReachesTheLogFile:
 
         await emit_debug("cursor=abc123")
 
-        assert [e["content"] for e in drain_log_capture()] == ["cursor=abc123"]
+        assert [e["content"] for e in drained_steps()] == ["cursor=abc123"]
 
     @pytest.mark.asyncio
     async def test_a_line_whose_delivery_failed_is_still_recorded(self, execute):
@@ -311,7 +312,7 @@ class TestWhatReachesTheLogFile:
 
         await emit_error("Vendor API returned 502")
 
-        assert [e["content"] for e in drain_log_capture()] == ["Vendor API returned 502"]
+        assert [e["content"] for e in drained_steps()] == ["Vendor API returned 502"]
 
     @pytest.mark.asyncio
     async def test_emit_log_on_its_own_records_nothing(self, execute):
@@ -319,7 +320,7 @@ class TestWhatReachesTheLogFile:
         tool block is sent, and those must not reach the file."""
         await emit_log(TextContentBlock(content="raw escape hatch"))
 
-        assert drain_log_capture() == []
+        assert drained_steps() == []
 
     @pytest.mark.asyncio
     async def test_tool_blocks_are_not_captured_here(self, execute):
@@ -328,4 +329,4 @@ class TestWhatReachesTheLogFile:
         block_id = await emit_tool_use("do_thing", input={"a": 1})
         await emit_tool_result(block_id, {"ok": True}, name="do_thing")
 
-        assert drain_log_capture() == []
+        assert drained_steps() == []

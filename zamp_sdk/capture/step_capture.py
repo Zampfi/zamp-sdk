@@ -8,12 +8,13 @@ This package imports nothing from ``logging`` or ``action_executor``, so both ca
 import it at module top without an import cycle.
 """
 
+import json
 from contextvars import ContextVar
 from typing import Any, Optional
 
 from zamp_sdk.version import __version__
 
-_log_buffer: ContextVar[Optional[list[dict[str, Any]]]] = ContextVar("zamp_step_buffer", default=None)
+_log_buffer: ContextVar[Optional[list[str]]] = ContextVar("zamp_step_buffer", default=None)
 
 
 def start_log_capture() -> None:
@@ -25,8 +26,10 @@ def start_log_capture() -> None:
     _log_buffer.set([])
 
 
-def drain_log_capture() -> list[dict[str, Any]]:
+def drain_log_capture() -> list[str]:
     """Return and clear the steps accumulated since :func:`start_log_capture`.
+
+    Each item is one step as a JSON string, serialized once when it was captured.
 
     Clearing deactivates capture, so a later append or a reused execution context
     can't leak stale steps into the next drain. Empty list if capture was never
@@ -48,7 +51,11 @@ def capture_step(entry: dict[str, Any]) -> None:
 
     Every entry carries ``sdk_version`` (as the SDK logger binds it). Appends are
     atomic under the GIL, so concurrent tasks/threads sharing the one buffer append
-    safely — only the interleaving (execution order) varies."""
+    safely — only the interleaving (execution order) varies.
+
+    The entry is serialized here, once, with ``default=str`` for values JSON can't carry
+    (datetimes, Decimals...). Anything still unserializable (a circular reference) raises
+    to the caller, which decides whether to drop the step."""
     buffer = _log_buffer.get()
     if buffer is not None:
-        buffer.append({"sdk_version": __version__, **entry})
+        buffer.append(json.dumps({"sdk_version": __version__, **entry}, default=str))

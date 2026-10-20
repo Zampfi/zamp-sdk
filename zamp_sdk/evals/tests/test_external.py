@@ -10,9 +10,10 @@ import httpx
 import pytest
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
+from conftest import drained_steps
 from zamp_sdk import AgentDbError, configure_auto_action_logs, evals
 from zamp_sdk.action_executor import ActionExecutor
-from zamp_sdk.capture import drain_log_capture, start_log_capture
+from zamp_sdk.capture import start_log_capture
 
 if TYPE_CHECKING:
     from decimal import Decimal
@@ -710,7 +711,7 @@ class TestTheActionLeavesNoTrace:
             run.return_value = returned({"id": "O1", "total": 7})
             await fetch_order("O1")
 
-        assert drain_log_capture() == []
+        assert drained_steps() == []
         assert [call.kwargs["action_name"] for call in run.call_args_list] == ["eval_external_call"]
 
     async def test_an_ordinary_action_in_the_same_setup_is_logged(self, in_eval_trial):
@@ -720,5 +721,5 @@ class TestTheActionLeavesNoTrace:
             run.return_value = {"ok": True}
             await ActionExecutor.execute("do_thing", {"a": 1})
 
-        assert [entry["event"] for entry in drain_log_capture()] == ["action"]
+        assert [entry["event"] for entry in drained_steps()] == ["action"]
         assert "emit_log" in [call.kwargs["action_name"] for call in run.call_args_list]
