@@ -7,9 +7,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
-from zamp_sdk.action_executor.constants.polling import (
+from zamp_sdk.action_executor.constants.inline import (
     INLINE_RESPONSE_GRACE_SECONDS,
     INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS,
+)
+from zamp_sdk.action_executor.constants.polling import (
     POST_RETRY_BACKOFF_COEFFICIENT,
     POST_RETRY_INITIAL_INTERVAL_SECONDS,
     POST_RETRY_MAX_INTERVAL_SECONDS,
