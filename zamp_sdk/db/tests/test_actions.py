@@ -139,3 +139,21 @@ class TestWhatIsNeverSent:
 
         assert "base_url" not in executor.await_args.kwargs
         assert "auth_token" not in executor.await_args.kwargs
+
+
+class TestExecutionModePassthrough:
+    @pytest.mark.asyncio
+    async def test_mode_is_passed_through_when_given(self):
+        from zamp_sdk.action_executor import ExecutionMode
+
+        with patch(_EXECUTE, new=AsyncMock(return_value={})) as mock:
+            await actions.call("a", {}, execution_mode=ExecutionMode.INLINE)
+
+        assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
+
+    @pytest.mark.asyncio
+    async def test_mode_defaults_to_none(self):
+        with patch(_EXECUTE, new=AsyncMock(return_value={})) as mock:
+            await actions.call("a", {})
+
+        assert mock.await_args.kwargs["execution_mode"] is None

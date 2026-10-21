@@ -10,20 +10,27 @@ re-decided per call site:
    because someone reasoned about the seam; a client-side override would silently
    replace that reasoning. Notably, write paths must not gain a retry the raw
    psycopg2 path never had.
+
+``execution_mode`` is the one knob passed through, and only when the caller gives it.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from zamp_sdk.action_executor import ActionExecutor
+from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
 from zamp_sdk.db.utils.errors import AgentDbError
 
 
-async def call(action_name: str, params: dict[str, Any]) -> Any:
+async def call(
+    action_name: str,
+    params: dict[str, Any],
+    *,
+    execution_mode: ExecutionMode | None = None,
+) -> Any:
     """Execute a platform action, translating any failure to AgentDbError."""
     try:
-        response = await ActionExecutor.execute(action_name, params)
+        response = await ActionExecutor.execute(action_name, params, execution_mode=execution_mode)
     except AgentDbError:
         raise
     except TimeoutError:
