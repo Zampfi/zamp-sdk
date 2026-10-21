@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.6.0
+
+- **`zamp_sdk.escalate(requests, *, context=None, requires_human=False, post_action=None)`**:
+  stuck code hands its questions to the agent that ran it, instead of asking a person directly.
+  It takes what `request_user_input` takes (questions built with `select_one`,
+  `multiple_choice` or `text_input`, and a `post_action`) plus `context`: what the code saw, at
+  most 16 KB. The same agent run answers what it can and asks the user only for the rest. A
+  question marked `"requires_human": True` always goes to the user; `requires_human=True`
+  marks every question.
+  - In a code-executor phase, `return await escalate(...)`. By default the same phase runs again
+    with the answers; `post_action=run_workflow(...)` starts another phase instead.
+  - In a sandbox script, the call prints `__ZAMP_SDK_ESCALATION__ {json}` and exits 42; the
+    script is re-run with the answers as its last argument, or on the flag `resume_script(...)`
+    names. Any failure to build the escalation exits 1.
+  - The next run reads the answers as a `UserInputResponse`: `escalation_from(workflow_params)`
+    in a phase, `parse_user_input(value)` in a script.
+- **`UserInputResponse.answered_by_for(i)` and `human_text_for(i)`**: who answered an
+  escalation's question (`"agent"`, `"human"` or `"parent_agent"`), and what a person typed when
+  the answer was made from their words. Answers come back in the shape each question asked for:
+  typed text against an options question returns the option it meant. Both are `None` for a
+  `request_user_input` answer.
+- `request_user_input` is unchanged.
+
 ## 1.5.1
 
 - **An HTTP error carries the platform's message.** A 4xx or 5xx still raises `HttpClientError`

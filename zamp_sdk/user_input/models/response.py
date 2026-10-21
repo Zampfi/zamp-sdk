@@ -20,11 +20,12 @@ def _resolve_sandbox_path(path: str) -> str:
 
 
 class UserInputResponse(BaseModel):
-    """The user's answer to a prior ``request_user_input``, recovered on re-run.
+    """The answers to a prior ``request_user_input`` or ``escalate``, recovered by the next run.
 
-    Built from the JSON the platform appends to the resume command, whose shape
-    is ``{"responses": [{"response": {...}, "file_references": [...]}, ...]}`` —
-    one entry per question asked in the originating call (same order).
+    Built from the JSON the platform hands that run, whose shape is
+    ``{"responses": [{"response": {...}, "file_references": [...]}, ...]}`` —
+    one entry per question asked in the originating call (same order). An
+    escalation's entries also say who answered, and what a person typed.
     """
 
     responses: list[dict] = Field(default_factory=list)
@@ -54,10 +55,7 @@ class UserInputResponse(BaseModel):
         it directly; the bytes are already staged in the sandbox, only the path
         travels on the command line.
         """
-        if index >= len(self.responses):
-            return []
-        item = self.responses[index] or {}
-        return item.get("file_references") or []
+        return self._entry(index).get("file_references") or []
 
     def file_paths_for(self, index: int = 0) -> list[str]:
         """Absolute, ready-to-open sandbox paths for files attached to the
@@ -70,8 +68,23 @@ class UserInputResponse(BaseModel):
         """
         return [_resolve_sandbox_path(p) for f in self.files_for(index) if (p := (f or {}).get("path"))]
 
-    def _response(self, index: int) -> Optional[dict]:
+    def answered_by_for(self, index: int = 0) -> Optional[str]:
+        """Who answered the *index*-th question of an escalation: ``"agent"``, ``"human"`` or
+        ``"parent_agent"``. ``None`` when the entry does not say, as for a
+        ``request_user_input`` answer, which only a person gives."""
+        return self._entry(index).get("answered_by")
+
+    def human_text_for(self, index: int = 0) -> Optional[str]:
+        """What a person typed for the *index*-th question of an escalation, when its answer
+        was made from their words (text against an options question comes back as the option
+        they meant); ``None`` otherwise."""
+        return self._entry(index).get("human_text")
+
+    def _entry(self, index: int) -> dict:
         if index >= len(self.responses):
-            return None
-        item = self.responses[index] or {}
+            return {}
+        return self.responses[index] or {}
+
+    def _response(self, index: int) -> dict:
+        item = self._entry(index)
         return item.get("response") or item

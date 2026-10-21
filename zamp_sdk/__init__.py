@@ -10,6 +10,7 @@ from zamp_sdk.context import (
     current_channel_context,
 )
 from zamp_sdk.db import AgentDbError, datasets
+from zamp_sdk.escalation import escalate, escalation_from
 from zamp_sdk.logging import (
     ContentBlock,
     ContentBlockType,
@@ -78,6 +79,8 @@ __all__ = [
     "current_channel_context",
     "datasets",
     "drain_log_capture",
+    "escalate",
+    "escalation_from",
     "evals",
     "start_log_capture",
     "TextContentBlock",
