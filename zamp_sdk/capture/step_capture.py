@@ -55,7 +55,8 @@ def capture_step(entry: dict[str, Any]) -> None:
 
     The entry is serialized here, once, with ``default=str`` for values JSON can't carry
     (datetimes, Decimals...). Anything still unserializable (a circular reference) raises
-    to the caller, which decides whether to drop the step."""
+    to the caller, which leaves that step's line out of the log; the action itself is
+    unaffected."""
     buffer = _log_buffer.get()
     if buffer is not None:
         buffer.append(json.dumps({"sdk_version": __version__, **entry}, default=str))

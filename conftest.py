@@ -26,6 +26,10 @@ def reset_logging_state(monkeypatch):
     log_control._config.set(None)
     for name in ("ZAMP_LOG_LEVEL", "ZAMP_LOG_ENABLED", "ZAMP_AUTO_ACTION_LOGS"):
         monkeypatch.delenv(name, raising=False)
+    # Capture is a context variable too: a test that starts it and doesn't drain must not leak steps into the next.
+    drain_log_capture()
+    yield
+    drain_log_capture()
 
 
 @pytest.fixture
