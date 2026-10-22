@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 import os
 from datetime import timedelta
 from typing import Any, Callable
@@ -9,6 +10,8 @@ from zamp_sdk.action_executor.constants import (
     BRANCH_HEADERS,
     EVAL_TRIAL_ID_HEADER,
     IN_PROGRESS_STATUSES,
+    INLINE_RESPONSE_GRACE_SECONDS,
+    INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
@@ -90,6 +93,11 @@ class ActionExecutor:
         * ``None`` (default) — follow the run's ``auto_action_logs`` setting.
         * ``True`` — log this call even where the run has logging off.
         * ``False`` — do not log this call even where the run has it on.
+
+        ``execution_mode`` picks how the action runs. ``SYNC``, ``ASYNC``, ``DURABLE`` (or ``None``)
+        run it durably: the API route POSTs then polls. ``INLINE`` runs it in-process with a single attempt; on the API route it is forwarded to
+        the platform, which answers in the POST response and needs a platform-side opt-in per
+        action (otherwise 422). The gateway route ignores ``execution_mode``.
 
         ``None`` is why it is not a plain ``bool``: "I did not say" has to stay distinct from
         "I said no", or a caller could never log one call without configuring the whole run.
@@ -352,6 +360,7 @@ class ActionExecutor:
                 summary=request.summary,
                 action_retry_policy=request.action_retry_policy,
                 action_start_to_close_timeout=request.action_start_to_close_timeout,
+                execution_mode=request.execution_mode,
             )
         except Exception as exc:
             await fail_action_log(block_id, request.action_name, exc)
@@ -391,8 +400,13 @@ class ActionExecutor:
         summary: str | None = None,
         action_retry_policy: RetryPolicy | None = None,
         action_start_to_close_timeout: timedelta | None = None,
+        execution_mode: ExecutionMode | None = None,
     ) -> Any:
-        """Post to ``{config.base_url}/actions`` and poll until a terminal state."""
+        """Post to ``{config.base_url}/actions`` and poll until a terminal state.
+
+        With ``ExecutionMode.INLINE`` the platform answers in the POST response, so the result
+        is read from it and nothing is polled.
+        """
         client = HttpClient(
             base_url=config.base_url,
             default_headers={
@@ -419,13 +433,11 @@ class ActionExecutor:
             body["summary"] = summary
         if action_start_to_close_timeout is not None:
             body["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
-
-        response = await cls._post_action(client, "/actions", body)
-        action_id = response["id"]
-        poll_timeout = POLL_TIMEOUT_SECONDS
-        if action_start_to_close_timeout is not None:
-            poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
-        result = await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
+        if execution_mode is ExecutionMode.INLINE:
+            body["execution_mode"] = ExecutionMode.INLINE.value
+            result = await cls._execute_inline(client, body, action_start_to_close_timeout)
+        else:
+            result = await cls._execute_durable(client, body, action_start_to_close_timeout)
 
         if return_type and hasattr(return_type, "model_validate"):
             return return_type.model_validate(result)
@@ -485,6 +497,44 @@ class ActionExecutor:
     def _next_post_retry_interval(interval: float) -> float:
         """Next create-retry backoff interval, capped at ``POST_RETRY_MAX_INTERVAL_SECONDS``."""
         return min(interval * POST_RETRY_BACKOFF_COEFFICIENT, POST_RETRY_MAX_INTERVAL_SECONDS)
+
+    @classmethod
+    async def _execute_durable(
+        cls, client: HttpClient, body: dict, action_start_to_close_timeout: timedelta | None
+    ) -> Any:
+        """POST, then poll until the action reaches a terminal state."""
+        response = await cls._post_action(client, "/actions", body)
+        action_id = response["id"]
+        poll_timeout = POLL_TIMEOUT_SECONDS
+        if action_start_to_close_timeout is not None:
+            poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
+        return await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
+
+    @classmethod
+    async def _execute_inline(
+        cls, client: HttpClient, body: dict, action_start_to_close_timeout: timedelta | None
+    ) -> Any:
+        """POST once and read the result from the response."""
+        server_timeout = (
+            action_start_to_close_timeout.total_seconds()
+            if action_start_to_close_timeout is not None
+            else INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS
+        )
+        # Never the 5xx-retry helper: a failed inline POST may already have run the action.
+        response = await client.post(
+            "/actions", data=body, timeout=math.ceil(server_timeout + INLINE_RESPONSE_GRACE_SECONDS)
+        )
+        return cls._result_or_raise(response, response["id"])
+
+    @staticmethod
+    def _result_or_raise(data: dict, action_id: str) -> Any:
+        """The result of a terminal action response; a failed or unexpected one raises."""
+        action_status = data["status"]
+        if action_status in SUCCESS_STATUSES:
+            return data.get("result")
+        if action_status in TERMINAL_FAILURE_STATUSES:
+            raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
+        raise RuntimeError(f"Action {action_id} unexpected status: {action_status}")
 
     @classmethod
     async def _poll_action_result(

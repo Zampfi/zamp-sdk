@@ -52,12 +52,13 @@ result = await ActionExecutor.execute("send_invoice", {"invoice_id": "inv_123"})
 @staticmethod
 async def execute(
     action_name: str,
-    params: Any,
+    params: dict[str, Any],
     *,
     base_url: str | None = None,
     auth_token: str | None = None,
     summary: str | None = None,
     return_type: type | None = None,
+    execution_mode: ExecutionMode | None = None,
     action_retry_policy: RetryPolicy | None = None,
     action_start_to_close_timeout: timedelta | None = None,
 ) -> Any
@@ -66,11 +67,12 @@ async def execute(
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `action_name` | `str` | Yes | Name of the registered action to execute |
-| `params` | `Any` | Yes | Input parameters for the action |
+| `params` | `dict[str, Any]` | Yes | Input parameters for the action. A non-dict value raises `ValueError` (a Pydantic `ValidationError`) before anything is sent |
 | `base_url` | `str \| None` | No | Zamp API base URL. Falls back to `ZAMP_BASE_URL` env var |
 | `auth_token` | `str \| None` | No | API authentication token. Falls back to `ZAMP_AUTH_TOKEN` env var |
 | `summary` | `str \| None` | No | Human-readable description of the execution |
 | `return_type` | `type \| None` | No | Pydantic model to validate the result against |
+| `execution_mode` | `ExecutionMode \| None` | No | `SYNC`, `ASYNC`, `DURABLE` (or omitted) run durably on Temporal (the API route POSTs then polls). `INLINE` runs in-process and returns the result in one request (the API route needs a platform-side opt-in per action, else 422). Ignored by the gateway route |
 | `action_retry_policy` | `RetryPolicy \| None` | No | Retry configuration for the action |
 | `action_start_to_close_timeout` | `timedelta \| None` | No | Maximum execution time for the action |
 

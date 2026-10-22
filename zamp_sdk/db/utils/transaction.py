@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy import ClauseElement
 
+from zamp_sdk.action_executor import ExecutionMode
 from zamp_sdk.db import constants
 from zamp_sdk.db.utils import actions
 from zamp_sdk.db.utils.compile import compile_statement
@@ -20,9 +21,15 @@ from zamp_sdk.db.utils.compile import compile_statement
 class Transaction:
     """Buffers statements, then ships them as one body in one Postgres transaction."""
 
-    def __init__(self, *, max_result_rows: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        max_result_rows: int | None = None,
+        execution_mode: ExecutionMode | None = None,
+    ) -> None:
         self._statements: list[dict[str, Any]] = []
         self._max_result_rows = max_result_rows
+        self._execution_mode = execution_mode
         self.results: list[dict[str, Any]] = []
 
     def add(self, statement: ClauseElement, *, expected_rows: int | None = None) -> int:
@@ -62,7 +69,7 @@ class Transaction:
         if self._max_result_rows is not None:
             payload["max_result_rows"] = self._max_result_rows
 
-        response = await actions.call(constants.ACTION_EXECUTE_SQL, payload)
+        response = await actions.call(constants.ACTION_EXECUTE_SQL, payload, execution_mode=self._execution_mode)
         # Positionally aligned with add() order, so results[i] answers statement i.
         self.results = list((response or {}).get("results") or [])
         return False

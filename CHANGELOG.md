@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.6.0
+
+- **Adds `ExecutionMode.DURABLE`.** Runs the action durably, with retries. `SYNC` and `ASYNC` are unchanged.
+- **`ExecutionMode.INLINE` on the API route.** The SDK forwards `execution_mode: "INLINE"` in a
+  single `POST /actions` and reads the result off the response instead of polling. The POST is never
+  retried on a 5xx, since the action may already have run. The client waits for the action's
+  timeout (the platform's 60s default when none is given) plus a 10s grace, so the platform's
+  answer, `TIMED_OUT` included, arrives before the client gives up.
+  Other modes send the same request as before.
+- **`execute` checks its arguments before sending anything.** `action_start_to_close_timeout`
+  must be positive, `execution_mode` must be a known mode (an exact string such as `"INLINE"` is
+  accepted), `params` a dict with string keys, `action_retry_policy` a `RetryPolicy` (or a dict
+  with all its fields) and `return_type` a class. A bad value raises a `ValueError`
+  (Pydantic's `ValidationError`) instead of being sent or silently ignored.
+- **Behaviour change:** `INLINE` on the API route used to be silently ignored. It is now honoured,
+  and the platform answers 422 when the action is not opted in. The gateway route still ignores it.
+
 ## 1.5.1
 
 - **An HTTP error carries the platform's message.** A 4xx or 5xx still raises `HttpClientError`

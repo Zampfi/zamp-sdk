@@ -15,6 +15,7 @@ import sqlalchemy as sa
 from sqlalchemy import ClauseElement, Select
 from sqlalchemy.schema import CreateTable
 
+from zamp_sdk.action_executor import ExecutionMode
 from zamp_sdk.db import constants
 from zamp_sdk.db.utils import (
     AgentDbError,
@@ -25,25 +26,32 @@ from zamp_sdk.db.utils import (
 )
 
 
-async def table(name: str) -> sa.Table:
-    """Fetch one dataset's schema and return a live ``sqlalchemy.Table``."""
-    tables = await _describe([name])
+async def table(name: str, *, execution_mode: ExecutionMode | None = None) -> sa.Table:
+    """Fetch one dataset's schema and return a live ``sqlalchemy.Table``.
+
+    execution_mode: pass ``ExecutionMode.INLINE`` for a low-latency single-attempt call; default runs durably.
+    """
+    tables = await _describe([name], execution_mode)
     if name not in tables:
         raise AgentDbError(f"dataset {name!r} was not found, or you have no access to it.")
     return tables[name]
 
 
-async def tables(names: list[str]) -> dict[str, sa.Table]:
+async def tables(names: list[str], *, execution_mode: ExecutionMode | None = None) -> dict[str, sa.Table]:
     """Fetch several datasets' schemas in **one** call.
 
     A script touching nine tables describes them once rather than nine times. The
     returned tables share one ``MetaData``, so joins across them compose.
+
+    execution_mode: pass ``ExecutionMode.INLINE`` for a low-latency single-attempt call; default runs durably.
     """
-    return await _describe(names)
+    return await _describe(names, execution_mode)
 
 
-async def _describe(names: list[str]) -> dict[str, sa.Table]:
-    response = await actions.call(constants.ACTION_DESCRIBE_DATASET, {"table_names": names})
+async def _describe(names: list[str], execution_mode: ExecutionMode | None) -> dict[str, sa.Table]:
+    response = await actions.call(
+        constants.ACTION_DESCRIBE_DATASET, {"table_names": names}, execution_mode=execution_mode
+    )
     metadata = sa.MetaData()
     built: dict[str, sa.Table] = {}
     for dataset in (response or {}).get("datasets") or []:
@@ -57,6 +65,7 @@ async def execute(
     *,
     expected_rows: int | None = None,
     max_result_rows: int | None = None,
+    execution_mode: ExecutionMode | None = None,
 ) -> list[dict[str, Any]]:
     """Run one statement and return its rows.
 
@@ -69,6 +78,8 @@ async def execute(
     - ``max_result_rows`` — a cap on rows *returned*. A SELECT that would exceed it
       **errors** rather than truncating, so a runaway read fails loudly instead of
       returning a silently partial answer.
+
+    execution_mode: pass ``ExecutionMode.INLINE`` for a low-latency single-attempt call; default runs durably.
     """
     sql, args = compile_statement(statement)
     entry: dict[str, Any] = {"sql": sql}
@@ -81,19 +92,21 @@ async def execute(
     if max_result_rows is not None:
         payload["max_result_rows"] = max_result_rows
 
-    response = await actions.call(constants.ACTION_EXECUTE_SQL, payload)
+    response = await actions.call(constants.ACTION_EXECUTE_SQL, payload, execution_mode=execution_mode)
     results = (response or {}).get("results") or []
     return list(results[0].get("rows") or []) if results else []
 
 
-def transaction(*, max_result_rows: int | None = None) -> Transaction:
+def transaction(*, max_result_rows: int | None = None, execution_mode: ExecutionMode | None = None) -> Transaction:
     """Buffer several statements and ship them as one transaction.
 
     ``async with datasets.transaction() as tx:`` — every ``tx.add()`` inside the
     block lands together or not at all. Results arrive on ``tx.results`` after the
     block exits, aligned with ``add()`` order.
+
+    execution_mode: pass ``ExecutionMode.INLINE`` for a low-latency single-attempt call; default runs durably.
     """
-    return Transaction(max_result_rows=max_result_rows)
+    return Transaction(max_result_rows=max_result_rows, execution_mode=execution_mode)
 
 
 async def stream(
@@ -101,6 +114,7 @@ async def stream(
     *,
     page_size: int = constants.DEFAULT_PAGE_SIZE,
     key: str = constants.ID_COLUMN,
+    execution_mode: ExecutionMode | None = None,
 ) -> AsyncIterator[list[dict[str, Any]]]:
     """Read a large result in pages, using a keyset cursor.
 
@@ -113,6 +127,8 @@ async def stream(
     would fight the cursor rather than compose with it, so they are refused instead
     of being silently overridden. Each page is one call, so ``page_size`` may not
     exceed the server's ``max_result_rows``.
+
+    execution_mode: pass ``ExecutionMode.INLINE`` for a low-latency single-attempt call; default runs durably.
     """
     key_column = _key_column(statement, key)
     _reject_conflicting_clauses(statement, key)
@@ -124,7 +140,7 @@ async def stream(
             page_statement = page_statement.where(key_column > cursor)
         page_statement = page_statement.order_by(key_column).limit(page_size)
 
-        rows = await execute(page_statement, max_result_rows=page_size)
+        rows = await execute(page_statement, max_result_rows=page_size, execution_mode=execution_mode)
         if rows:
             yield rows
         # A short page means the last one: there is no further row past the cursor.
@@ -192,7 +208,12 @@ def _reject_conflicting_clauses(statement: Select, key: str) -> None:
         )
 
 
-async def create(table_object: sa.Table, *, if_exists: str = "error") -> sa.Table:
+async def create(
+    table_object: sa.Table,
+    *,
+    if_exists: str = "error",
+    execution_mode: ExecutionMode | None = None,
+) -> sa.Table:
     """Create a dataset from a ``sa.Table`` definition.
 
     Returns the dataset as the platform **describes it after creation** — carrying the
@@ -202,22 +223,28 @@ async def create(table_object: sa.Table, *, if_exists: str = "error") -> sa.Tabl
     The ``id`` injection is the platform's rule and stays there: the SDK sends the
     author's DDL as-is and reads the result back, rather than mirroring the rule
     client-side (which would keep the same logic in step across two repos).
+
+    execution_mode: pass ``ExecutionMode.INLINE`` for a low-latency single-attempt call; default runs durably.
     """
     create_sql = str(CreateTable(table_object).compile(dialect=constants.DDL_DIALECT))
 
     await actions.call(
         constants.ACTION_CREATE_DATASET,
         {"create_sql": create_sql.strip(), "if_exists": if_exists},
+        execution_mode=execution_mode,
     )
 
-    described = await _describe([table_object.name])
+    described = await _describe([table_object.name], execution_mode)
     result = described.get(table_object.name)
     if result is None:
         raise AgentDbError(f"dataset {table_object.name!r} was created but the platform did not describe it back.")
     return result
 
 
-async def drop(table_or_name: sa.Table | str) -> None:
-    """Delete a dataset and all of its rows. Irreversible."""
+async def drop(table_or_name: sa.Table | str, *, execution_mode: ExecutionMode | None = None) -> None:
+    """Delete a dataset and all of its rows. Irreversible.
+
+    execution_mode: pass ``ExecutionMode.INLINE`` for a low-latency single-attempt call; default runs durably.
+    """
     name = table_or_name.name if isinstance(table_or_name, sa.Table) else table_or_name
-    await actions.call(constants.ACTION_DROP_DATASET, {"table_name": name})
+    await actions.call(constants.ACTION_DROP_DATASET, {"table_name": name}, execution_mode=execution_mode)

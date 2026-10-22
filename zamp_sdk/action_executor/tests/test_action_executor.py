@@ -1,4 +1,5 @@
 import json
+import math
 import uuid
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -6,6 +7,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zamp_sdk.action_executor.action_executor import ActionExecutor
+from zamp_sdk.action_executor.constants.inline import (
+    INLINE_RESPONSE_GRACE_SECONDS,
+    INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS,
+)
 from zamp_sdk.action_executor.constants.polling import (
     POST_RETRY_BACKOFF_COEFFICIENT,
     POST_RETRY_INITIAL_INTERVAL_SECONDS,
@@ -222,7 +227,8 @@ class TestExecuteDispatch:
 class TestExecuteViaActionsHub:
     """Tests for the private ActionExecutor._execute_via_actions_hub() method."""
 
-    async def test_delegates_to_actions_hub_with_mapped_mode(self):
+    @pytest.mark.parametrize("mode", [ExecutionMode.SYNC, ExecutionMode.DURABLE])
+    async def test_delegates_to_actions_hub_with_mapped_mode(self, mode):
         fake_ah = MagicMock()
         fake_ah.execute_action = AsyncMock(return_value="ok")
 
@@ -256,7 +262,7 @@ class TestExecuteViaActionsHub:
                     action_name="send",
                     params={"x": 1},
                     summary="s",
-                    execution_mode=ExecutionMode.SYNC,
+                    execution_mode=mode,
                     action_start_to_close_timeout=timedelta(seconds=30),
                 )
             )
@@ -725,6 +731,178 @@ class TestPostAction:
 
         assert result == {"ok": True}
         assert mock_client.post.await_count == 2
+
+
+class TestInlineExecution:
+    """ExecutionMode.INLINE on the API route: one POST, result read off the response."""
+
+    def _config(self) -> SdkConfig:
+        return SdkConfig(base_url="https://api.zamp.test", auth_token="tok")
+
+    async def _run(self, client, mode, **kwargs):
+        with (
+            patch(f"{_MODULE}.HttpClient", return_value=client),
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+        ):
+            return await ActionExecutor._execute_action(
+                action_name="a", params={}, config=self._config(), execution_mode=mode, **kwargs
+            )
+
+    async def test_completed_returns_result_without_polling(self):
+        client = AsyncMock()
+        client.post.return_value = {"id": "i1", "status": "COMPLETED", "result": {"v": 1}}
+
+        result = await self._run(client, ExecutionMode.INLINE)
+
+        assert result == {"v": 1}
+        assert client.post.await_count == 1
+        client.get.assert_not_called()
+
+    async def test_without_a_timeout_waits_for_the_platform_default_plus_grace(self):
+        """The platform answers (TIMED_OUT included) before the client gives up."""
+        client = AsyncMock()
+        client.post.return_value = {"id": "i1", "status": "COMPLETED", "result": None}
+
+        await self._run(client, ExecutionMode.INLINE)
+
+        body = client.post.call_args.kwargs["data"]
+        assert body["execution_mode"] == "INLINE"
+        assert "start_to_close_timeout_seconds" not in body
+        expected = math.ceil(INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS + INLINE_RESPONSE_GRACE_SECONDS)
+        assert client.post.call_args.kwargs["timeout"] == expected
+
+    async def test_caller_timeout_is_sent_and_waited_for_plus_grace(self):
+        client = AsyncMock()
+        client.post.return_value = {"id": "i1", "status": "COMPLETED", "result": None}
+
+        await self._run(client, ExecutionMode.INLINE, action_start_to_close_timeout=timedelta(seconds=5.5))
+
+        assert client.post.call_args.kwargs["data"]["start_to_close_timeout_seconds"] == 5.5
+        assert client.post.call_args.kwargs["timeout"] == math.ceil(5.5 + INLINE_RESPONSE_GRACE_SECONDS)
+
+    @pytest.mark.parametrize("status", ["FAILED", "TIMED_OUT"])
+    async def test_terminal_failure_raises(self, status):
+        client = AsyncMock()
+        client.post.return_value = {"id": "i1", "status": status, "error": "nope"}
+
+        with pytest.raises(RuntimeError, match=f"i1 {status}: nope"):
+            await self._run(client, ExecutionMode.INLINE)
+
+        client.get.assert_not_called()
+
+    async def test_running_response_raises_without_polling(self):
+        client = AsyncMock()
+        client.post.return_value = {"id": "i1", "status": "RUNNING"}
+
+        with pytest.raises(RuntimeError, match="i1 unexpected status: RUNNING"):
+            await self._run(client, ExecutionMode.INLINE)
+
+        client.get.assert_not_called()
+
+    async def test_not_opted_in_422_propagates_without_retry_or_poll(self):
+        client = AsyncMock()
+        client.post.side_effect = _http_error(422)
+
+        with pytest.raises(HttpClientError) as exc_info:
+            await self._run(client, ExecutionMode.INLINE)
+
+        assert exc_info.value.status_code == 422
+        assert client.post.await_count == 1
+        client.get.assert_not_called()
+
+    async def test_5xx_is_not_retried(self):
+        client = AsyncMock()
+        client.post.side_effect = _http_error(503)
+
+        with pytest.raises(HttpClientError):
+            await self._run(client, ExecutionMode.INLINE)
+
+        assert client.post.await_count == 1
+
+    async def test_return_type_validates_inline_result(self):
+        class Model:
+            @staticmethod
+            def model_validate(value):
+                return ("validated", value)
+
+        client = AsyncMock()
+        client.post.return_value = {"id": "i1", "status": "COMPLETED", "result": 3}
+
+        assert await self._run(client, ExecutionMode.INLINE, return_type=Model) == ("validated", 3)
+
+    @pytest.mark.parametrize("mode", [None, ExecutionMode.ASYNC, ExecutionMode.SYNC, ExecutionMode.DURABLE])
+    async def test_other_modes_send_no_mode_and_poll(self, mode):
+        client = AsyncMock()
+        client.post.return_value = {"id": "i1"}
+        client.get.return_value = {"status": "COMPLETED", "result": 1}
+
+        await self._run(client, mode)
+
+        body = client.post.call_args.kwargs["data"]
+        assert "execution_mode" not in body
+        assert "start_to_close_timeout_seconds" not in body
+        assert "timeout" not in client.post.call_args.kwargs
+        client.get.assert_awaited()
+
+    async def test_execute_via_api_passes_mode_through(self):
+        request = ActionRequest(action_name="a", params={}, execution_mode=ExecutionMode.INLINE)
+        with (
+            patch.dict("os.environ", {"ZAMP_BASE_URL": "https://x", "ZAMP_AUTH_TOKEN": "t"}),
+            patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as mock_exec,
+        ):
+            await ActionExecutor._execute_via_api(request)
+
+        assert mock_exec.call_args.kwargs["execution_mode"] is ExecutionMode.INLINE
+
+    async def test_gateway_ignores_inline(self):
+        gateway = AsyncMock(return_value="g")
+        request = ActionRequest(action_name="a", params={"p": 1}, execution_mode=ExecutionMode.INLINE)
+
+        assert await ActionExecutor._execute_via_gateway(request, gateway) == "g"
+
+        assert gateway.call_args.args == ("a", {"p": 1})
+        assert set(gateway.call_args.kwargs) == {
+            "summary",
+            "return_type",
+            "action_retry_policy",
+            "action_start_to_close_timeout",
+        }
+
+
+class TestExecuteRejectsBadArguments:
+    """``execute`` validates its arguments before choosing a route, so nothing is sent."""
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"action_start_to_close_timeout": timedelta(0)},
+            {"execution_mode": "inline"},
+        ],
+    )
+    async def test_rejected_before_routing(self, kwargs):
+        with patch(f"{_MODULE}.resolve_route", new_callable=AsyncMock) as route:
+            with pytest.raises(ValueError):
+                await ActionExecutor.execute("a", {}, **kwargs)
+
+        route.assert_not_awaited()
+
+
+class TestResultOrRaise:
+    def test_completed_returns_result(self):
+        assert ActionExecutor._result_or_raise({"status": "COMPLETED", "result": {"a": 1}}, "x") == {"a": 1}
+
+    @pytest.mark.parametrize("status", ["FAILED", "TIMED_OUT", "CANCELED"])
+    def test_terminal_failure_raises_with_error(self, status):
+        with pytest.raises(RuntimeError, match=f"Action x {status}: bad"):
+            ActionExecutor._result_or_raise({"status": status, "error": "bad"}, "x")
+
+    def test_missing_error_says_unknown(self):
+        with pytest.raises(RuntimeError, match="unknown error"):
+            ActionExecutor._result_or_raise({"status": "FAILED"}, "x")
+
+    def test_unexpected_status_raises(self):
+        with pytest.raises(RuntimeError, match="unexpected status: WEIRD"):
+            ActionExecutor._result_or_raise({"status": "WEIRD"}, "x")
 
 
 class TestPollActionResult:

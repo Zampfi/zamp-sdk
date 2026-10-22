@@ -22,6 +22,7 @@ class TestPublicApi:
 
         assert ExecutionMode.SYNC.value == "SYNC"
         assert ExecutionMode.ASYNC.value == "ASYNC"
+        assert ExecutionMode.DURABLE.value == "DURABLE"
         assert ExecutionMode.INLINE.value == "INLINE"
 
     def test_emit_log_importable(self):

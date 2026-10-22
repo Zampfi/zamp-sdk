@@ -14,6 +14,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy import insert, select, update
 
+from zamp_sdk.action_executor import ExecutionMode
 from zamp_sdk.db import datasets
 from zamp_sdk.db.utils.errors import AgentDbError
 
@@ -524,3 +525,73 @@ class TestCreateAndDrop:
 
         await datasets.drop("other")
         assert executor.await_args.args[1]["table_name"] == "other"
+
+
+class TestExecutionMode:
+    """The mode reaches the executor on every call; omitting it sends None."""
+
+    INLINE = ExecutionMode.INLINE
+
+    @staticmethod
+    def _modes(executor):
+        return [c.kwargs["execution_mode"] for c in executor.await_args_list]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    async def test_table_and_tables(self, executor, mode):
+        executor.return_value = DESCRIBE_RESPONSE
+
+        await datasets.table("invoices", execution_mode=mode)
+        await datasets.tables(["invoices"], execution_mode=mode)
+
+        assert self._modes(executor) == [mode, mode]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    async def test_execute(self, executor, mode):
+        table = await _invoices(executor)
+
+        await datasets.execute(select(table), execution_mode=mode)
+
+        assert self._modes(executor) == [mode]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    async def test_transaction(self, executor, mode):
+        table = await _invoices(executor)
+
+        async with datasets.transaction(execution_mode=mode) as tx:
+            tx.add(select(table))
+
+        assert self._modes(executor) == [mode]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    async def test_stream_every_page(self, executor, mode):
+        table = await _invoices(executor)
+        executor.side_effect = [
+            {"results": [{"rows": [{"id": 1}, {"id": 2}]}]},
+            {"results": [{"rows": [{"id": 3}, {"id": 4}]}]},
+            {"results": [{"rows": [{"id": 5}]}]},
+        ]
+
+        [page async for page in datasets.stream(select(table), page_size=2, execution_mode=mode)]
+
+        assert self._modes(executor) == [mode, mode, mode]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    async def test_create_covers_the_create_and_describe_calls(self, executor, mode):
+        executor.return_value = TestCreateAndDrop._CUSTOMERS_DESCRIBE
+        source = sa.Table("customers", sa.MetaData(), sa.Column("name", sa.Text))
+
+        await datasets.create(source, execution_mode=mode)
+
+        assert self._modes(executor) == [mode, mode]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    async def test_drop(self, executor, mode):
+        await datasets.drop("t", execution_mode=mode)
+
+        assert self._modes(executor) == [mode]
