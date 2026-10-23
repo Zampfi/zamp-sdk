@@ -33,3 +33,38 @@ def test_drain_clears_the_buffer():
 def test_nothing_is_appended_when_capture_is_inactive():
     capture_step({"event": "action"})
     assert drain_log_capture() == []
+
+
+def test_an_unserializable_step_becomes_a_stand_in_line_without_its_payload():
+    start_log_capture()
+    cyc: dict = {}
+    cyc["self"] = cyc
+    capture_step({"event": "action", "name": "act", "input": {"secret": "payload"}, "output": cyc})
+    (step,) = drained_steps()
+    assert step == {
+        "sdk_version": __version__,
+        "event": "action",
+        "name": "act",
+        "capture_error": "ValueError: Circular reference detected",
+    }
+
+
+def test_a_stand_in_log_line_keeps_its_level():
+    start_log_capture()
+    cyc: list = []
+    cyc.append(cyc)
+    capture_step({"event": "log", "level": "error", "content": cyc})
+    (step,) = drained_steps()
+    assert step["event"] == "log"
+    assert step["level"] == "error"
+    assert "content" not in step
+
+
+def test_a_stand_in_line_keeps_only_string_fields():
+    start_log_capture()
+    cyc: dict = {}
+    cyc["self"] = cyc
+    capture_step({"event": "action", "name": cyc})
+    (step,) = drained_steps()
+    assert "name" not in step
+    assert step["event"] == "action"
