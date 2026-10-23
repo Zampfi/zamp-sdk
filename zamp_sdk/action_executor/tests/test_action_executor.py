@@ -1128,16 +1128,32 @@ def test_capture_action_step_stringifies_values_json_cannot_carry():
     assert step["output"] == {"rows": [{"n": 1}], "at": "<weird>"}
 
 
-def test_capture_action_step_drops_a_circular_result_with_a_warning():
+def test_capture_action_step_records_a_stand_in_line_for_a_circular_result():
     start_log_capture()
     cyc: dict = {}
     cyc["self"] = cyc
-    with patch(f"{_MODULE}.logger") as logger:
+    with patch("zamp_sdk.capture.step_capture.logger") as logger:
         ActionExecutor._capture_action_step("act", {"a": 1}, cyc)
-    assert drained_steps() == []
+    (step,) = drained_steps()
+    assert step == {
+        "sdk_version": __version__,
+        "event": "action",
+        "name": "act",
+        "capture_error": "ValueError: Circular reference detected",
+    }
     assert logger.warning.call_count == 1
-    assert "could not be serialized" in logger.warning.call_args.args[0]
-    assert logger.warning.call_args.kwargs["action_name"] == "act"
+    assert logger.warning.call_args.kwargs["name"] == "act"
+
+
+def test_a_failed_call_with_unserializable_params_keeps_its_error_in_the_stand_in_line():
+    start_log_capture()
+    cyc: dict = {}
+    cyc["self"] = cyc
+    ActionExecutor._capture_action_step("act", cyc, None, error=RuntimeError("down"))
+    (step,) = drained_steps()
+    assert step["name"] == "act"
+    assert step["error"] == "down"
+    assert "input" not in step
 
 
 def test_capture_action_step_serializes_exactly_once():
@@ -1188,13 +1204,16 @@ def test_capture_action_step_never_raises_into_the_caller():
     that misbehaves under inspection must cost the log line and nothing else."""
     start_log_capture()
     ActionExecutor._capture_action_step("act", _HostileDict(a=1), {"ok": True})
-    assert drained_steps() == []
+    (step,) = drained_steps()
+    assert step["name"] == "act"
+    assert step["capture_error"] == "RuntimeError: boom"
 
 
 def test_capture_action_step_never_raises_on_a_hostile_result():
     start_log_capture()
     ActionExecutor._capture_action_step("act", {"a": 1}, _HostileDict(b=2))
-    assert drained_steps() == []
+    (step,) = drained_steps()
+    assert step["capture_error"] == "RuntimeError: boom"
 
 
 class TestCaptureIsFailSafe:
@@ -1264,4 +1283,6 @@ async def test_execute_returns_the_result_when_its_step_cannot_be_serialized(mon
     monkeypatch.setattr(ActionExecutor, "_execute_via_api", staticmethod(dispatch))
     start_log_capture()
     assert await ActionExecutor.execute("get_invoice", {"id": "1"}) is cyc
-    assert drained_steps() == []
+    (step,) = drained_steps()
+    assert step["name"] == "get_invoice"
+    assert step["capture_error"] == "ValueError: Circular reference detected"

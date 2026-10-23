@@ -12,7 +12,13 @@ import json
 from contextvars import ContextVar
 from typing import Any, Optional
 
+from zamp_sdk.logger import get_logger
 from zamp_sdk.version import __version__
+
+logger = get_logger(__name__)
+
+# What a stand-in line keeps: the plain strings the SDK itself sets on every step.
+_STAND_IN_FIELDS = ("sdk_version", "event", "name", "level", "error")
 
 _log_buffer: ContextVar[Optional[list[str]]] = ContextVar("zamp_step_buffer", default=None)
 
@@ -54,9 +60,28 @@ def capture_step(entry: dict[str, Any]) -> None:
     safely — only the interleaving (execution order) varies.
 
     The entry is serialized here, once, with ``default=str`` for values JSON can't carry
-    (datetimes, Decimals...). Anything still unserializable (a circular reference) raises
-    to the caller, which leaves that step's line out of the log; the action itself is
-    unaffected."""
+    (datetimes, Decimals...). Anything still unserializable (a circular reference) is
+    recorded as a stand-in line naming the step and why, so the step still leaves a trace."""
     buffer = _log_buffer.get()
-    if buffer is not None:
-        buffer.append(json.dumps({"sdk_version": __version__, **entry}, default=str))
+    if buffer is None:
+        return
+    entry = {"sdk_version": __version__, **entry}
+    try:
+        line = json.dumps(entry, default=str)
+    except Exception as exc:  # dumps runs the value's own code (__str__, items()), so any error is possible
+        line = _stand_in_line(entry, exc)
+    buffer.append(line)
+
+
+def _stand_in_line(entry: dict[str, Any], exc: Exception) -> str:
+    """A small line in place of one that would not serialize: the step's own string fields and the
+    reason, never its payload, so it costs the same whatever the step carried."""
+    logger.warning(
+        "log step could not be serialized; recorded a stand-in line instead",
+        step_event=entry.get("event"),
+        name=entry.get("name"),
+        error=repr(exc),
+    )
+    stub = {key: entry[key] for key in _STAND_IN_FIELDS if isinstance(entry.get(key), str)}
+    stub["capture_error"] = f"{type(exc).__name__}: {exc}"
+    return json.dumps(stub)

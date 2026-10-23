@@ -171,14 +171,15 @@ class ActionExecutor:
 
         ``capture_step`` serializes the entry to JSON once, here, so the buffer holds an
         immutable snapshot of what the action took and returned. A value that cannot be
-        serialized (a circular reference, say) leaves the whole step out of the log.
+        serialized (a circular reference, say) is recorded as a stand-in line with the
+        action's name and the reason, not its payload.
 
         An action in :data:`NON_LOGGABLE_ACTIONS` records nothing: sending a log *is* calling
         one, so it is how the run reports itself rather than a step of the run's work, and the
         same reasoning that keeps it out of the live message keeps it out of the file.
 
         Nothing here may raise into the caller. The action has already succeeded and its
-        result is about to be returned, so a step that cannot be serialized must cost the log
+        result is about to be returned, so a failure to capture the step must cost the log
         line, not the call."""
         try:
             if action_name in NON_LOGGABLE_ACTIONS or not capture_active():
@@ -195,7 +196,7 @@ class ActionExecutor:
             capture_step(entry)
         except Exception as exc:
             logger.warning(
-                "action step left out of the log because it could not be serialized; the action itself is unaffected",
+                "could not capture the action step; the action itself is unaffected",
                 action_name=action_name,
                 error=repr(exc),
             )
