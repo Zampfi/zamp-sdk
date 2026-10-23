@@ -4,12 +4,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import BaseModel
 
+from conftest import drained_steps
 from zamp_sdk import (
     EmitLogResult,
     TextContentBlock,
     ToolResultContentBlock,
     ToolUseContentBlock,
-    drain_log_capture,
     emit_log,
     emit_text,
     emit_tool_result,
@@ -287,12 +287,12 @@ class TestLogCapture:
         # Nothing: emit_text is display-only, and a tool block's action is already captured
         # as its own ``action`` entry. emit_info / emit_debug / emit_error are what reach the
         # file — see test_log_levels.py.
-        assert drain_log_capture() == []
+        assert drained_steps() == []
 
     def test_captures_action_call(self):
         start_log_capture()
         ActionExecutor._capture_action_step("do_thing", {"a": 1}, {"ok": True})
-        assert drain_log_capture() == [
+        assert drained_steps() == [
             {
                 "sdk_version": __version__,
                 "event": "action",
@@ -318,12 +318,12 @@ class TestLogCapture:
 
         # Nothing: emit_text does not record, and the dispatch that delivered it is skipped
         # by name — otherwise every line would also show up as an action calling emit_log.
-        assert drain_log_capture() == []
+        assert drained_steps() == []
 
     def test_capture_is_noop_without_start(self):
         # No start_log_capture() -> capture is a no-op (blocks still stream live elsewhere).
         ActionExecutor._capture_action_step("do_thing", {"a": 1}, {"ok": True})
-        assert drain_log_capture() == []
+        assert drained_steps() == []
 
     def test_capture_active_reflects_state(self):
         # Guard used to skip building entries when they would be discarded (e.g. sandbox).

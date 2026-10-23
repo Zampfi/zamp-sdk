@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.6.1
+
+- **Step capture serializes each step once.** `drain_log_capture()` now returns a list of JSON strings
+  (one per step) instead of dicts, serialized when the step is captured, so the host no longer
+  re-serializes the whole log at the end of a run. Non-JSON values such as datetimes are
+  stringified; a step that still cannot be serialized (e.g. a circular reference) is recorded as a
+  short stand-in line with its `event`, `name`, `level` and `error` and a `capture_error` reason,
+  without its payload, where before it was kept with its bad parts as strings.
+
 ## 1.6.0
 
 - **Adds `ExecutionMode.DURABLE`.** Runs the action durably, with retries. `SYNC` and `ASYNC` are unchanged.
