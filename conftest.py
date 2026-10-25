@@ -16,7 +16,8 @@ from unittest.mock import patch
 import pytest
 
 from zamp_sdk.context.constants import ZAMP_METADATA_CONTEXT_KEY
-from zamp_sdk.logging import log_control
+from zamp_sdk.logging import emit_budget, log_control
+from zamp_sdk.logging.constants import DEFAULT_MAX_EMITS
 
 
 @pytest.fixture(autouse=True)
@@ -24,6 +25,16 @@ def reset_logging_state(monkeypatch):
     log_control._config.set(None)
     for name in ("ZAMP_LOG_LEVEL", "ZAMP_LOG_ENABLED", "ZAMP_AUTO_ACTION_LOGS"):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def reset_emit_budget():
+    """The emit budget is process-wide on the API host, so its count would leak between tests."""
+    emit_budget._budget.set(None)
+    emit_budget._PROCESS_BUDGET.limit = DEFAULT_MAX_EMITS
+    emit_budget._PROCESS_BUDGET.sent = 0
+    emit_budget._PROCESS_BUDGET.stopped = False
+    emit_budget._PROCESS_BUDGET.warned = False
 
 
 @pytest.fixture

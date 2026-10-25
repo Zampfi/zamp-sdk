@@ -236,7 +236,7 @@ class TestEmitToolResult:
 class TestEmitToolUseResultPairing:
     @pytest.mark.asyncio
     async def test_full_pair_share_id(self):
-        execute = AsyncMock(return_value=None)
+        execute = AsyncMock(return_value={"success": True})
         with patch("zamp_sdk.action_executor.ActionExecutor.execute", execute):
             tool_id = await emit_tool_use("GMAIL_SEND", input={"to": "a@b.com"})
             res = await emit_tool_result(tool_id, "sent", name="GMAIL_SEND")

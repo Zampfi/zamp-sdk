@@ -43,7 +43,13 @@ from zamp_sdk.context import (
     current_execution_host,
 )
 from zamp_sdk.logger import get_logger
-from zamp_sdk.logging.constants import EMIT_LOG_ACTION_NAME, LogLevel
+from zamp_sdk.logging.constants import (
+    EMIT_LOG_ACTION_NAME,
+    EMIT_SENDING_STOPPED_ERROR,
+    EMIT_TIMEOUT,
+    LogLevel,
+)
+from zamp_sdk.logging.emit_budget import stop_emit_sending, try_spend_emit
 from zamp_sdk.logging.log_control import should_emit
 from zamp_sdk.logging.models import (
     ContentBlock,
@@ -94,6 +100,15 @@ def _current_tool_call_id() -> Optional[str]:
     return os.environ.get(ENV_TOOL_CALL_ID)
 
 
+def _was_refused(result: Any) -> bool:
+    """Refusal rule: the (envelope-unwrapped) result is not a dict, or its ``success`` is False.
+
+    pantheon's ``emit_log`` answers ``{"success": bool, "budget_exhausted": ..., "error": ...}``;
+    a gateway failure unwraps to its error string. A dict with no ``success`` key is not a refusal.
+    """
+    return not isinstance(result, dict) or result.get("success") is False
+
+
 async def emit_log(
     block: ContentBlock,
     *,
@@ -116,6 +131,8 @@ async def emit_log(
     """
     if not auto and not should_emit(level):
         return EmitLogResult(ok=True)
+    if not try_spend_emit():
+        return EmitLogResult(ok=False, error=EMIT_SENDING_STOPPED_ERROR, sending_stopped=True)
     try:
         # Auto-stamp parent_block_id from the running tool's id so emitted blocks
         # group under the correct parent when parallel tool calls interleave.
@@ -133,7 +150,7 @@ async def emit_log(
         # to run an action and an emit is no exception, so this module depends on it — but it
         # depends on this one back, through the auto-logger. One of the two has to be deferred,
         # and it is this one: by the time an emit happens every module is loaded.
-        from zamp_sdk.action_executor import ActionExecutor
+        from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
 
         # Nothing special is needed to keep this out of the live message or the step buffer:
         # ``NON_LOGGABLE_ACTIONS`` names it, and both the auto-logger and the step capture
@@ -142,9 +159,14 @@ async def emit_log(
             EMIT_LOG_ACTION_NAME,
             params,
             summary="Emit log to current agent context",
+            execution_mode=ExecutionMode.INLINE,
+            action_start_to_close_timeout=EMIT_TIMEOUT,
         )
+        if _was_refused(ActionExecutor._unwrap_envelope(result)):
+            stop_emit_sending()
         return EmitLogResult(ok=True, result=result)
     except Exception as exc:
+        stop_emit_sending()
         logger.warning("emit_log failed", error=str(exc))
         return EmitLogResult(ok=False, error=str(exc))
 

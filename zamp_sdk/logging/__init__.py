@@ -1,5 +1,6 @@
 from zamp_sdk.capture import drain_log_capture, start_log_capture
 from zamp_sdk.logging.constants import LogLevel
+from zamp_sdk.logging.emit_budget import bind_emit_budget, emit_sending_stopped
 from zamp_sdk.logging.log_control import (
     bind_logging_config,
     configure_auto_action_logs,
@@ -35,6 +36,7 @@ __all__ = [
     "TextContentBlock",
     "ToolResultContentBlock",
     "ToolUseContentBlock",
+    "bind_emit_budget",
     "bind_logging_config",
     "configure_auto_action_logs",
     "configure_logging",
@@ -43,6 +45,7 @@ __all__ = [
     "emit_error",
     "emit_info",
     "emit_log",
+    "emit_sending_stopped",
     "emit_text",
     "emit_tool_result",
     "emit_tool_use",

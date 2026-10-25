@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from zamp_sdk.logger import get_logger
 from zamp_sdk.logging.constants import NON_LOGGABLE_ACTIONS
+from zamp_sdk.logging.emit_budget import emit_sending_stopped
 from zamp_sdk.logging.log_control import auto_action_logs_enabled
 from zamp_sdk.logging.logging import _emit_tool_use_block, emit_tool_result
 
@@ -26,6 +27,8 @@ def _should_log(action_name: str, log_action: Optional[bool]) -> bool:
     *sent*, so logging that call would call it again.
     """
     if action_name in NON_LOGGABLE_ACTIONS:
+        return False
+    if emit_sending_stopped():
         return False
     if log_action is not None:
         return log_action

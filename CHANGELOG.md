@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.7.0
+
+- **Emits are sent `INLINE` with a 15s timeout.** One POST per `emit_*` call, no durable polling.
+- **Emits are capped at 1200 per process (per run, on a host that binds a budget).** After the cap, or
+  after the platform refuses any emit (an error, a timeout, or a result with `success` false), the SDK
+  stops sending emits to the platform for that process/run and only logs locally. The SDK's automatic
+  action logs stop too.
+- **New `EmitLogResult.sending_stopped`.** True when an emit was not sent for that reason (`ok` is False).
+- **New `zamp_sdk.logging.bind_emit_budget(max_emits)`** for hosts that run many runs in one process.
+  Not exported from the top-level `zamp_sdk`.
+
 ## 1.6.0
 
 - **Adds `ExecutionMode.DURABLE`.** Runs the action durably, with retries. `SYNC` and `ASYNC` are unchanged.

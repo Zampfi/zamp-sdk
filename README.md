@@ -205,6 +205,14 @@ A script can be re-run, so say in the SQL when a write must be safe to repeat:
 constraint, which you declare in the `CREATE TABLE` or add later with
 `CREATE UNIQUE INDEX`.
 
+## Logging (`emit_*`)
+
+`emit_text`, `emit_info`, `emit_error` and the rest send each line to the platform in one `INLINE`
+request (15s timeout). A process may send at most 1200 lines; after that, or after the platform
+refuses one, the SDK stops sending and only logs locally. The result then has
+`sending_stopped=True`. Hosts running many runs in one process call
+`zamp_sdk.logging.bind_emit_budget(n)` per run.
+
 ## Evals (`zamp_sdk.evals`)
 
 Mark the calls a script makes to the outside world, and the steps of its own logic, so an eval
