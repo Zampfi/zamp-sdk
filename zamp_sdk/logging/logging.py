@@ -215,13 +215,6 @@ async def _emit_tool_use_block(
     """
     tool_id = id or new_emit_id()
     input_json = json.dumps(input) if input is not None else None
-    logger.info(
-        "emit_tool_use",
-        id=tool_id,
-        name=name,
-        display_title=display_title,
-        input_json=input_json,
-    )
     result = await emit_log(
         ToolUseContentBlock(
             id=tool_id,
@@ -270,5 +263,4 @@ async def emit_tool_result(
         auto: Reserved for the SDK's own action logging. Leave it alone.
     """
     stringified = stringify_tool_result(content)
-    logger.info("emit_tool_result", id=id, name=name, content=stringified)
     return await emit_log(ToolResultContentBlock(id=id, name=name, content=stringified), auto=auto)
