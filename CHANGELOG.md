@@ -8,6 +8,9 @@
   what the script already had, and a large result filled the agent's context. The blocks still
   reach the live message unchanged, and a failed call is still on record there (the closing block
   carries the error) and in the step buffer.
+- **`emit_text` / `emit_info` / `emit_debug` / `emit_error` print to stdout only when the line is
+  shown.** The stdout copy used to be printed before the level check, so `emit_debug` printed at
+  the default level and every line printed with logging switched off.
 
 ## 1.6.0
 

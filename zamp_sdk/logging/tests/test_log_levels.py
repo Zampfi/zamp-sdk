@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from structlog.testing import capture_logs
 
 from zamp_sdk import (
     LoggingConfig,
@@ -113,6 +114,40 @@ class TestConfiguring:
         log_control.configure_auto_action_logs(False)
         await emit_info("still mine to send")
         assert execute.await_count == 1
+
+
+class TestStdoutFollowsTheLevel:
+    """A line the run chose not to show is not printed either."""
+
+    @pytest.mark.asyncio
+    async def test_debug_is_not_printed_at_the_default_level(self, execute):
+        with capture_logs() as logs:
+            await emit_debug("noisy detail")
+        assert logs == []
+
+    @pytest.mark.asyncio
+    async def test_debug_is_printed_once_the_level_is_lowered(self, execute):
+        configure_logging(level=LogLevel.DEBUG)
+        with capture_logs() as logs:
+            await emit_debug("noisy detail")
+        assert [(e["event"], e["content"]) for e in logs] == [("emit_debug", "noisy detail")]
+
+    @pytest.mark.asyncio
+    async def test_disabling_prints_nothing(self, execute):
+        configure_logging(enabled=False)
+        with capture_logs() as logs:
+            await emit_text("a")
+            await emit_info("b")
+            await emit_error("c")
+        assert logs == []
+
+    @pytest.mark.asyncio
+    async def test_shown_lines_are_still_printed(self, execute):
+        with capture_logs() as logs:
+            await emit_text("a")
+            await emit_info("b")
+            await emit_error("c")
+        assert [e["event"] for e in logs] == ["emit_text", "emit_info", "emit_error"]
 
 
 class TestTheConfigTravelsWithTheRun:
