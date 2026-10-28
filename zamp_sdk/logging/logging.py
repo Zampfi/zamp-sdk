@@ -64,11 +64,9 @@ async def _emit_recorded_line(content: str, level: LogLevel) -> EmitLogResult:
     the action they describe is already an ``action`` entry — and what leaves ``emit_text``
     display-only, since it does not come through here.
 
-    Gating here as well as in ``emit_log`` costs one comparison and means a line the run chose
-    not to show is a line it does not record either.
+    The caller has already checked the level, so a line the run chose not to show never
+    reaches here and is not recorded either.
     """
-    if not should_emit(level):
-        return EmitLogResult(ok=True)
     _capture_text_log(content, level)
     return await emit_log(TextContentBlock(content=content), level=level)
 
@@ -156,12 +154,16 @@ async def emit_text(content: str) -> EmitLogResult:
     Use it for the running commentary — "step 3 of 12" — and :func:`emit_info` for a line
     worth reading back afterwards.
     """
+    if not should_emit(LogLevel.INFO):
+        return EmitLogResult(ok=True)
     logger.info("emit_text", content=content)
     return await emit_log(TextContentBlock(content=content), level=LogLevel.INFO)
 
 
 async def emit_info(content: str) -> EmitLogResult:
     """Emit an informational line. Shown at the default level, and kept in the run's log file."""
+    if not should_emit(LogLevel.INFO):
+        return EmitLogResult(ok=True)
     logger.info("emit_info", content=content)
     return await _emit_recorded_line(content, LogLevel.INFO)
 
@@ -172,6 +174,8 @@ async def emit_debug(content: str) -> EmitLogResult:
     The line you can leave in permanently: silent by default, shown and kept in the run's log
     file when someone turns it on.
     """
+    if not should_emit(LogLevel.DEBUG):
+        return EmitLogResult(ok=True)
     logger.debug("emit_debug", content=content)
     return await _emit_recorded_line(content, LogLevel.DEBUG)
 
@@ -181,6 +185,8 @@ async def emit_error(content: str) -> EmitLogResult:
 
     Above every configurable threshold, so it survives unless logging is switched off entirely.
     """
+    if not should_emit(LogLevel.ERROR):
+        return EmitLogResult(ok=True)
     logger.warning("emit_error", content=content)
     return await _emit_recorded_line(content, LogLevel.ERROR)
 
@@ -215,13 +221,6 @@ async def _emit_tool_use_block(
     """
     tool_id = id or new_emit_id()
     input_json = json.dumps(input) if input is not None else None
-    logger.info(
-        "emit_tool_use",
-        id=tool_id,
-        name=name,
-        display_title=display_title,
-        input_json=input_json,
-    )
     result = await emit_log(
         ToolUseContentBlock(
             id=tool_id,
@@ -270,5 +269,4 @@ async def emit_tool_result(
         auto: Reserved for the SDK's own action logging. Leave it alone.
     """
     stringified = stringify_tool_result(content)
-    logger.info("emit_tool_result", id=id, name=name, content=stringified)
     return await emit_log(ToolResultContentBlock(id=id, name=name, content=stringified), auto=auto)
