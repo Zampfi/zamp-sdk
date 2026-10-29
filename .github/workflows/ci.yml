@@ -9,6 +9,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: "3.12"
 
@@ -79,6 +82,9 @@ jobs:
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # coverage-comment-action posts the PR comment
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}
       cancel-in-progress: true
