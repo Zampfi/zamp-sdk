@@ -11,6 +11,8 @@ class TracedCallInput(BaseModel):
     invocation_id: str
     parent: str
     args: dict[str, JsonValue]
+    output_schema: dict[str, JsonValue] | None = None
+    description: str | None = None
 
 
 class ObservedStepInput(TracedCallInput):

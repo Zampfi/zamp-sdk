@@ -1,15 +1,18 @@
 import functools
 import inspect
 import sys
+import warnings
 from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
+from pydantic.errors import PydanticInvalidForJsonSchema
 
 from zamp_sdk.context import current_eval_trial_id
 from zamp_sdk.evals.constants import (
     EVAL_EXTERNAL_CALL_ACTION_NAME,
     EVAL_READ_TRACE_ACTION_NAME,
+    EXTERNAL_CALL_DEPRECATED_WARNING,
     GENERATOR_FUNCTION_ERROR,
     KEY_ARGUMENT_NOT_A_PARAMETER_ERROR,
     DecoratedCallKind,
@@ -43,8 +46,17 @@ _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 _external_call_outcome_adapter: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalCallOutcome)
 
 
+def mock(name: str) -> Callable[[_FunctionT], _FunctionT]:
+    """In an eval trial, answer the call from a mock instead of running it; outside one, run it as written.
+
+    The fixture key comes from server-side config. The return type's JSON schema and the docstring are sent along.
+    """
+    return _build_decorator(DecoratedCallKind.EXTERNAL_CALL, name, None)
+
+
 def external_call(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
-    """In an eval trial, answer the call from its fixture instead of running it; outside one, run it as written."""
+    """Deprecated alias of `mock` that still keys the fixture on `key_argument`."""
+    warnings.warn(EXTERNAL_CALL_DEPRECATED_WARNING, DeprecationWarning, stacklevel=2)
     return _build_decorator(DecoratedCallKind.EXTERNAL_CALL, name, key_argument)
 
 
@@ -86,6 +98,32 @@ def _build_decorator(
         def return_type() -> ReturnType:
             return resolve_return_type(func)
 
+        @functools.cache
+        def output_schema() -> dict[str, JsonValue] | None:
+            adapter = return_type().adapter
+            if adapter is None:
+                return None
+
+            try:
+                return cast(dict[str, JsonValue], adapter.json_schema())
+            except PydanticInvalidForJsonSchema:
+                return None
+
+        description = inspect.getdoc(func)
+
+        def build_call(args: tuple[Any, ...], kwargs: dict[str, Any], parent: str) -> TracedCallInput:
+            is_mock = kind is DecoratedCallKind.EXTERNAL_CALL
+            return build_traced_call_input(
+                name,
+                key_argument,
+                signature,
+                args,
+                kwargs,
+                parent,
+                output_schema=output_schema() if is_mock else None,
+                description=description if is_mock else None,
+            )
+
         if inspect.iscoroutinefunction(func):
 
             @functools.wraps(func)
@@ -94,7 +132,7 @@ def _build_decorator(
                     return func(*args, **kwargs)
 
                 # Frame 1 is the caller: the parent unless an observed step encloses it. Cheaper than inspect.stack().
-                call = build_traced_call_input(name, key_argument, signature, args, kwargs, parent_of(sys._getframe(1)))
+                call = build_call(args, kwargs, parent_of(sys._getframe(1)))
                 if kind is DecoratedCallKind.OBSERVED_STEP:
                     return run_observed(call, functools.partial(func, *args, **kwargs))
 
@@ -109,7 +147,7 @@ def _build_decorator(
 
             raise_if_on_actions_hub(name, func)
 
-            call = build_traced_call_input(name, key_argument, signature, args, kwargs, parent_of(sys._getframe(1)))
+            call = build_call(args, kwargs, parent_of(sys._getframe(1)))
             if kind is DecoratedCallKind.OBSERVED_STEP:
                 return run_observed_sync(call, functools.partial(func, *args, **kwargs))
 

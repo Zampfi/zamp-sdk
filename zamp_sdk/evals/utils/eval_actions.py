@@ -28,6 +28,8 @@ def build_traced_call_input(
     args: tuple[object, ...],
     kwargs: dict[str, object],
     parent: str,
+    output_schema: dict[str, JsonValue] | None = None,
+    description: str | None = None,
 ) -> TracedCallInput:
     arguments = bind_arguments(signature, args, kwargs)
 
@@ -37,6 +39,8 @@ def build_traced_call_input(
         invocation_id=new_invocation_id(),
         parent=parent,
         args=arguments_to_trace(arguments),
+        output_schema=output_schema,
+        description=description,
     )
 
 

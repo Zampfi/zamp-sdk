@@ -6,3 +6,6 @@ KEY_ARGUMENT_NOT_A_PARAMETER_ERROR = "{name}: {function} has no parameter {key_a
 UNKNOWN_EXCEPTION_TYPE_ERROR = "{type} is not an exception class loaded in this process: {message}"
 EVAL_ACTION_FAILED_ERROR = "{action_name} {action_id} {status}: {error}"
 STEP_ERROR_NOT_TRACED_MESSAGE = "{name}: the eval trace did not record this error, because {error}"
+EXTERNAL_CALL_DEPRECATED_WARNING = (
+    "evals.external_call is deprecated; use evals.mock(name), whose key comes from server-side config"
+)

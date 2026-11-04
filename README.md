@@ -215,11 +215,12 @@ the decorators do nothing.
 import httpx
 from zamp_sdk import evals
 
-@evals.external_call("erp.order", key_argument="order_id")
+@evals.mock("erp.order")
 async def fetch_order(order_id: str) -> Order:
-    ...                                   # in a trial: answered from the fixture, never run
+    """Fetch one order."""
+    ...                                   # in a trial: answered from the mock, never run
 
-@evals.external_call("erp.page")
+@evals.mock("erp.page")
 async def get_page(url: str) -> httpx.Response:
     ...                                   # a fixture's status/body/content/headers become a Response
 
@@ -233,7 +234,8 @@ entries = await evals.read_trace()        # the trial's calls so far; [] outside
 
 | Name | Does |
 |------|------|
-| `external_call(name, key_argument=None)` | In a trial, answer the call from its fixture instead of running it |
+| `mock(name)` | In a trial, answer the call from a mock instead of running it; the return type's JSON schema and the docstring are sent with the call |
+| `external_call(name, key_argument=None)` | Deprecated alias of `mock` that keys the fixture on `key_argument` |
 | `observe(name, key_argument=None)` | In a trial, run the function and record what it returned or raised |
 | `read_trace()` | The calls this trial has traced so far, in order, as `TraceEntry` values |
 | `FixtureLookupError` | Raised when the trial has no fixture left for a call; the message says which and why |
