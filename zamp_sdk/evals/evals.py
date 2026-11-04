@@ -20,6 +20,7 @@ from zamp_sdk.evals.constants import (
 from zamp_sdk.evals.models import (
     ExternalCallOutcome,
     FixtureFailedOutcome,
+    MockCallInput,
     RaisedOutcome,
     ReadTraceResult,
     TracedCallInput,
@@ -46,18 +47,10 @@ _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 _external_call_outcome_adapter: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalCallOutcome)
 
 
-def mock(name: str) -> Callable[[_FunctionT], _FunctionT]:
-    """In an eval trial, answer the call from a mock instead of running it; outside one, run it as written.
-
-    The fixture key comes from server-side config. The return type's JSON schema and the docstring are sent along.
-    """
-    return _build_decorator(DecoratedCallKind.EXTERNAL_CALL, name, None)
-
-
 def external_call(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
-    """Deprecated alias of `mock` that still keys the fixture on `key_argument`."""
+    """Deprecated alias of `zamp_sdk.mocks.mockable` that still keys the fixture on `key_argument`."""
     warnings.warn(EXTERNAL_CALL_DEPRECATED_WARNING, DeprecationWarning, stacklevel=2)
-    return _build_decorator(DecoratedCallKind.EXTERNAL_CALL, name, key_argument)
+    return build_decorator(DecoratedCallKind.EXTERNAL_CALL, name, key_argument)
 
 
 def observe(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
@@ -65,7 +58,7 @@ def observe(name: str, key_argument: str | None = None) -> Callable[[_FunctionT]
 
     The return value and error message are written as they are, so a function that returns a credential is not observed.
     """
-    return _build_decorator(DecoratedCallKind.OBSERVED_STEP, name, key_argument)
+    return build_decorator(DecoratedCallKind.OBSERVED_STEP, name, key_argument)
 
 
 async def read_trace() -> list[TraceEntry]:
@@ -76,7 +69,7 @@ async def read_trace() -> list[TraceEntry]:
     return ReadTraceResult.model_validate(await call_eval_action(EVAL_READ_TRACE_ACTION_NAME, {})).entries
 
 
-def _build_decorator(
+def build_decorator(
     kind: DecoratedCallKind,
     name: str,
     key_argument: str | None,
@@ -113,7 +106,7 @@ def _build_decorator(
 
         def build_call(args: tuple[Any, ...], kwargs: dict[str, Any], parent: str) -> TracedCallInput:
             is_mock = kind is DecoratedCallKind.EXTERNAL_CALL
-            return build_traced_call_input(
+            call = build_traced_call_input(
                 name,
                 key_argument,
                 signature,
@@ -123,6 +116,10 @@ def _build_decorator(
                 output_schema=output_schema() if is_mock else None,
                 description=description if is_mock else None,
             )
+            if not is_mock:
+                return call
+
+            return MockCallInput(**call.model_dump(), input=call.args, call_id=call.invocation_id)
 
         if inspect.iscoroutinefunction(func):
 

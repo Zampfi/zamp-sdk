@@ -2,13 +2,14 @@
 
 ## 1.7.0
 
-- **Adds `evals.mock(name)`.** Marks a mockable seam by name only; the fixture key now comes from
+- **Adds `zamp_sdk.mocks.mockable(name)`.** Marks a mockable seam by name only; the fixture key now comes from
   server-side config. In a trial the call also carries `output_schema` (the JSON schema of the return
   type, `None` without an annotation or when none can be built) and `description` (the docstring).
   Outside a trial the function runs as written.
-- **`evals.external_call` is deprecated** in favour of `mock`. It behaves as before (it still sends
+- **`evals.external_call` is deprecated** in favour of `mockable`. It behaves as before (it still sends
   `key`) and now also sends `output_schema` / `description`, and emits a `DeprecationWarning` when applied.
-- `TracedCallInput` gains optional `output_schema` and `description`.
+- `TracedCallInput` gains optional `output_schema` and `description`. A mock call's payload also carries
+  `input` and `call_id` (same content as `args` / `invocation_id`, which stay); `observe` is unchanged.
 
 ## 1.6.1
 

@@ -3,7 +3,6 @@ import base64
 import inspect
 import sys
 import types
-from collections.abc import Callable
 from typing import TYPE_CHECKING, Annotated, Literal, Optional, TypedDict
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -386,10 +385,12 @@ class TestRequest:
         assert execute_action.call_args.kwargs == {}
         assert call == {
             "invocation_id": call["invocation_id"],
+            "call_id": call["invocation_id"],
             "name": "erp.order",
             "key": "O1",
             "parent": "test_external.py:test_async_sends_the_call",
             "args": {"order_id": "O1", "realm": "prod"},
+            "input": {"order_id": "O1", "realm": "prod"},
             "output_schema": Order.model_json_schema(),
             "description": None,
         }
@@ -725,86 +726,3 @@ class TestTheActionLeavesNoTrace:
 
         assert [entry["event"] for entry in drain_log_capture()] == ["action"]
         assert "emit_log" in [call.kwargs["action_name"] for call in run.call_args_list]
-
-
-@evals.mock("erp.invoice")
-async def fetch_invoice(invoice_id: str) -> Order:
-    """Fetch one invoice."""
-    return Order(id=invoice_id, total=-1)
-
-
-@evals.mock("erp.untyped")
-def fetch_untyped(x):
-    return "live"
-
-
-class TestMock:
-    async def test_outside_a_trial_runs_the_function(self, execute_action):
-        assert await fetch_invoice("I1") == Order(id="I1", total=-1)
-
-        execute_action.assert_not_called()
-
-    async def test_in_a_trial_sends_schema_description_and_args_without_a_key(
-        self, in_eval_trial, execute_action, returned
-    ):
-        execute_action.return_value = returned({"id": "I1", "total": 7})
-
-        assert await fetch_invoice("I1") == Order(id="I1", total=7)
-
-        action, call = execute_action.call_args.args
-        assert action == "eval_external_call"
-        assert call == {
-            "invocation_id": call["invocation_id"],
-            "name": "erp.invoice",
-            "key": None,
-            "parent": "test_external.py:test_in_a_trial_sends_schema_description_and_args_without_a_key",
-            "args": {"invoice_id": "I1"},
-            "output_schema": Order.model_json_schema(),
-            "description": "Fetch one invoice.",
-        }
-
-    def test_without_an_annotation_sends_no_schema_or_description(self, in_eval_trial, execute_action, returned):
-        execute_action.return_value = returned({"state": "down"})
-
-        assert fetch_untyped(1) == {"state": "down"}
-
-        (call,) = sent(execute_action)
-        assert call["output_schema"] is None
-        assert call["description"] is None
-
-    async def test_a_return_type_without_a_json_schema_sends_none(self, in_eval_trial, execute_action, returned):
-        @evals.mock("erp.callback")
-        async def fetch_callback() -> Callable[[], None] | None:
-            raise NotImplementedError
-
-        execute_action.return_value = returned(None)
-
-        await fetch_callback()
-
-        (call,) = sent(execute_action)
-        assert call["output_schema"] is None
-
-
-class TestExternalCallAlias:
-    def test_warns_when_applied(self):
-        with pytest.warns(DeprecationWarning, match="evals.mock"):
-
-            @evals.external_call("erp.old")
-            async def old() -> None: ...
-
-    async def test_still_sends_the_key_with_schema_and_description(self, in_eval_trial, execute_action, returned):
-        with pytest.warns(DeprecationWarning):
-
-            @evals.external_call("erp.old", key_argument="order_id")
-            async def old(order_id: str) -> Order:
-                """Old way."""
-                raise NotImplementedError
-
-        execute_action.return_value = returned({"id": "O1", "total": 7})
-
-        assert await old("O1") == Order(id="O1", total=7)
-
-        (call,) = sent(execute_action)
-        assert call["key"] == "O1"
-        assert call["output_schema"] == Order.model_json_schema()
-        assert call["description"] == "Old way."

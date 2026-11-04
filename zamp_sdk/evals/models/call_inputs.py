@@ -15,5 +15,12 @@ class TracedCallInput(BaseModel):
     description: str | None = None
 
 
+class MockCallInput(TracedCallInput):
+    """The mock call's wire payload: `input`/`call_id` are the new names of `args`/`invocation_id`, which stay for older servers."""
+
+    input: dict[str, JsonValue]
+    call_id: str
+
+
 class ObservedStepInput(TracedCallInput):
     outcome: ObservedStepOutcome
