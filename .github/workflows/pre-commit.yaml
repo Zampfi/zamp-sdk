@@ -36,5 +36,13 @@ jobs:
       - name: Install dependencies
         run: poetry install --with dev
 
+      # Run pre-commit directly: pre-commit/action calls actions/cache@v4 by tag, which the
+      # repo's "pin every action to a full commit SHA" policy blocks.
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-3|${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Run pre-commit
-        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        run: poetry run pre-commit run --show-diff-on-failure --color=always --all-files

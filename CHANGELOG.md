@@ -11,6 +11,15 @@
 - `TracedCallInput` gains optional `output_schema` and `description`. A mock call's payload also carries
   `input` and `call_id` (same content as `args` / `invocation_id`, which stay); `observe` is unchanged.
 
+## 1.6.2
+
+- **Step capture serializes each step once.** `drain_log_capture()` now returns a list of JSON strings
+  (one per step) instead of dicts, serialized when the step is captured, so the host no longer
+  re-serializes the whole log at the end of a run. Non-JSON values such as datetimes are
+  stringified; a step that still cannot be serialized (e.g. a circular reference) is recorded as a
+  short stand-in line with its `event`, `name`, `level` and `error` and a `capture_error` reason,
+  without its payload, where before it was kept with its bad parts as strings.
+
 ## 1.6.1
 
 - **Action inputs and results are no longer printed to stdout.** The `emit_tool_use` /

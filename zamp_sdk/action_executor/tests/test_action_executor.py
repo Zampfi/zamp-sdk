@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import drained_steps
+from zamp_sdk.action_executor import action_executor as _action_executor_module
 from zamp_sdk.action_executor.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants.inline import (
     INLINE_RESPONSE_GRACE_SECONDS,
@@ -20,6 +22,7 @@ from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.utils import HttpClientError
 from zamp_sdk.capture import drain_log_capture, start_log_capture
+from zamp_sdk.version import __version__
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
 
@@ -1113,93 +1116,80 @@ class _Weird:
 def test_capture_action_step_serializable_result_stored_asis():
     start_log_capture()
     ActionExecutor._capture_action_step("act", {"a": 1}, {"ok": True})
-    steps = drain_log_capture()
+    steps = drained_steps()
     assert steps[0]["output"] == {"ok": True}
-    json.dumps(steps[0])
 
 
-def test_capture_action_step_non_serializable_result_degrades_to_string():
+def test_capture_action_step_stringifies_values_json_cannot_carry():
     start_log_capture()
-    ActionExecutor._capture_action_step("act", {"a": 1}, _Weird())
-    steps = drain_log_capture()
-    assert steps[0]["output"] == "<weird>"
-    json.dumps(steps[0])  # the whole step is JSON-safe
+    ActionExecutor._capture_action_step("act", {"at": _Weird()}, {"rows": [{"n": 1}], "at": _Weird()})
+    (step,) = drained_steps()
+    assert step["input"] == {"at": "<weird>"}
+    assert step["output"] == {"rows": [{"n": 1}], "at": "<weird>"}
 
 
-def test_capture_action_step_cyclic_result_does_not_hang_and_is_json_safe():
-    """The cycle must not survive into the buffer, and opening the dict one level must not
-    recurse into it."""
+def test_capture_action_step_records_a_stand_in_line_for_a_circular_result():
     start_log_capture()
     cyc: dict = {}
     cyc["self"] = cyc
-    ActionExecutor._capture_action_step("act", {"a": 1}, cyc)
-    steps = drain_log_capture()
-    assert isinstance(steps[0]["output"]["self"], str)  # stringified, not the live cycle
-    json.dumps(steps[0])
+    with patch("zamp_sdk.capture.step_capture.logger") as logger:
+        ActionExecutor._capture_action_step("act", {"a": 1}, cyc)
+    (step,) = drained_steps()
+    assert step == {
+        "sdk_version": __version__,
+        "event": "action",
+        "name": "act",
+        "capture_error": "ValueError: Circular reference detected",
+    }
+    assert logger.warning.call_count == 1
+    assert logger.warning.call_args.kwargs["name"] == "act"
 
 
-def test_capture_action_step_keeps_the_serializable_result_fields_alongside_the_bad_one():
-    """The motivating case: one unserializable field must not flatten the whole result. A
-    datetime is JSON-unsafe even though Pydantic would carry it, so this is the common one."""
-    start_log_capture()
-    ActionExecutor._capture_action_step("act", {"a": 1}, {"rows": [{"n": 1}], "at": _Weird()})
-    steps = drain_log_capture()
-    assert steps[0]["output"] == {"rows": [{"n": 1}], "at": "<weird>"}
-    json.dumps(steps[0])
-
-
-def test_capture_action_step_degrades_only_the_bad_items_of_a_list_result():
-    start_log_capture()
-    ActionExecutor._capture_action_step("act", {"a": 1}, [{"n": 1}, _Weird()])
-    steps = drain_log_capture()
-    assert steps[0]["output"] == [{"n": 1}, "<weird>"]
-    json.dumps(steps[0])
-
-
-def test_capture_action_step_non_serializable_params_do_not_sink_the_step():
-    """An INLINE dispatch never serializes params, so reaching the capture is no proof they
-    can cross the Temporal boundary. A bad input must not poison the whole step."""
-    start_log_capture()
-    ActionExecutor._capture_action_step("act", {"who": _Weird()}, {"ok": True})
-    steps = drain_log_capture()
-    assert steps[0]["input"] == {"who": "<weird>"}
-    assert steps[0]["output"] == {"ok": True}
-    json.dumps(steps[0])
-
-
-def test_capture_action_step_keeps_the_serializable_params_alongside_the_bad_one():
-    """Per-entry, not whole-dict: losing every param because one is unserializable would
-    throw away the more useful half of the step."""
-    start_log_capture()
-    ActionExecutor._capture_action_step("act", {"keep": {"n": 1}, "drop": _Weird()}, None)
-    steps = drain_log_capture()
-    assert steps[0]["input"] == {"keep": {"n": 1}, "drop": "<weird>"}
-    json.dumps(steps[0])
-
-
-def test_capture_action_step_cyclic_params_do_not_hang():
+def test_a_failed_call_with_unserializable_params_keeps_its_error_in_the_stand_in_line():
     start_log_capture()
     cyc: dict = {}
     cyc["self"] = cyc
-    ActionExecutor._capture_action_step("act", {"cyc": cyc}, None)
-    steps = drain_log_capture()
-    assert isinstance(steps[0]["input"]["cyc"], str)
-    json.dumps(steps[0])
+    ActionExecutor._capture_action_step("act", cyc, None, error=RuntimeError("down"))
+    (step,) = drained_steps()
+    assert step["name"] == "act"
+    assert step["error"] == "down"
+    assert "input" not in step
 
 
-def test_capture_action_step_non_string_param_key_is_made_json_safe():
+def test_capture_action_step_serializes_exactly_once():
     start_log_capture()
-    ActionExecutor._capture_action_step("act", {(1, 2): "v"}, None)
-    steps = drain_log_capture()
-    json.dumps(steps[0])
+    with patch("zamp_sdk.capture.step_capture.json.dumps", wraps=json.dumps) as dumps:
+        ActionExecutor._capture_action_step("act", {"a": 1}, {"ok": True})
+    assert dumps.call_count == 1
+    assert not hasattr(_action_executor_module, "json")
 
 
-def test_capture_action_step_non_dict_params_are_stringified():
+def test_capture_action_step_line_is_byte_compatible_with_the_dict_encoding():
     start_log_capture()
-    ActionExecutor._capture_action_step("act", _Weird(), None)  # type: ignore[arg-type]
-    steps = drain_log_capture()
-    assert steps[0]["input"] == "<weird>"
-    json.dumps(steps[0])
+    ActionExecutor._capture_action_step("act", {"a": 1}, {"ok": True})
+    expected = json.dumps(
+        {"sdk_version": __version__, "event": "action", "name": "act", "input": {"a": 1}, "output": {"ok": True}},
+        default=str,
+    )
+    assert drain_log_capture() == [expected]
+
+
+def test_capture_action_step_is_a_snapshot_of_the_value_at_capture_time():
+    start_log_capture()
+    result = {"rows": [1]}
+    ActionExecutor._capture_action_step("act", {"a": 1}, result)
+    result["rows"].append(2)
+    result["extra"] = True
+    (step,) = drained_steps()
+    assert step["output"] == {"rows": [1]}
+
+
+def test_capture_action_step_records_the_error_of_a_failed_call():
+    start_log_capture()
+    ActionExecutor._capture_action_step("act", {"a": 1}, None, error=RuntimeError("down"))
+    (step,) = drained_steps()
+    assert step["error"] == "down"
+    assert "output" not in step
 
 
 class _HostileDict(dict):
@@ -1214,158 +1204,16 @@ def test_capture_action_step_never_raises_into_the_caller():
     that misbehaves under inspection must cost the log line and nothing else."""
     start_log_capture()
     ActionExecutor._capture_action_step("act", _HostileDict(a=1), {"ok": True})
-    assert drain_log_capture() == []
+    (step,) = drained_steps()
+    assert step["name"] == "act"
+    assert step["capture_error"] == "RuntimeError: boom"
 
 
 def test_capture_action_step_never_raises_on_a_hostile_result():
     start_log_capture()
     ActionExecutor._capture_action_step("act", {"a": 1}, _HostileDict(b=2))
-    assert drain_log_capture() == []
-
-
-class _NoStr:
-    """``str()`` on this raises, so even the fallback has to have a fallback."""
-
-    def __str__(self) -> str:
-        raise RuntimeError("nope")
-
-
-def _safe(value):
-    return ActionExecutor._json_safe(value, half="output", action_name="act")
-
-
-class TestAsString:
-    def test_uses_str_when_it_works(self):
-        assert ActionExecutor._as_string(_Weird()) == "<weird>"
-
-    def test_names_the_type_when_str_itself_raises(self):
-        assert ActionExecutor._as_string(_NoStr()) == "<unserializable _NoStr>"
-
-
-class TestValueOrString:
-    def test_a_serializable_value_comes_back_untouched(self):
-        value = {"a": [1, {"b": None}]}
-        assert ActionExecutor._value_or_string(value) is value
-
-    def test_a_bad_value_becomes_a_string(self):
-        assert ActionExecutor._value_or_string(_Weird()) == "<weird>"
-
-    @pytest.mark.parametrize("value", [None, False, 0, "", [], {}, 0.0])
-    def test_falsy_but_serializable_values_are_not_mistaken_for_bad_ones(self, value):
-        """The check is "does it serialize", not "is it truthy" - a plain ``if not value``
-        would quietly stringify every legitimate empty result."""
-        assert ActionExecutor._value_or_string(value) is value
-
-
-class TestJsonSafeHappyPath:
-    def test_the_same_object_is_returned_not_a_copy(self):
-        """The happy path must not rebuild the value: it is the common case, and a copy
-        would cost time on every action call and hide later mutation."""
-        value = {"a": 1, "b": [2, 3]}
-        assert _safe(value) is value
-
-    def test_nothing_is_logged_when_the_value_serializes(self):
-        with patch(f"{_MODULE}.logger") as logger:
-            _safe({"a": 1})
-        logger.warning.assert_not_called()
-
-    def test_degrading_logs_once_naming_the_half_and_the_action(self):
-        with patch(f"{_MODULE}.logger") as logger:
-            ActionExecutor._json_safe({"a": _Weird()}, half="input", action_name="charge_card")
-        assert logger.warning.call_count == 1
-        kwargs = logger.warning.call_args.kwargs
-        assert kwargs["half"] == "input"
-        assert kwargs["action_name"] == "charge_card"
-        assert kwargs["value_type"] == "dict"
-        assert "error" in kwargs
-
-
-class TestJsonSafeContainers:
-    def test_a_dict_keeps_its_good_entries(self):
-        assert _safe({"keep": {"n": 1}, "drop": _Weird()}) == {"keep": {"n": 1}, "drop": "<weird>"}
-
-    def test_a_list_keeps_its_good_items(self):
-        assert _safe([{"n": 1}, _Weird(), "x"]) == [{"n": 1}, "<weird>", "x"]
-
-    def test_a_tuple_with_a_bad_item_comes_back_as_a_list(self):
-        """JSON has no tuple, so the shape a caller gets back is a list."""
-        assert _safe((1, _Weird())) == [1, "<weird>"]
-
-    def test_a_fully_serializable_tuple_is_left_alone(self):
-        value = (1, 2)
-        assert _safe(value) is value
-
-    def test_a_set_is_stringified_whole(self):
-        """A set is neither a mapping nor a sequence here, so there is nothing to open."""
-        assert _safe({"tags": {1}}) == {"tags": "{1}"}
-
-    def test_containers_are_opened_one_level_only(self):
-        """The deliberate limit: a full walk would cost every call, and a self-referential
-        value would not terminate. The bad value is two levels down, so the whole inner
-        container is stringified rather than rebuilt."""
-        out = _safe({"outer": {"inner": _Weird()}})
-        assert list(out) == ["outer"]
-        assert isinstance(out["outer"], str)  # the whole inner dict, flattened
-        assert "inner" in out["outer"]
-
-    def test_a_self_referential_value_terminates(self):
-        cyc: dict = {}
-        cyc["self"] = cyc
-        assert isinstance(_safe(cyc)["self"], str)
-
-    def test_a_bad_value_that_is_not_a_container_is_stringified(self):
-        assert _safe(_Weird()) == "<weird>"
-
-    @pytest.mark.parametrize("value", [{}, [], ()])
-    def test_empty_containers_pass_straight_through(self, value):
-        assert _safe(value) is value
-
-
-class TestJsonSafeKeys:
-    @pytest.mark.parametrize("key", [1, True, 2.5, None])
-    def test_non_string_keys_survive_untouched_while_the_dict_still_serializes(self, key):
-        """``json.dumps`` coerces these key types itself, so nothing needs doing on the happy
-        path. One key per case: ``True`` and ``1`` collapse into a single entry in one dict
-        literal, so pairing them would silently test half of what it looks like."""
-        value = {key: "a"}
-        assert _safe(value) is value
-
-    def test_a_non_string_key_is_stringified_when_the_dict_degrades(self):
-        assert _safe({(1, 2): _Weird()}) == {"(1, 2)": "<weird>"}
-
-    def test_a_stringified_key_can_collide_with_an_existing_string_key(self):
-        """Documented loss, not an accident: on the degraded path an int key becomes "1",
-        which overwrites a sibling "1". Needs a dict mixing both key types *and* an
-        unserializable value, so it is vanishingly rare - and the alternative (dropping the
-        whole input) is worse."""
-        assert _safe({1: "first", "1": _Weird()}) == {"1": "<weird>"}
-
-
-class TestJsonSafeInvariant:
-    @pytest.mark.parametrize(
-        "value",
-        [
-            _Weird(),
-            _NoStr(),
-            b"\xff\xfe",
-            {1},
-            (x for x in [1]),
-            {"a": _NoStr(), "b": b"x", "c": {1}},
-            [_NoStr(), b"y"],
-            {"nested": {"deep": _Weird()}},
-        ],
-    )
-    def test_whatever_goes_in_the_result_can_be_serialized(self, value):
-        """The one property that matters: after this, the host can always serialize it."""
-        json.dumps(_safe(value))
-
-    def test_nan_and_inf_pass_the_probe_although_they_are_not_valid_json(self):
-        """Known gap, pinned so it is a decision rather than a surprise: ``json.dumps``
-        accepts them and emits bare ``NaN``/``Infinity``, which strict parsers reject. The
-        probe therefore lets them through unchanged."""
-        assert json.dumps(float("nan")) == "NaN"
-        value = {"n": float("nan"), "i": float("inf")}
-        assert _safe(value) is value
+    (step,) = drained_steps()
+    assert step["capture_error"] == "RuntimeError: boom"
 
 
 class TestCaptureIsFailSafe:
@@ -1379,12 +1227,6 @@ class TestCaptureIsFailSafe:
         start_log_capture()
         with patch(f"{_MODULE}.{dependency}", side_effect=RuntimeError("boom")):
             ActionExecutor._capture_action_step("act", {"a": 1}, {"ok": True})
-
-    @pytest.mark.parametrize("helper", ["_json_safe", "_value_or_string", "_stringify_bad_values", "_as_string"])
-    def test_a_broken_helper_is_swallowed(self, helper):
-        start_log_capture()
-        with patch.object(ActionExecutor, helper, side_effect=RuntimeError("boom")):
-            ActionExecutor._capture_action_step("act", {"a": _Weird()}, _Weird())
 
     def test_the_swallowed_failure_is_logged_once_naming_the_action(self):
         start_log_capture()
@@ -1402,7 +1244,7 @@ class TestCaptureIsFailSafe:
         with patch(f"{_MODULE}.capture_step", side_effect=RuntimeError("boom")):
             ActionExecutor._capture_action_step("bad", {"a": 1}, {"ok": True})
         ActionExecutor._capture_action_step("good", {"b": 2}, {"ok": True})
-        steps = drain_log_capture()
+        steps = drained_steps()
         assert [s["name"] for s in steps] == ["good"]
 
     async def test_execute_still_returns_its_result_when_capture_explodes(self, monkeypatch):
@@ -1429,3 +1271,18 @@ class TestCaptureIsFailSafe:
         start_log_capture()
         with pytest.raises(HttpClientError, match="upstream down"):
             await ActionExecutor.execute("get_invoice", {"id": "1"})
+
+
+async def test_execute_returns_the_result_when_its_step_cannot_be_serialized(monkeypatch):
+    cyc: dict = {}
+    cyc["self"] = cyc
+
+    async def dispatch(request):
+        return cyc
+
+    monkeypatch.setattr(ActionExecutor, "_execute_via_api", staticmethod(dispatch))
+    start_log_capture()
+    assert await ActionExecutor.execute("get_invoice", {"id": "1"}) is cyc
+    (step,) = drained_steps()
+    assert step["name"] == "get_invoice"
+    assert step["capture_error"] == "ValueError: Circular reference detected"
