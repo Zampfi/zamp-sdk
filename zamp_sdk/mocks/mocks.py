@@ -1,8 +1,8 @@
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+from zamp_sdk.evals import build_decorator
 from zamp_sdk.evals.constants import DecoratedCallKind
-from zamp_sdk.evals.evals import build_decorator
 
 _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 
