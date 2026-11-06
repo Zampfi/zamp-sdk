@@ -88,3 +88,22 @@ class TestReadTrace:
         (observed,) = await evals.read_trace()
 
         assert observed.name == "steps.load"
+
+    async def test_an_external_call_has_no_parent_but_an_observed_step_keeps_it(
+        self, in_eval_trial, execute_action, returned
+    ):
+        execute_action.return_value = {
+            "entries": [
+                trace_entry("external_call", "erp.order", returned(1)),
+                trace_entry("observed_step", "steps.load", returned(1)),
+            ]
+        }
+
+        external, observed = await evals.read_trace()
+
+        assert "parent" not in type(external).model_fields
+        assert not hasattr(external, "parent")
+        assert observed.parent == "x.py:f"
+
+    def test_mock_failed_error_is_no_longer_exported_from_evals(self):
+        assert not hasattr(evals, "MockFailedError")

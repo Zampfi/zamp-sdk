@@ -12,8 +12,11 @@
   `invocation_id` or `description`.
 - **Breaking: `evals.external_call` is removed**; use `mockable(name)` (it takes no `key_argument`).
 - **Outcome kinds are `returned`, `raised` and `mock_failed`.** `mock_failed` is the only failure kind and
-  raises `evals.MockFailedError` (renamed from the old lookup error); an exception type the process cannot load also
-  raises it.
+  raises `mocks.MockFailedError` (renamed from the old lookup error and moved out of `evals`); an exception type the
+  process cannot load also raises it.
+- **The mock action is `mock_call`** (was `eval_external_call`). For an `httpx.Response` return type the call sends
+  `MockHttpResponse`'s JSON schema as `output_schema`. A mocked call's trace entry no longer has `parent`;
+  observed steps keep it.
 - `observe` is unchanged.
 
 ## 1.6.2

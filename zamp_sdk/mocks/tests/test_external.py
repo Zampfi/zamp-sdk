@@ -10,10 +10,11 @@ import pytest
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from conftest import drained_steps
-from zamp_sdk import AgentDbError, configure_auto_action_logs, evals
+from zamp_sdk import AgentDbError, configure_auto_action_logs, mocks
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.capture import start_log_capture
 from zamp_sdk.mocks import mockable
+from zamp_sdk.mocks.models import MockHttpResponse
 
 if TYPE_CHECKING:
     from decimal import Decimal
@@ -213,7 +214,7 @@ class TestReturns:
         execute_action.return_value = returned({"id": "O1"})
         with (
             patch("inspect.signature", wraps=inspect.signature) as read_signature,
-            patch("zamp_sdk.evals.utils.outcomes.TypeAdapter", wraps=TypeAdapter) as build_adapter,
+            patch("zamp_sdk.mocks.utils.outcomes.TypeAdapter", wraps=TypeAdapter) as build_adapter,
         ):
 
             @mockable("erp.order")
@@ -284,6 +285,31 @@ class TestHttpResponse:
         assert await maybe() is None
 
 
+class TestHttpResponseOutputSchema:
+    async def test_a_response_return_type_sends_the_mock_http_response_schema(
+        self, in_eval_trial, execute_action, returned
+    ):
+        execute_action.return_value = returned({"status": 200})
+
+        await get_page("https://erp.invalid")
+
+        (call,) = sent(execute_action)
+        assert call["output_schema"] == MockHttpResponse.model_json_schema()
+        assert "status" in call["output_schema"]["properties"]
+
+    async def test_an_optional_response_allows_null_in_the_schema(self, in_eval_trial, execute_action, returned):
+        @mockable("erp.maybe")
+        async def maybe() -> Optional[httpx.Response]: ...
+
+        execute_action.return_value = returned(None)
+
+        await maybe()
+
+        (call,) = sent(execute_action)
+        assert call["output_schema"] == TypeAdapter(MockHttpResponse | None).json_schema()
+        assert {"type": "null"} in call["output_schema"]["anyOf"]
+
+
 class TestRaises:
     async def test_async_raises_what_the_outcome_describes(self, in_eval_trial, execute_action, raised):
         execute_action.return_value = raised("builtins.TimeoutError", "read timed out")
@@ -308,7 +334,7 @@ class TestRaises:
     ):
         execute_action.return_value = raised("os.system", "touch /tmp/pwned")
 
-        with pytest.raises(evals.MockFailedError, match="^os.system is not an exception class"):
+        with pytest.raises(mocks.MockFailedError, match="^os.system is not an exception class"):
             await fetch_order("O1")
 
     async def test_a_module_getattr_is_not_called_for_the_type(
@@ -319,7 +345,7 @@ class TestRaises:
         monkeypatch.setitem(sys.modules, "lazy_errors", lazy_module)
         execute_action.return_value = raised("lazy_errors.LazyError", "boom")
 
-        with pytest.raises(evals.MockFailedError, match="^lazy_errors.LazyError is not an exception class"):
+        with pytest.raises(mocks.MockFailedError, match="^lazy_errors.LazyError is not an exception class"):
             await fetch_order("O1")
 
         lazy_module.__getattr__.assert_not_called()
@@ -341,7 +367,7 @@ class TestRaises:
         cancel_order = _exec_skill_code()["cancel_order"]
         execute_action.return_value = raised("skill_code_run_by_exec.cancel_order", "boom")
 
-        with pytest.raises(evals.MockFailedError, match="^skill_code_run_by_exec.cancel_order is not an exception"):
+        with pytest.raises(mocks.MockFailedError, match="^skill_code_run_by_exec.cancel_order is not an exception"):
             await cancel_order("O1")
 
     async def test_an_httpx_transport_error(self, in_eval_trial, execute_action, raised):
@@ -355,19 +381,19 @@ class TestRaises:
     ):
         execute_action.return_value = mock_failed("erp.order:O1#3: the mock list for this call ran out")
 
-        with pytest.raises(evals.MockFailedError, match="^erp.order:O1#3: the mock list for this call ran out$"):
+        with pytest.raises(mocks.MockFailedError, match="^erp.order:O1#3: the mock list for this call ran out$"):
             await fetch_order("O1")
 
     def test_a_sync_mock_failure_raises_mock_failed_error(self, in_eval_trial, execute_action, mock_failed):
         execute_action.return_value = mock_failed("erp.status#1: no mock")
 
-        with pytest.raises(evals.MockFailedError, match="^erp.status#1: no mock$"):
+        with pytest.raises(mocks.MockFailedError, match="^erp.status#1: no mock$"):
             fetch_status_sync()
 
     async def test_a_failed_request_propagates(self, in_eval_trial, execute_action):
-        execute_action.side_effect = RuntimeError("Action eval_external_call FAILED")
+        execute_action.side_effect = RuntimeError("Action mock_call FAILED")
 
-        with pytest.raises(RuntimeError, match="eval_external_call"):
+        with pytest.raises(RuntimeError, match="mock_call"):
             await fetch_order("O1")
 
 
@@ -378,7 +404,7 @@ class TestRequest:
         await fetch_order("O1")
 
         action, call = execute_action.call_args.args
-        assert action == "eval_external_call"
+        assert action == "mock_call"
         assert execute_action.call_args.kwargs == {}
         assert call == {
             "name": "erp.order",
@@ -562,7 +588,7 @@ class TestOnTheExecutor:
     ):
         execute_action.return_value = action_response(mock_failed("erp.order:O1#1: no mock"))
 
-        with pytest.raises(evals.MockFailedError, match="^erp.order:O1#1: no mock$"):
+        with pytest.raises(mocks.MockFailedError, match="^erp.order:O1#1: no mock$"):
             await fetch_order("O1")
 
     async def test_a_string_return_annotation_is_not_evaluated(
@@ -602,7 +628,7 @@ class TestOnTheExecutor:
     async def test_a_failed_action_raises(self, in_eval_trial_on_actions_hub, execute_action, action_response):
         execute_action.return_value = action_response(status="FAILED", error="no eval trial")
 
-        with pytest.raises(RuntimeError, match="^eval_external_call action-1 FAILED: no eval trial$"):
+        with pytest.raises(RuntimeError, match="^mock_call action-1 FAILED: no eval trial$"):
             await fetch_order("O1")
 
     def test_sync_runs_untouched_outside_a_trial(self, on_actions_hub_outside_a_trial, execute_action):
@@ -637,7 +663,7 @@ class TestTheActionLeavesNoTrace:
             await fetch_order("O1")
 
         assert drained_steps() == []
-        assert [call.kwargs["action_name"] for call in run.call_args_list] == ["eval_external_call"]
+        assert [call.kwargs["action_name"] for call in run.call_args_list] == ["mock_call"]
 
     async def test_an_ordinary_action_in_the_same_setup_is_logged(self, in_eval_trial):
         configure_auto_action_logs(True)

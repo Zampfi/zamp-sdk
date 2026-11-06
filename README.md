@@ -205,16 +205,15 @@ A script can be re-run, so say in the SQL when a write must be safe to repeat:
 constraint, which you declare in the `CREATE TABLE` or add later with
 `CREATE UNIQUE INDEX`.
 
-## Evals (`zamp_sdk.evals`)
+## Mocks (`zamp_sdk.mocks`)
 
-Mark the calls a script makes to the outside world, and the steps of its own logic, so an eval
-trial can replay the outside world from mocks and grade what the script did. Outside a trial
-the decorators do nothing. Skill code must import `mocks` from the package root
-(`from zamp_sdk import mocks`); the code executor rejects `from zamp_sdk.mocks import ...`.
+Mark a call to the outside world as mockable, so an eval trial can answer it from a mock instead of running
+it. Outside a trial the decorator does nothing. Skill code must import `mocks` from the package root; the code
+executor rejects `from zamp_sdk.mocks import ...`.
 
 ```python
 import httpx
-from zamp_sdk import evals, mocks
+from zamp_sdk import mocks
 
 @mocks.mockable("erp.order")
 async def fetch_order(order_id: str) -> Order:
@@ -224,6 +223,32 @@ async def fetch_order(order_id: str) -> Order:
 @mocks.mockable("erp.page")
 async def get_page(url: str) -> httpx.Response:
     ...                                   # a mock's status/body/content/headers become a Response
+
+try:
+    order = await fetch_order("O1")
+except mocks.MockFailedError:             # the trial's mock could not answer this call
+    ...
+```
+
+| Name | Does |
+|------|------|
+| `mocks.mockable(name)` | In a trial, answer the call from a mock instead of running it; the call sends only `name`, `input`, `output_schema` and `call_id` |
+| `mocks.MockFailedError` | Raised when the mock cannot answer a call (outcome `mock_failed`) or names an exception type the process cannot load; the message says which and why |
+
+- **`output_schema`** is the return type's JSON schema, or `None` without an annotation or when none can be built.
+  For `httpx.Response` it is the schema of the `status`, `body`, `content`, `headers` object a mock answers with.
+- **Mock calls carry no key**; the platform's mock config decides the reply.
+- **Bytes are base64.** A mock value for a `bytes` return type must be base64 text.
+- **Sync functions** work in a sandbox. In workflow code on ActionsHub, make a decorated function `async`:
+  a sync one is refused inside a trial. Generator functions cannot be decorated.
+
+## Evals (`zamp_sdk.evals`)
+
+Record the steps of a script's own logic so an eval trial can grade what the script did. Outside a trial the
+decorator does nothing.
+
+```python
+from zamp_sdk import evals
 
 @evals.observe("steps.review")
 async def review(order_id: str) -> Decision:
@@ -235,20 +260,18 @@ entries = await evals.read_trace()        # the trial's calls so far; [] outside
 
 | Name | Does |
 |------|------|
-| `zamp_sdk.mocks.mockable(name)` | In a trial, answer the call from a mock instead of running it; the call sends only `name`, `input`, `output_schema` (the return type's JSON schema) and `call_id` |
 | `observe(name, key_argument=None)` | In a trial, run the function and record what it returned or raised |
 | `read_trace()` | The calls this trial has traced so far, in order, as `TraceEntry` values |
-| `MockFailedError` | Raised when the mock cannot answer a call (outcome `mock_failed`); the message says which and why |
 
 - **`key_argument`** (`observe`) names the parameter whose value tells calls of the same name apart. It must
   be a parameter of the function, or a keyword the function takes through `**kwargs`; a call that leaves it
-  out, or passes `None`, has the key `None`. Mock calls carry no key; the platform's mock config decides.
+  out, or passes `None`, has the key `None`.
 - **Arguments are recorded by name**, except credential-like ones (`token`, `headers`,
   `api_key`, `*_secret`, ...), which are never written.
-- **Bytes are base64.** A `bytes` value is written to the trace as base64 text, and a mock
-  value for a `bytes` return type must be base64 too.
-- **Sync functions** work in a sandbox. In workflow code on ActionsHub, make a decorated function
-  `async`: a sync one is refused inside a trial. Generator functions cannot be decorated.
+- **Bytes are base64.** A `bytes` value is written to the trace as base64 text.
+- **Sync functions** work in a sandbox; in workflow code on ActionsHub a sync one is refused inside a trial.
+  Generator functions cannot be decorated.
+- Only an observed step records a `parent`; a mocked call's trace entry does not.
 
 ## Error Handling
 

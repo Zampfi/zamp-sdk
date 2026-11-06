@@ -1,3 +1,4 @@
 from zamp_sdk.mocks.mocks import mockable
+from zamp_sdk.mocks.utils.errors import MockFailedError
 
-__all__ = ["mockable"]
+__all__ = ["MockFailedError", "mockable"]

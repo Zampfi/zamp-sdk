@@ -40,7 +40,7 @@ class TestMockable:
         assert await fetch_invoice("I1") == Order(id="I1", total=7)
 
         action, call = execute_action.call_args.args
-        assert action == "eval_external_call"
+        assert action == "mock_call"
         assert call == {
             "name": "erp.invoice",
             "input": {"invoice_id": "I1"},

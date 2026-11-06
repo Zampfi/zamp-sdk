@@ -8,7 +8,7 @@ from zamp_sdk.action_executor.constants import ACTION_ENVELOPE_KEYS, SUCCESS_STA
 from zamp_sdk.action_executor.models.action_response import ActionResponse
 from zamp_sdk.context import ExecutionHost, current_execution_host
 from zamp_sdk.evals.constants import EVAL_ACTION_FAILED_ERROR
-from zamp_sdk.evals.models import MockCallInput, TracedCallInput
+from zamp_sdk.evals.models import TracedCallInput
 from zamp_sdk.evals.utils.arguments import arguments_to_trace, bind_arguments, key_from_arguments
 
 
@@ -37,21 +37,6 @@ def build_traced_call_input(
         invocation_id=new_call_id(),
         parent=parent,
         args=arguments_to_trace(arguments),
-    )
-
-
-def build_mock_call_input(
-    name: str,
-    signature: inspect.Signature,
-    args: tuple[object, ...],
-    kwargs: dict[str, object],
-    output_schema: dict[str, JsonValue] | None,
-) -> MockCallInput:
-    return MockCallInput(
-        name=name,
-        input=arguments_to_trace(bind_arguments(signature, args, kwargs)),
-        output_schema=output_schema,
-        call_id=new_call_id(),
     )
 
 

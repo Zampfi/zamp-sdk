@@ -8,7 +8,7 @@ from decimal import Decimal
 
 import pytest
 
-from zamp_sdk.evals.utils.eval_actions import build_mock_call_input
+from zamp_sdk.mocks.utils import build_mock_call_input
 
 
 def _payload(**arguments):
