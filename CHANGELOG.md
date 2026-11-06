@@ -1,12 +1,13 @@
 # Changelog
 
-## 1.7.0
+## 2.0.0
 
-- **Breaking: adds `zamp_sdk.mocks.mockable(name)`.** Marks a mockable seam by name only; the mock key and reply
+- **Adds `zamp_sdk.mocks.mockable(name)`.** Marks a mockable seam by name only; the mock key and reply
   come from server-side config. In a trial the call sends exactly `name`, `input` (the arguments by name),
   `output_schema` (the JSON schema of the return type, `None` without an annotation or when none can be built)
-  and `call_id`; `key`, `parent`, `args`, `invocation_id` and `description` are no longer sent. Outside a trial
-  the function runs as written.
+  and `call_id`. Outside a trial the function runs as written.
+- **Breaking: the old wire names are gone.** A mocked call no longer sends `key`, `parent`, `args`,
+  `invocation_id` or `description`.
 - **Breaking: `evals.external_call` is removed**; use `mockable(name)` (it takes no `key_argument`).
 - **Outcome kinds are `returned`, `raised` and `mock_failed`.** `mock_failed` is the only failure kind and
   raises `evals.MockFailedError` (renamed from the old lookup error); an exception type the process cannot load also
