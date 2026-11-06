@@ -51,7 +51,7 @@ def observe(name: str, key_argument: str | None = None) -> Callable[[_FunctionT]
 
     The return value and error message are written as they are, so a function that returns a credential is not observed.
     """
-    return build_decorator(DecoratedCallKind.OBSERVED_STEP, name, key_argument)
+    return _build_decorator(DecoratedCallKind.OBSERVED_STEP, name, key_argument)
 
 
 async def read_trace() -> list[TraceEntry]:
@@ -62,7 +62,7 @@ async def read_trace() -> list[TraceEntry]:
     return ReadTraceResult.model_validate(await call_eval_action(EVAL_READ_TRACE_ACTION_NAME, {})).entries
 
 
-def build_decorator(
+def _build_decorator(
     kind: DecoratedCallKind,
     name: str,
     key_argument: str | None,

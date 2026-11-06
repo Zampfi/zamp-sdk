@@ -58,6 +58,4 @@ def run_observed_sync(call: TracedCallInput, invoke: Callable[[], ResultT]) -> R
 
 
 def _observed_step_params(call: TracedCallInput, outcome: ObservedStepOutcome) -> dict[str, JsonValue]:
-    return ObservedStepInput(**call.model_dump(), outcome=outcome).model_dump(
-        mode="json", exclude={"output_schema", "description"}
-    )
+    return ObservedStepInput(**call.model_dump(), outcome=outcome).model_dump(mode="json")
