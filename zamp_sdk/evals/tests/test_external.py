@@ -13,6 +13,7 @@ from conftest import drained_steps
 from zamp_sdk import AgentDbError, configure_auto_action_logs, evals
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.capture import start_log_capture
+from zamp_sdk.mocks import mockable
 
 if TYPE_CHECKING:
     from decimal import Decimal
@@ -23,27 +24,27 @@ class Order(BaseModel):
     total: int
 
 
-@evals.external_call("erp.order", key_argument="order_id")
+@mockable("erp.order")
 async def fetch_order(order_id: str, realm: str = "prod") -> Order:
     return Order(id=order_id, total=-1)
 
 
-@evals.external_call("erp.order", key_argument="order_id")
+@mockable("erp.order")
 def fetch_order_sync(order_id: str, realm: str = "prod") -> Order:
     return Order(id=order_id, total=-1)
 
 
-@evals.external_call("erp.status")
+@mockable("erp.status")
 async def fetch_status():
     return "live"
 
 
-@evals.external_call("erp.status")
+@mockable("erp.status")
 def fetch_status_sync():
     return "live"
 
 
-@evals.external_call("erp.page")
+@mockable("erp.page")
 async def get_page(url: str) -> httpx.Response:
     return httpx.Response(200)
 
@@ -56,14 +57,14 @@ SKILL_CODE = """
 class OrderLockedError(Exception):
     pass
 
-@evals.external_call("erp.cancel", key_argument="order_id")
+@mockable("erp.cancel")
 async def cancel_order(order_id: str) -> None:
     raise OrderLockedError(order_id)
 """
 
 
 def _exec_skill_code():
-    skill_globals = {"__name__": "skill_code_run_by_exec", "evals": evals}
+    skill_globals = {"__name__": "skill_code_run_by_exec", "mockable": mockable}
     exec(SKILL_CODE, skill_globals)
     return skill_globals
 
@@ -113,7 +114,7 @@ class TestReturns:
         assert await fetch_order("O1") == Order(id="O1", total=7)
 
     async def test_a_human_ask_returns_none(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("ask.decision")
+        @mockable("ask.decision")
         async def ask() -> None: ...
 
         execute_action.return_value = returned(None)
@@ -121,7 +122,7 @@ class TestReturns:
         assert await ask() is None
 
     async def test_bytes_are_read_back_from_base64(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.pdf")
+        @mockable("erp.pdf")
         async def fetch_pdf() -> bytes:
             raise NotImplementedError
 
@@ -130,7 +131,7 @@ class TestReturns:
         assert await fetch_pdf() == b"%PDF\xfb\xff"
 
     async def test_bytes_inside_a_return_type_are_read_back_from_base64(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.pdfs")
+        @mockable("erp.pdfs")
         async def fetch_pdfs() -> dict[str, list[bytes]]:
             raise NotImplementedError
 
@@ -139,7 +140,7 @@ class TestReturns:
         assert await fetch_pdfs() == {"O1": [b"%PDF\xfb\xff"]}
 
     async def test_an_annotated_model_is_returned_as_the_model(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.order")
+        @mockable("erp.order")
         async def fetch() -> Annotated[Order, Field(description="the order")]:
             raise NotImplementedError
 
@@ -151,7 +152,7 @@ class TestReturns:
         class Invoice(TypedDict):
             id: str
 
-        @evals.external_call("erp.invoice")
+        @mockable("erp.invoice")
         async def fetch() -> Annotated[Invoice, Field(description="the invoice")]:
             raise NotImplementedError
 
@@ -165,7 +166,7 @@ class TestReturns:
         class Session:
             pass
 
-        @evals.external_call("erp.session")
+        @mockable("erp.session")
         async def open_session() -> Session:
             raise NotImplementedError
 
@@ -176,7 +177,7 @@ class TestReturns:
     async def test_an_unresolvable_parameter_annotation_keeps_the_return_type(
         self, in_eval_trial, execute_action, returned
     ):
-        @evals.external_call("erp.order")
+        @mockable("erp.order")
         async def fetch(client: "Decimal") -> Order:
             raise NotImplementedError
 
@@ -187,7 +188,7 @@ class TestReturns:
     async def test_a_string_return_annotation_is_evaluated_off_the_executor(
         self, in_eval_trial, execute_action, returned
     ):
-        @evals.external_call("erp.order")
+        @mockable("erp.order")
         async def fetch() -> "Order":
             raise NotImplementedError
 
@@ -198,7 +199,7 @@ class TestReturns:
     async def test_a_return_type_only_known_to_type_checkers_returns_the_raw_value(
         self, in_eval_trial, execute_action, returned
     ):
-        @evals.external_call("erp.total")
+        @mockable("erp.total")
         async def fetch_total() -> "Decimal":
             raise NotImplementedError
 
@@ -215,7 +216,7 @@ class TestReturns:
             patch("zamp_sdk.evals.utils.outcomes.TypeAdapter", wraps=TypeAdapter) as build_adapter,
         ):
 
-            @evals.external_call("erp.order", key_argument="order_id")
+            @mockable("erp.order")
             async def fetch(order_id: str) -> dict:
                 raise NotImplementedError
 
@@ -263,7 +264,7 @@ class TestHttpResponse:
             response.raise_for_status()
 
     async def test_any_call_name_builds_a_response(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp:fetch")
+        @mockable("erp:fetch")
         async def fetch() -> httpx.Response:
             raise NotImplementedError
 
@@ -273,7 +274,7 @@ class TestHttpResponse:
             (await fetch()).raise_for_status()
 
     async def test_an_optional_response(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.maybe")
+        @mockable("erp.maybe")
         async def maybe() -> Optional[httpx.Response]: ...
 
         execute_action.return_value = returned({"status": 204})
@@ -395,7 +396,7 @@ class TestRequest:
         assert call["input"] == {"order_id": "O1", "realm": "test"}
 
     def test_secret_arguments_are_never_sent(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.token")
+        @mockable("erp.token")
         def fetch_token(url: str, headers: dict, auth: str, token: str, credentials: dict): ...
 
         execute_action.return_value = returned(None)
@@ -404,7 +405,7 @@ class TestRequest:
         assert sent(execute_action)[0]["input"] == {"url": "https://erp.invalid"}
 
     def test_secret_arguments_passed_through_kwargs_are_never_sent(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.request")
+        @mockable("erp.request")
         def request(method: str, url: str, **kwargs): ...
 
         execute_action.return_value = returned(None)
@@ -413,7 +414,7 @@ class TestRequest:
         assert sent(execute_action)[0]["input"] == {"method": "GET", "url": "https://erp.invalid", "timeout": 5}
 
     def test_arguments_named_like_a_credential_are_never_sent(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.login")
+        @mockable("erp.login")
         def login(url: str, api_key: str, Password: str, client_secret: str, **kwargs): ...
 
         execute_action.return_value = returned(None)
@@ -422,7 +423,7 @@ class TestRequest:
         assert sent(execute_action)[0]["input"] == {"url": "https://erp.invalid", "page": 2}
 
     def test_only_whole_credential_names_are_left_out(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("llm.complete")
+        @mockable("llm.complete")
         def complete(**kwargs): ...
 
         kept = [
@@ -456,7 +457,7 @@ class TestRequest:
         assert sent(execute_action)[0]["input"] == {name: 1 for name in kept}
 
     def test_credential_keys_inside_a_dict_argument_are_never_sent(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.send")
+        @mockable("erp.send")
         def send(config: dict, requests: list): ...
 
         execute_action.return_value = returned(None)
@@ -475,12 +476,12 @@ class TestRequest:
             def __init__(self, token: str):
                 self.token = token
 
-            @evals.external_call("erp.order", key_argument="order_id")
+            @mockable("erp.order")
             async def fetch(self, order_id: str) -> dict:
                 return {}
 
             @classmethod
-            @evals.external_call("erp.status")
+            @mockable("erp.status")
             def status(cls, realm: str) -> str:
                 return "live"
 
@@ -496,7 +497,7 @@ class TestRequest:
             def __repr__(self):
                 return "<Session>"
 
-        @evals.external_call("erp.post")
+        @mockable("erp.post")
         def post(session: Session, order: Order): ...
 
         execute_action.return_value = returned(None)
@@ -505,7 +506,7 @@ class TestRequest:
         assert sent(execute_action)[0]["input"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
 
     def test_an_argument_that_contains_itself_is_sent_as_its_type_only(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.post")
+        @mockable("erp.post")
         def post(lines: list, page: int): ...
 
         lines: list = []
@@ -518,7 +519,7 @@ class TestRequest:
     def test_an_argument_that_contains_itself_does_not_send_its_credentials(
         self, in_eval_trial, execute_action, returned
     ):
-        @evals.external_call("erp.connect")
+        @mockable("erp.connect")
         def connect(config: dict): ...
 
         config: dict = {"host": "erp", "password": "secret"}
@@ -529,7 +530,7 @@ class TestRequest:
         assert sent(execute_action)[0]["input"] == {"config": "<dict that contains itself>"}
 
     def test_bytes_are_sent_as_base64(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.upload")
+        @mockable("erp.upload")
         def upload(name: bytes, content: bytes): ...
 
         execute_action.return_value = returned(None)
@@ -567,7 +568,7 @@ class TestOnTheExecutor:
     async def test_a_string_return_annotation_is_not_evaluated(
         self, in_eval_trial_on_actions_hub, execute_action, returned, action_response
     ):
-        @evals.external_call("erp.order")
+        @mockable("erp.order")
         async def fetch() -> "Order":
             raise NotImplementedError
 
@@ -578,7 +579,7 @@ class TestOnTheExecutor:
     async def test_a_string_nested_in_the_return_annotation_is_not_evaluated(
         self, in_eval_trial_on_actions_hub, execute_action, returned, action_response
     ):
-        @evals.external_call("erp.orders")
+        @mockable("erp.orders")
         async def fetch() -> list["Order"]:
             raise NotImplementedError
 
@@ -589,7 +590,7 @@ class TestOnTheExecutor:
     async def test_a_literal_return_annotation_is_still_validated(
         self, in_eval_trial_on_actions_hub, execute_action, returned, action_response
     ):
-        @evals.external_call("erp.state")
+        @mockable("erp.state")
         async def fetch() -> Optional[Literal["open", "closed"]]:
             raise NotImplementedError
 

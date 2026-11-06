@@ -1,7 +1,5 @@
-import warnings
 from collections.abc import Callable
 
-import pytest
 from pydantic import BaseModel
 
 from zamp_sdk import evals
@@ -71,38 +69,6 @@ class TestMockable:
 
         (call,) = sent(execute_action)
         assert call["output_schema"] is None
-
-    async def test_mockable_does_not_warn(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-
-            @mockable("erp.quiet")
-            async def quiet() -> None: ...
-
-
-class TestExternalCallAlias:
-    def test_warns_when_applied(self):
-        with pytest.warns(DeprecationWarning, match="mockable"):
-
-            @evals.external_call("erp.old")
-            async def old() -> None: ...
-
-    async def test_sends_the_same_four_fields_and_no_key(self, in_eval_trial, execute_action, returned):
-        with pytest.warns(DeprecationWarning):
-
-            @evals.external_call("erp.old", key_argument="order_id")
-            async def old(order_id: str) -> Order:
-                """Old way."""
-                raise NotImplementedError
-
-        execute_action.return_value = returned({"id": "O1", "total": 7})
-
-        assert await old("O1") == Order(id="O1", total=7)
-
-        (call,) = sent(execute_action)
-        assert set(call) == {"name", "input", "output_schema", "call_id"}
-        assert call["input"] == {"order_id": "O1"}
-        assert call["output_schema"] == Order.model_json_schema()
 
 
 class TestObserveUnchanged:

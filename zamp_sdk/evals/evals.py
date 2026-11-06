@@ -1,7 +1,6 @@
 import functools
 import inspect
 import sys
-import warnings
 from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
@@ -12,7 +11,6 @@ from zamp_sdk.context import current_eval_trial_id
 from zamp_sdk.evals.constants import (
     EVAL_EXTERNAL_CALL_ACTION_NAME,
     EVAL_READ_TRACE_ACTION_NAME,
-    EXTERNAL_CALL_DEPRECATED_WARNING,
     GENERATOR_FUNCTION_ERROR,
     KEY_ARGUMENT_NOT_A_PARAMETER_ERROR,
     DecoratedCallKind,
@@ -46,12 +44,6 @@ from zamp_sdk.evals.utils import (
 _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 
 _external_call_outcome_adapter: TypeAdapter[ExternalCallOutcome] = TypeAdapter(ExternalCallOutcome)
-
-
-def external_call(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
-    """Deprecated alias of `zamp_sdk.mocks.mockable`; `key_argument` is still checked but no longer sent."""
-    warnings.warn(EXTERNAL_CALL_DEPRECATED_WARNING, DeprecationWarning, stacklevel=2)
-    return build_decorator(DecoratedCallKind.EXTERNAL_CALL, name, key_argument)
 
 
 def observe(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:

@@ -236,7 +236,6 @@ entries = await evals.read_trace()        # the trial's calls so far; [] outside
 | Name | Does |
 |------|------|
 | `zamp_sdk.mocks.mockable(name)` | In a trial, answer the call from a mock instead of running it; the call sends only `name`, `input`, `output_schema` (the return type's JSON schema) and `call_id` |
-| `external_call(name, key_argument=None)` | Deprecated alias of `mockable`; `key_argument` is checked but no longer sent |
 | `observe(name, key_argument=None)` | In a trial, run the function and record what it returned or raised |
 | `read_trace()` | The calls this trial has traced so far, in order, as `TraceEntry` values |
 | `MockFailedError` | Raised when the mock cannot answer a call (outcome `mock_failed`); the message says which and why |

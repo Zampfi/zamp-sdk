@@ -7,8 +7,7 @@
   `output_schema` (the JSON schema of the return type, `None` without an annotation or when none can be built)
   and `call_id`; `key`, `parent`, `args`, `invocation_id` and `description` are no longer sent. Outside a trial
   the function runs as written.
-- **`evals.external_call` is deprecated** in favour of `mockable` and emits a `DeprecationWarning` when applied.
-  It sends the same four fields; its `key_argument` is still checked but no longer sent.
+- **Breaking: `evals.external_call` is removed**; use `mockable(name)` (it takes no `key_argument`).
 - **Outcome kinds are `returned`, `raised` and `mock_failed`.** `mock_failed` is the only failure kind and
   raises `evals.MockFailedError` (renamed from the old lookup error); an exception type the process cannot load also
   raises it.

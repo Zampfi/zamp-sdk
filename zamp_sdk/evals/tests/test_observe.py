@@ -3,14 +3,15 @@ import asyncio
 import pytest
 
 from zamp_sdk import evals
+from zamp_sdk.mocks import mockable
 
 
-@evals.external_call("erp.order", key_argument="order_id")
+@mockable("erp.order")
 async def fetch_order(order_id: str) -> dict:
     return {"id": order_id}
 
 
-@evals.external_call("erp.order", key_argument="order_id")
+@mockable("erp.order")
 def fetch_order_sync(order_id: str) -> dict:
     return {"id": order_id}
 
