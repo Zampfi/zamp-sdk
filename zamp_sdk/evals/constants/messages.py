@@ -7,5 +7,5 @@ UNKNOWN_EXCEPTION_TYPE_ERROR = "{type} is not an exception class loaded in this 
 EVAL_ACTION_FAILED_ERROR = "{action_name} {action_id} {status}: {error}"
 STEP_ERROR_NOT_TRACED_MESSAGE = "{name}: the eval trace did not record this error, because {error}"
 EXTERNAL_CALL_DEPRECATED_WARNING = (
-    "evals.external_call is deprecated; use zamp_sdk.mocks.mockable(name), whose key comes from server-side config"
+    "evals.external_call is deprecated; use zamp_sdk.mocks.mockable(name); its key_argument is no longer sent"
 )

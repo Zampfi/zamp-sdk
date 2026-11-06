@@ -34,7 +34,9 @@ class TestMockable:
 
         execute_action.assert_not_called()
 
-    async def test_in_a_trial_sends_old_and_new_field_names(self, in_eval_trial, execute_action, returned):
+    async def test_in_a_trial_sends_only_name_input_output_schema_and_call_id(
+        self, in_eval_trial, execute_action, returned
+    ):
         execute_action.return_value = returned({"id": "I1", "total": 7})
 
         assert await fetch_invoice("I1") == Order(id="I1", total=7)
@@ -42,26 +44,20 @@ class TestMockable:
         action, call = execute_action.call_args.args
         assert action == "eval_external_call"
         assert call == {
-            "invocation_id": call["invocation_id"],
-            "call_id": call["invocation_id"],
             "name": "erp.invoice",
-            "key": None,
-            "parent": "test_mockable.py:test_in_a_trial_sends_old_and_new_field_names",
-            "args": {"invoice_id": "I1"},
             "input": {"invoice_id": "I1"},
             "output_schema": Order.model_json_schema(),
-            "description": "Fetch one invoice.",
+            "call_id": call["call_id"],
         }
         assert call["call_id"]
 
-    def test_without_an_annotation_sends_no_schema_or_description(self, in_eval_trial, execute_action, returned):
+    def test_without_an_annotation_sends_no_schema(self, in_eval_trial, execute_action, returned):
         execute_action.return_value = returned({"state": "down"})
 
         assert fetch_untyped(1) == {"state": "down"}
 
         (call,) = sent(execute_action)
         assert call["output_schema"] is None
-        assert call["description"] is None
         assert call["input"] == {"x": 1}
 
     async def test_a_return_type_without_a_json_schema_sends_none(self, in_eval_trial, execute_action, returned):
@@ -91,7 +87,7 @@ class TestExternalCallAlias:
             @evals.external_call("erp.old")
             async def old() -> None: ...
 
-    async def test_still_sends_the_key_and_the_new_fields(self, in_eval_trial, execute_action, returned):
+    async def test_sends_the_same_four_fields_and_no_key(self, in_eval_trial, execute_action, returned):
         with pytest.warns(DeprecationWarning):
 
             @evals.external_call("erp.old", key_argument="order_id")
@@ -104,11 +100,9 @@ class TestExternalCallAlias:
         assert await old("O1") == Order(id="O1", total=7)
 
         (call,) = sent(execute_action)
-        assert call["key"] == "O1"
-        assert call["input"] == call["args"] == {"order_id": "O1"}
-        assert call["call_id"] == call["invocation_id"]
+        assert set(call) == {"name", "input", "output_schema", "call_id"}
+        assert call["input"] == {"order_id": "O1"}
         assert call["output_schema"] == Order.model_json_schema()
-        assert call["description"] == "Old way."
 
 
 class TestObserveUnchanged:
@@ -124,4 +118,5 @@ class TestObserveUnchanged:
         (step,) = sent(execute_action)
         assert "input" not in step
         assert "call_id" not in step
+        assert "output_schema" not in step
         assert step["args"] == {"order_id": "O1"}

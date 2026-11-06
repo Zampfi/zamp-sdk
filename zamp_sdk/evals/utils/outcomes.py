@@ -13,14 +13,14 @@ from zamp_sdk.evals.constants import (
     PLACEHOLDER_REQUEST_URL,
     UNKNOWN_EXCEPTION_TYPE_ERROR,
 )
-from zamp_sdk.evals.models import FixtureHttpResponse, RaisedOutcome, ReturnedOutcome
+from zamp_sdk.evals.models import MockHttpResponse, RaisedOutcome, ReturnedOutcome
 from zamp_sdk.evals.utils.arguments import to_json_value
-from zamp_sdk.evals.utils.errors import FixtureLookupError
+from zamp_sdk.evals.utils.errors import MockFailedError
 
 if TYPE_CHECKING:
     import httpx
 
-# Traces write top-level and container bytes as base64, so a return type reads its fixture value back the same way.
+# Traces write top-level and container bytes as base64, so a return type reads its mock value back the same way.
 # A model, dataclass or TypedDict carries its own config, which pydantic will not let this one override.
 _BYTES_AS_BASE64 = ConfigDict(val_json_bytes="base64")
 
@@ -43,14 +43,14 @@ def build_exception(raised: RaisedOutcome, function_globals: dict[str, Any]) -> 
     if module_name == function_globals.get("__name__"):
         error_class = function_globals.get(class_name)
     else:
-        # vars() rather than getattr(), so a module's __getattr__ cannot import anything for the fixture
+        # vars() rather than getattr(), so a module's __getattr__ cannot import anything for the mock
         module = sys.modules.get(module_name)
         error_class = vars(module).get(class_name) if module is not None else None
 
     if isinstance(error_class, type) and issubclass(error_class, Exception):
         return error_class(raised.message)
 
-    return FixtureLookupError(UNKNOWN_EXCEPTION_TYPE_ERROR.format(type=raised.type, message=raised.message))
+    return MockFailedError(UNKNOWN_EXCEPTION_TYPE_ERROR.format(type=raised.type, message=raised.message))
 
 
 class ReturnType(NamedTuple):
@@ -82,7 +82,7 @@ def as_return_type(return_type: ReturnType, value: JsonValue) -> object:
     if value is None and annotation is not loaded_httpx.Response:
         return None
 
-    return _build_httpx_response(loaded_httpx, FixtureHttpResponse.model_validate(value))
+    return _build_httpx_response(loaded_httpx, MockHttpResponse.model_validate(value))
 
 
 def _contains_string(annotation: object) -> bool:
@@ -126,7 +126,7 @@ def _return_annotation(func: Callable[..., object]) -> object:
         return inspect.Signature.empty
 
 
-def _build_httpx_response(loaded_httpx: ModuleType, response: FixtureHttpResponse) -> "httpx.Response":
+def _build_httpx_response(loaded_httpx: ModuleType, response: MockHttpResponse) -> "httpx.Response":
     return loaded_httpx.Response(
         response.status,
         headers=response.headers,

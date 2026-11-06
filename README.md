@@ -208,7 +208,7 @@ constraint, which you declare in the `CREATE TABLE` or add later with
 ## Evals (`zamp_sdk.evals`)
 
 Mark the calls a script makes to the outside world, and the steps of its own logic, so an eval
-trial can replay the outside world from fixtures and grade what the script did. Outside a trial
+trial can replay the outside world from mocks and grade what the script did. Outside a trial
 the decorators do nothing.
 
 ```python
@@ -223,7 +223,7 @@ async def fetch_order(order_id: str) -> Order:
 
 @mockable("erp.page")
 async def get_page(url: str) -> httpx.Response:
-    ...                                   # a fixture's status/body/content/headers become a Response
+    ...                                   # a mock's status/body/content/headers become a Response
 
 @evals.observe("steps.review")
 async def review(order_id: str) -> Decision:
@@ -235,18 +235,18 @@ entries = await evals.read_trace()        # the trial's calls so far; [] outside
 
 | Name | Does |
 |------|------|
-| `zamp_sdk.mocks.mockable(name)` | In a trial, answer the call from a mock instead of running it; the return type's JSON schema and the docstring are sent with the call |
-| `external_call(name, key_argument=None)` | Deprecated alias of `mockable` that keys the fixture on `key_argument` |
+| `zamp_sdk.mocks.mockable(name)` | In a trial, answer the call from a mock instead of running it; the call sends only `name`, `input`, `output_schema` (the return type's JSON schema) and `call_id` |
+| `external_call(name, key_argument=None)` | Deprecated alias of `mockable`; `key_argument` is checked but no longer sent |
 | `observe(name, key_argument=None)` | In a trial, run the function and record what it returned or raised |
 | `read_trace()` | The calls this trial has traced so far, in order, as `TraceEntry` values |
-| `FixtureLookupError` | Raised when the trial has no fixture left for a call; the message says which and why |
+| `MockFailedError` | Raised when the mock cannot answer a call (outcome `mock_failed`); the message says which and why |
 
-- **`key_argument`** names the parameter whose value tells calls of the same name apart (one
-  fixture per order id, say). It must be a parameter of the function, or a keyword the function
-  takes through `**kwargs`; a call that leaves it out, or passes `None`, has the key `None`.
+- **`key_argument`** (`observe`) names the parameter whose value tells calls of the same name apart. It must
+  be a parameter of the function, or a keyword the function takes through `**kwargs`; a call that leaves it
+  out, or passes `None`, has the key `None`. Mock calls carry no key; the platform's mock config decides.
 - **Arguments are recorded by name**, except credential-like ones (`token`, `headers`,
   `api_key`, `*_secret`, ...), which are never written.
-- **Bytes are base64.** A `bytes` value is written to the trace as base64 text, and a fixture
+- **Bytes are base64.** A `bytes` value is written to the trace as base64 text, and a mock
   value for a `bytes` return type must be base64 too.
 - **Sync functions** work in a sandbox. In workflow code on ActionsHub, make a decorated function
   `async`: a sync one is refused inside a trial. Generator functions cannot be decorated.

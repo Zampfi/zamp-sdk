@@ -70,12 +70,12 @@ class TestOutsideAnEvalTrial:
 
 class TestReturns:
     async def test_async_runs_and_records_what_it_returned(self, in_eval_trial, execute_action, returned):
-        execute_action.side_effect = [returned({"id": "O1", "source": "fixture"}), None]
+        execute_action.side_effect = [returned({"id": "O1", "source": "mock"}), None]
 
         result = await load("O1")
 
-        assert result == {"order": {"id": "O1", "source": "fixture"}}
-        inner, step = sent(execute_action)
+        assert result == {"order": {"id": "O1", "source": "mock"}}
+        _, step = sent(execute_action)
         assert execute_action.call_args.args[0] == "eval_observed_step"
         assert step == {
             "name": "steps.load",
@@ -85,26 +85,24 @@ class TestReturns:
             "args": {"order_id": "O1"},
             "outcome": {"kind": "returned", "value": result},
         }
-        assert inner["parent"] == "steps.load"
 
     def test_sync_runs_and_records_what_it_returned(self, in_eval_trial, execute_action, returned):
         execute_action.side_effect = [returned({"id": "O1"}), None]
 
         result = load_sync("O1")
 
-        inner, step = sent(execute_action)
+        _, step = sent(execute_action)
         assert step["outcome"] == {"kind": "returned", "value": result}
         assert result == {"order": {"id": "O1"}}
         assert step["parent"] == "test_observe.py:test_sync_runs_and_records_what_it_returned"
-        assert inner["parent"] == "steps.load"
 
     async def test_a_nested_step_names_the_step_around_it(self, in_eval_trial, execute_action, returned):
         execute_action.side_effect = [returned({"id": "O1"}), None, None]
 
         await review("O1")
 
-        inner, load_step, review_step = sent(execute_action)
-        assert (inner["parent"], load_step["parent"]) == ("steps.load", "steps.review")
+        _, load_step, review_step = sent(execute_action)
+        assert load_step["parent"] == "steps.review"
         assert review_step["parent"] == "test_observe.py:test_a_nested_step_names_the_step_around_it"
 
     async def test_the_step_ends_with_the_call(self, in_eval_trial, execute_action, returned):
@@ -113,7 +111,7 @@ class TestReturns:
         await load("O1")
         await fetch_order("O2")
 
-        assert sent(execute_action)[2]["parent"] == "test_observe.py:test_the_step_ends_with_the_call"
+        assert sent(execute_action)[2]["input"] == {"order_id": "O2"}
 
     async def test_a_keyed_step_sends_its_key(self, in_eval_trial, execute_action):
         @evals.observe("steps.check", key_argument="order_id")
@@ -218,7 +216,8 @@ class TestOnTheExecutor:
         execute_action.side_effect = [action_response(returned({"id": "O1"})), action_response()]
 
         assert await load("O1") == {"order": {"id": "O1"}}
-        assert [call["invocation_id"] for call in sent(execute_action)] == ["workflow-uuid", "workflow-uuid"]
+        inner, step = sent(execute_action)
+        assert (inner["call_id"], step["invocation_id"]) == ("workflow-uuid", "workflow-uuid")
 
     async def test_a_failed_action_raises(
         self, in_eval_trial_on_actions_hub, execute_action, returned, action_response

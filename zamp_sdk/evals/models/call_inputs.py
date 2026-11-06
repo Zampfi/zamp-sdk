@@ -11,14 +11,16 @@ class TracedCallInput(BaseModel):
     invocation_id: str
     parent: str
     args: dict[str, JsonValue]
-    output_schema: dict[str, JsonValue] | None = None
-    description: str | None = None
 
 
-class MockCallInput(TracedCallInput):
-    """The mock call's wire payload: `input`/`call_id` are the new names of `args`/`invocation_id`, which stay for older servers."""
+class MockCallInput(BaseModel):
+    """What a mockable call sends the platform: nothing but these four fields."""
 
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
     input: dict[str, JsonValue]
+    output_schema: dict[str, JsonValue] | None
     call_id: str
 
 

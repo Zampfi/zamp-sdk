@@ -2,8 +2,6 @@ from typing import Annotated, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from zamp_sdk.evals.constants import FixtureErrorCode
-
 
 class ReturnedOutcome(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -22,15 +20,15 @@ class RaisedOutcome(BaseModel):
     message: str
 
 
-class FixtureFailedOutcome(BaseModel):
+class MockFailedOutcome(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    kind: Literal["fixture_failed"]
-    code: FixtureErrorCode
+    kind: Literal["mock_failed"]
+    code: Literal["MOCK_FAILED"] = "MOCK_FAILED"
     message: str
 
 
 ExternalCallOutcome: TypeAlias = Annotated[
-    ReturnedOutcome | RaisedOutcome | FixtureFailedOutcome, Field(discriminator="kind")
+    ReturnedOutcome | RaisedOutcome | MockFailedOutcome, Field(discriminator="kind")
 ]
 ObservedStepOutcome: TypeAlias = Annotated[ReturnedOutcome | RaisedOutcome, Field(discriminator="kind")]

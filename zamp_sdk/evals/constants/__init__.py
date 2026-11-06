@@ -10,7 +10,6 @@ from zamp_sdk.evals.constants.constants import (
     UNTRACED_ARGUMENT_NAME_SUFFIXES,
     UNTRACED_ARGUMENT_NAMES,
     DecoratedCallKind,
-    FixtureErrorCode,
 )
 from zamp_sdk.evals.constants.messages import (
     EVAL_ACTION_FAILED_ERROR,
@@ -39,5 +38,4 @@ __all__ = [
     "UNTRACED_ARGUMENT_NAME_SUFFIXES",
     "UNTRACED_ARGUMENT_NAMES",
     "DecoratedCallKind",
-    "FixtureErrorCode",
 ]

@@ -8,15 +8,13 @@ from decimal import Decimal
 
 import pytest
 
-from zamp_sdk.evals.models import MockCallInput
-from zamp_sdk.evals.utils.eval_actions import build_traced_call_input
+from zamp_sdk.evals.utils.eval_actions import build_mock_call_input
 
 
 def _payload(**arguments):
     def target(**kwargs): ...
 
-    call = build_traced_call_input("n", None, inspect.signature(target), (), arguments, "p")
-    mock = MockCallInput(**call.model_dump(), input=call.args, call_id=call.invocation_id)
+    mock = build_mock_call_input("n", inspect.signature(target), (), arguments, None)
     return json.loads(json.dumps(mock.model_dump(mode="json")))
 
 

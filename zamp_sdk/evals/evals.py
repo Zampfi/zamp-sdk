@@ -19,19 +19,20 @@ from zamp_sdk.evals.constants import (
 )
 from zamp_sdk.evals.models import (
     ExternalCallOutcome,
-    FixtureFailedOutcome,
     MockCallInput,
+    MockFailedOutcome,
     RaisedOutcome,
     ReadTraceResult,
     TracedCallInput,
     TraceEntry,
 )
 from zamp_sdk.evals.utils import (
-    FixtureLookupError,
+    MockFailedError,
     ReturnType,
     accepts_argument,
     as_return_type,
     build_exception,
+    build_mock_call_input,
     build_traced_call_input,
     call_eval_action,
     parent_of,
@@ -48,7 +49,7 @@ _external_call_outcome_adapter: TypeAdapter[ExternalCallOutcome] = TypeAdapter(E
 
 
 def external_call(name: str, key_argument: str | None = None) -> Callable[[_FunctionT], _FunctionT]:
-    """Deprecated alias of `zamp_sdk.mocks.mockable` that still keys the fixture on `key_argument`."""
+    """Deprecated alias of `zamp_sdk.mocks.mockable`; `key_argument` is still checked but no longer sent."""
     warnings.warn(EXTERNAL_CALL_DEPRECATED_WARNING, DeprecationWarning, stacklevel=2)
     return build_decorator(DecoratedCallKind.EXTERNAL_CALL, name, key_argument)
 
@@ -102,24 +103,11 @@ def build_decorator(
             except PydanticInvalidForJsonSchema:
                 return None
 
-        description = inspect.getdoc(func)
+        def build_mock_call(args: tuple[Any, ...], kwargs: dict[str, Any]) -> MockCallInput:
+            return build_mock_call_input(name, signature, args, kwargs, output_schema())
 
-        def build_call(args: tuple[Any, ...], kwargs: dict[str, Any], parent: str) -> TracedCallInput:
-            is_mock = kind is DecoratedCallKind.EXTERNAL_CALL
-            call = build_traced_call_input(
-                name,
-                key_argument,
-                signature,
-                args,
-                kwargs,
-                parent,
-                output_schema=output_schema() if is_mock else None,
-                description=description if is_mock else None,
-            )
-            if not is_mock:
-                return call
-
-            return MockCallInput(**call.model_dump(), input=call.args, call_id=call.invocation_id)
+        def build_step_call(args: tuple[Any, ...], kwargs: dict[str, Any], parent: str) -> TracedCallInput:
+            return build_traced_call_input(name, key_argument, signature, args, kwargs, parent)
 
         if inspect.iscoroutinefunction(func):
 
@@ -128,12 +116,12 @@ def build_decorator(
                 if current_eval_trial_id() is None:
                     return func(*args, **kwargs)
 
-                # Frame 1 is the caller: the parent unless an observed step encloses it. Cheaper than inspect.stack().
-                call = build_call(args, kwargs, parent_of(sys._getframe(1)))
                 if kind is DecoratedCallKind.OBSERVED_STEP:
-                    return run_observed(call, functools.partial(func, *args, **kwargs))
+                    # Frame 1 is the caller: the parent unless an observed step encloses it. Cheaper than inspect.stack().
+                    step = build_step_call(args, kwargs, parent_of(sys._getframe(1)))
+                    return run_observed(step, functools.partial(func, *args, **kwargs))
 
-                return _answer_from_fixture(return_type, func.__globals__, call)
+                return _answer_from_mock(return_type, func.__globals__, build_mock_call(args, kwargs))
 
             return cast(_FunctionT, inspect.markcoroutinefunction(call_async))
 
@@ -144,25 +132,25 @@ def build_decorator(
 
             raise_if_on_actions_hub(name, func)
 
-            call = build_call(args, kwargs, parent_of(sys._getframe(1)))
             if kind is DecoratedCallKind.OBSERVED_STEP:
-                return run_observed_sync(call, functools.partial(func, *args, **kwargs))
+                step = build_step_call(args, kwargs, parent_of(sys._getframe(1)))
+                return run_observed_sync(step, functools.partial(func, *args, **kwargs))
 
-            return run_blocking(_answer_from_fixture(return_type, func.__globals__, call))
+            return run_blocking(_answer_from_mock(return_type, func.__globals__, build_mock_call(args, kwargs)))
 
         return cast(_FunctionT, call_sync)
 
     return decorate
 
 
-async def _answer_from_fixture(
-    return_type: Callable[[], ReturnType], function_globals: dict[str, Any], call: TracedCallInput
+async def _answer_from_mock(
+    return_type: Callable[[], ReturnType], function_globals: dict[str, Any], call: MockCallInput
 ) -> Any:
     outcome = _external_call_outcome_adapter.validate_python(
         await call_eval_action(EVAL_EXTERNAL_CALL_ACTION_NAME, call.model_dump(mode="json"))
     )
-    if isinstance(outcome, FixtureFailedOutcome):
-        raise FixtureLookupError(outcome.message)
+    if isinstance(outcome, MockFailedOutcome):
+        raise MockFailedError(outcome.message)
 
     if isinstance(outcome, RaisedOutcome):
         raise build_exception(outcome, function_globals)

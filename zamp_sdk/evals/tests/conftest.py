@@ -64,5 +64,5 @@ def raised():
 
 
 @pytest.fixture
-def fixture_lookup_failed():
-    return lambda code, message: {"kind": "fixture_failed", "code": code, "message": message}
+def mock_failed():
+    return lambda message: {"kind": "mock_failed", "code": "MOCK_FAILED", "message": message}

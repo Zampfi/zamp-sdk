@@ -1,4 +1,3 @@
-import asyncio
 import base64
 import inspect
 import sys
@@ -88,12 +87,12 @@ class TestOutsideAnEvalTrial:
 
 
 class TestReturns:
-    async def test_async_returns_the_fixture_as_the_return_type(self, in_eval_trial, execute_action, returned):
+    async def test_async_returns_the_mock_as_the_return_type(self, in_eval_trial, execute_action, returned):
         execute_action.return_value = returned({"id": "O1", "total": 7})
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
 
-    def test_sync_returns_the_fixture_as_the_return_type(self, in_eval_trial, execute_action, returned):
+    def test_sync_returns_the_mock_as_the_return_type(self, in_eval_trial, execute_action, returned):
         execute_action.return_value = returned({"id": "O1", "total": 7})
 
         assert fetch_order_sync("O1") == Order(id="O1", total=7)
@@ -109,7 +108,7 @@ class TestReturns:
         assert await fetch_status() == {"state": "down"}
 
     async def test_a_field_the_engine_adds_later_is_ignored(self, in_eval_trial, execute_action, returned):
-        execute_action.return_value = returned({"id": "O1", "total": 7}) | {"fixture_file": "erp.order.json"}
+        execute_action.return_value = returned({"id": "O1", "total": 7}) | {"mock_file": "erp.order.json"}
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
 
@@ -308,7 +307,7 @@ class TestRaises:
     ):
         execute_action.return_value = raised("os.system", "touch /tmp/pwned")
 
-        with pytest.raises(evals.FixtureLookupError, match="^os.system is not an exception class"):
+        with pytest.raises(evals.MockFailedError, match="^os.system is not an exception class"):
             await fetch_order("O1")
 
     async def test_a_module_getattr_is_not_called_for_the_type(
@@ -319,7 +318,7 @@ class TestRaises:
         monkeypatch.setitem(sys.modules, "lazy_errors", lazy_module)
         execute_action.return_value = raised("lazy_errors.LazyError", "boom")
 
-        with pytest.raises(evals.FixtureLookupError, match="^lazy_errors.LazyError is not an exception class"):
+        with pytest.raises(evals.MockFailedError, match="^lazy_errors.LazyError is not an exception class"):
             await fetch_order("O1")
 
         lazy_module.__getattr__.assert_not_called()
@@ -341,7 +340,7 @@ class TestRaises:
         cancel_order = _exec_skill_code()["cancel_order"]
         execute_action.return_value = raised("skill_code_run_by_exec.cancel_order", "boom")
 
-        with pytest.raises(evals.FixtureLookupError, match="^skill_code_run_by_exec.cancel_order is not an exception"):
+        with pytest.raises(evals.MockFailedError, match="^skill_code_run_by_exec.cancel_order is not an exception"):
             await cancel_order("O1")
 
     async def test_an_httpx_transport_error(self, in_eval_trial, execute_action, raised):
@@ -350,22 +349,18 @@ class TestRaises:
         with pytest.raises(httpx.ConnectTimeout, match="timed out"):
             await get_page("https://erp.invalid")
 
-    async def test_a_fixture_failure_raises_fixture_lookup_error_with_the_engine_message(
-        self, in_eval_trial, execute_action, fixture_lookup_failed
+    async def test_a_mock_failure_raises_mock_failed_error_with_the_engine_message(
+        self, in_eval_trial, execute_action, mock_failed
     ):
-        execute_action.return_value = fixture_lookup_failed(
-            "FIXTURE_EXHAUSTED", "erp.order:O1#3: the fixture list for this call ran out"
-        )
+        execute_action.return_value = mock_failed("erp.order:O1#3: the mock list for this call ran out")
 
-        with pytest.raises(evals.FixtureLookupError, match="^erp.order:O1#3: the fixture list for this call ran out$"):
+        with pytest.raises(evals.MockFailedError, match="^erp.order:O1#3: the mock list for this call ran out$"):
             await fetch_order("O1")
 
-    def test_a_sync_fixture_failure_raises_fixture_lookup_error(
-        self, in_eval_trial, execute_action, fixture_lookup_failed
-    ):
-        execute_action.return_value = fixture_lookup_failed("FIXTURE_MISSING", "erp.status#1: no fixture")
+    def test_a_sync_mock_failure_raises_mock_failed_error(self, in_eval_trial, execute_action, mock_failed):
+        execute_action.return_value = mock_failed("erp.status#1: no mock")
 
-        with pytest.raises(evals.FixtureLookupError, match="^erp.status#1: no fixture$"):
+        with pytest.raises(evals.MockFailedError, match="^erp.status#1: no mock$"):
             fetch_status_sync()
 
     async def test_a_failed_request_propagates(self, in_eval_trial, execute_action):
@@ -385,15 +380,10 @@ class TestRequest:
         assert action == "eval_external_call"
         assert execute_action.call_args.kwargs == {}
         assert call == {
-            "invocation_id": call["invocation_id"],
-            "call_id": call["invocation_id"],
             "name": "erp.order",
-            "key": "O1",
-            "parent": "test_external.py:test_async_sends_the_call",
-            "args": {"order_id": "O1", "realm": "prod"},
             "input": {"order_id": "O1", "realm": "prod"},
             "output_schema": Order.model_json_schema(),
-            "description": None,
+            "call_id": call["call_id"],
         }
 
     def test_sync_sends_arguments_by_name(self, in_eval_trial, execute_action, returned):
@@ -402,75 +392,7 @@ class TestRequest:
         fetch_order_sync(realm="test", order_id="O1")
 
         (call,) = sent(execute_action)
-        assert call["args"] == {"order_id": "O1", "realm": "test"}
-        assert call["parent"] == "test_external.py:test_sync_sends_arguments_by_name"
-
-    async def test_parallel_calls_name_their_caller(self, in_eval_trial, execute_action, returned):
-        execute_action.return_value = returned({"id": "O1", "total": 7})
-
-        await asyncio.gather(fetch_order("O1"), fetch_order("O2"))
-
-        assert {call["parent"] for call in sent(execute_action)} == {
-            "test_external.py:test_parallel_calls_name_their_caller"
-        }
-
-    def test_no_key_sends_none(self, in_eval_trial, execute_action, returned):
-        execute_action.return_value = returned("down")
-
-        fetch_status_sync()
-
-        assert sent(execute_action)[0]["key"] is None
-
-    def test_a_key_argument_of_none_sends_none(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.order", key_argument="order_id")
-        def fetch(order_id: str | None): ...
-
-        execute_action.return_value = returned(None)
-        fetch(None)
-        fetch("None")
-
-        assert [call["key"] for call in sent(execute_action)] == [None, "None"]
-
-    def test_a_key_argument_the_call_leaves_out_of_kwargs_sends_none(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.request", key_argument="order_id")
-        def request(**kwargs): ...
-
-        execute_action.return_value = returned(None)
-        request(page=2)
-
-        assert sent(execute_action)[0]["key"] is None
-
-    def test_an_integer_key_is_sent_as_text(self, in_eval_trial, execute_action, returned):
-        @evals.external_call("erp.page", key_argument="page")
-        def get_page_number(page: int): ...
-
-        execute_action.return_value = returned(None)
-        get_page_number(2)
-
-        assert sent(execute_action)[0]["key"] == "2"
-
-    def test_any_name_and_key_are_sent_as_written(self, in_eval_trial, execute_action, returned):
-        name = f"Mail.Fetch_{'x' * 100}"
-
-        @evals.external_call(name, key_argument="file_name")
-        def fetch_attachment(file_name: str): ...
-
-        execute_action.return_value = returned(None)
-        fetch_attachment("notes #2.msg")
-
-        (call,) = sent(execute_action)
-        assert (call["name"], call["key"]) == (name, "notes #2.msg")
-
-    def test_a_keyword_named_like_a_positional_only_parameter_keeps_the_key(
-        self, in_eval_trial, execute_action, returned
-    ):
-        @evals.external_call("erp.order", key_argument="order_id")
-        def fetch(order_id: str, /, **kwargs): ...
-
-        execute_action.return_value = returned(None)
-        fetch("O1", order_id="meta")
-
-        assert sent(execute_action)[0]["key"] == "O1"
+        assert call["input"] == {"order_id": "O1", "realm": "test"}
 
     def test_secret_arguments_are_never_sent(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.token")
@@ -479,7 +401,7 @@ class TestRequest:
         execute_action.return_value = returned(None)
         fetch_token("https://erp.invalid", {"Authorization": "Bearer x"}, "basic", "t0k", {"id": "c1"})
 
-        assert sent(execute_action)[0]["args"] == {"url": "https://erp.invalid"}
+        assert sent(execute_action)[0]["input"] == {"url": "https://erp.invalid"}
 
     def test_secret_arguments_passed_through_kwargs_are_never_sent(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.request")
@@ -488,7 +410,7 @@ class TestRequest:
         execute_action.return_value = returned(None)
         request("GET", "https://erp.invalid", headers={"Authorization": "Bearer x"}, token="t0k", timeout=5)
 
-        assert sent(execute_action)[0]["args"] == {"method": "GET", "url": "https://erp.invalid", "timeout": 5}
+        assert sent(execute_action)[0]["input"] == {"method": "GET", "url": "https://erp.invalid", "timeout": 5}
 
     def test_arguments_named_like_a_credential_are_never_sent(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.login")
@@ -497,7 +419,7 @@ class TestRequest:
         execute_action.return_value = returned(None)
         login("https://erp.invalid", "k1", "p1", "cs1", Authorization="Bearer x", refresh_token="t0k", page=2)
 
-        assert sent(execute_action)[0]["args"] == {"url": "https://erp.invalid", "page": 2}
+        assert sent(execute_action)[0]["input"] == {"url": "https://erp.invalid", "page": 2}
 
     def test_only_whole_credential_names_are_left_out(self, in_eval_trial, execute_action, returned):
         @evals.external_call("llm.complete")
@@ -531,7 +453,7 @@ class TestRequest:
         execute_action.return_value = returned(None)
         complete(**{name: 1 for name in kept + dropped})
 
-        assert sent(execute_action)[0]["args"] == {name: 1 for name in kept}
+        assert sent(execute_action)[0]["input"] == {name: 1 for name in kept}
 
     def test_credential_keys_inside_a_dict_argument_are_never_sent(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.send")
@@ -543,7 +465,7 @@ class TestRequest:
             [{"headers": {"cookie": "c"}, "path": "/orders"}],
         )
 
-        assert sent(execute_action)[0]["args"] == {
+        assert sent(execute_action)[0]["input"] == {
             "config": {"region": "eu", "nested": {"page": 2}},
             "requests": [{"path": "/orders"}],
         }
@@ -567,7 +489,7 @@ class TestRequest:
         execute_action.return_value = returned("live")
         Client.status("prod")
 
-        assert [call["args"] for call in sent(execute_action)] == [{"order_id": "O1"}, {"realm": "prod"}]
+        assert [call["input"] for call in sent(execute_action)] == [{"order_id": "O1"}, {"realm": "prod"}]
 
     def test_an_argument_json_cannot_hold_is_sent_as_its_repr(self, in_eval_trial, execute_action, returned):
         class Session:
@@ -580,7 +502,7 @@ class TestRequest:
         execute_action.return_value = returned(None)
         post(Session(), Order(id="O1", total=7))
 
-        assert sent(execute_action)[0]["args"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
+        assert sent(execute_action)[0]["input"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
 
     def test_an_argument_that_contains_itself_is_sent_as_its_type_only(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.post")
@@ -591,7 +513,7 @@ class TestRequest:
         execute_action.return_value = returned(None)
         post(lines, 2)
 
-        assert sent(execute_action)[0]["args"] == {"lines": "<list that contains itself>", "page": 2}
+        assert sent(execute_action)[0]["input"] == {"lines": "<list that contains itself>", "page": 2}
 
     def test_an_argument_that_contains_itself_does_not_send_its_credentials(
         self, in_eval_trial, execute_action, returned
@@ -604,7 +526,7 @@ class TestRequest:
         execute_action.return_value = returned(None)
         connect(config)
 
-        assert sent(execute_action)[0]["args"] == {"config": "<dict that contains itself>"}
+        assert sent(execute_action)[0]["input"] == {"config": "<dict that contains itself>"}
 
     def test_bytes_are_sent_as_base64(self, in_eval_trial, execute_action, returned):
         @evals.external_call("erp.upload")
@@ -613,15 +535,15 @@ class TestRequest:
         execute_action.return_value = returned(None)
         upload(b"invoice.pdf", b"%PDF\xff")
 
-        assert sent(execute_action)[0]["args"] == {"name": "aW52b2ljZS5wZGY=", "content": "JVBERv8="}
+        assert sent(execute_action)[0]["input"] == {"name": "aW52b2ljZS5wZGY=", "content": "JVBERv8="}
 
-    def test_every_call_has_its_own_invocation_id(self, in_eval_trial, execute_action, returned):
+    def test_every_call_has_its_own_call_id(self, in_eval_trial, execute_action, returned):
         execute_action.return_value = returned("down")
 
         fetch_status_sync()
         fetch_status_sync()
 
-        first, second = (call["invocation_id"] for call in sent(execute_action))
+        first, second = (call["call_id"] for call in sent(execute_action))
         assert first != second
 
 
@@ -632,16 +554,14 @@ class TestOnTheExecutor:
         execute_action.return_value = action_response(returned({"id": "O1", "total": 7}))
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
-        assert sent(execute_action)[0]["invocation_id"] == "workflow-uuid"
+        assert sent(execute_action)[0]["call_id"] == "workflow-uuid"
 
-    async def test_a_fixture_failure_raises_fixture_lookup_error(
-        self, in_eval_trial_on_actions_hub, execute_action, fixture_lookup_failed, action_response
+    async def test_a_mock_failure_raises_mock_failed_error(
+        self, in_eval_trial_on_actions_hub, execute_action, mock_failed, action_response
     ):
-        execute_action.return_value = action_response(
-            fixture_lookup_failed("FIXTURE_MISSING", "erp.order:O1#1: no fixture")
-        )
+        execute_action.return_value = action_response(mock_failed("erp.order:O1#1: no mock"))
 
-        with pytest.raises(evals.FixtureLookupError, match="^erp.order:O1#1: no fixture$"):
+        with pytest.raises(evals.MockFailedError, match="^erp.order:O1#1: no mock$"):
             await fetch_order("O1")
 
     async def test_a_string_return_annotation_is_not_evaluated(
