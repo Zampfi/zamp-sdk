@@ -209,19 +209,19 @@ constraint, which you declare in the `CREATE TABLE` or add later with
 
 Mark the calls a script makes to the outside world, and the steps of its own logic, so an eval
 trial can replay the outside world from mocks and grade what the script did. Outside a trial
-the decorators do nothing.
+the decorators do nothing. Skill code must import `mocks` from the package root
+(`from zamp_sdk import mocks`); the code executor rejects `from zamp_sdk.mocks import ...`.
 
 ```python
 import httpx
-from zamp_sdk import evals
-from zamp_sdk.mocks import mockable
+from zamp_sdk import evals, mocks
 
-@mockable("erp.order")
+@mocks.mockable("erp.order")
 async def fetch_order(order_id: str) -> Order:
     """Fetch one order."""
     ...                                   # in a trial: answered from the mock, never run
 
-@mockable("erp.page")
+@mocks.mockable("erp.page")
 async def get_page(url: str) -> httpx.Response:
     ...                                   # a mock's status/body/content/headers become a Response
 

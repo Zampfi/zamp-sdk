@@ -2,6 +2,8 @@
 
 ## 2.0.0
 
+- **Exports `mocks` from the package root.** Write `from zamp_sdk import mocks` and `@mocks.mockable(...)`; the
+  code executor rejects `from zamp_sdk.mocks import mockable` (no submodule imports).
 - **Adds `zamp_sdk.mocks.mockable(name)`.** Marks a mockable seam by name only; the mock key and reply
   come from server-side config. In a trial the call sends exactly `name`, `input` (the arguments by name),
   `output_schema` (the JSON schema of the return type, `None` without an annotation or when none can be built)
