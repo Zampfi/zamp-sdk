@@ -5,9 +5,8 @@ from typing import Any
 from pydantic import JsonValue, TypeAdapter
 
 from zamp_sdk.constants import MOCK_CALL_ACTION_NAME
-from zamp_sdk.evals.utils.arguments import arguments_to_trace, bind_arguments
-from zamp_sdk.evals.utils.eval_actions import call_eval_action, new_call_id
 from zamp_sdk.evals.models import ExternalCallOutcome, MockFailedOutcome, RaisedOutcome
+from zamp_sdk.evals.utils import arguments_to_trace, bind_arguments, call_eval_action, new_call_id
 from zamp_sdk.mocks.models import MockCallInput
 from zamp_sdk.mocks.utils.errors import MockFailedError
 from zamp_sdk.mocks.utils.outcomes import ReturnType, as_return_type, build_exception

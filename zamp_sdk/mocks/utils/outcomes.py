@@ -20,12 +20,12 @@ from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationE
 from pydantic.errors import PydanticInvalidForJsonSchema
 
 from zamp_sdk.context import ExecutionHost, current_execution_host
+from zamp_sdk.evals.models import RaisedOutcome
 from zamp_sdk.mocks.constants import (
     PLACEHOLDER_REQUEST_METHOD,
     PLACEHOLDER_REQUEST_URL,
     UNKNOWN_EXCEPTION_TYPE_ERROR,
 )
-from zamp_sdk.evals.models import RaisedOutcome
 from zamp_sdk.mocks.models import MockHttpResponse
 from zamp_sdk.mocks.utils.errors import MockFailedError
 
