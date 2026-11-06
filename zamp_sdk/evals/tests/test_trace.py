@@ -54,7 +54,7 @@ class TestReadTrace:
         assert isinstance(observed, ObservedStep)
         assert (observed.outcome.type, observed.outcome.message) == ("builtins.ValueError", "bad")
 
-    async def test_an_external_call_can_x(self, in_eval_trial, execute_action, mock_failed):
+    async def test_an_external_call_can_carry_a_mock_failure(self, in_eval_trial, execute_action, mock_failed):
         failed = mock_failed("erp.order:O1#1: the item's mock file has no key for this call")
         execute_action.return_value = {"entries": [trace_entry("external_call", "erp.order", failed, key="O1")]}
 
