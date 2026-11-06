@@ -1,7 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
-class FixtureHttpResponse(BaseModel):
+class MockHttpResponse(BaseModel):
     model_config = ConfigDict(extra="ignore", val_json_bytes="base64")
 
     status: int

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.0.0
+
+- **Exports `mocks` from the package root.** Write `from zamp_sdk import mocks` and `@mocks.mockable(...)`; the
+  code executor rejects `from zamp_sdk.mocks import mockable` (no submodule imports).
+- **Adds `zamp_sdk.mocks.mockable(name)`.** Marks a mockable seam by name only; the mock key and reply
+  come from server-side config. In a trial the call sends exactly `name`, `input` (the arguments by name),
+  `output_schema` (the JSON schema of the return type, `None` without an annotation or when none can be built)
+  and `call_id`. Outside a trial the function runs as written.
+- **Breaking: the old wire names are gone.** A mocked call no longer sends `key`, `parent`, `args`,
+  `invocation_id` or `description`.
+- **Breaking: `evals.external_call` is removed**; use `mockable(name)` (it takes no `key_argument`).
+- **Outcome kinds are `returned`, `raised` and `mock_failed`.** `mock_failed` is the only failure kind and
+  raises `mocks.MockFailedError` (renamed from the old lookup error and moved out of `evals`); an exception type the
+  process cannot load also raises it.
+- **The mock action is `mock_call`** (was `eval_external_call`). For an `httpx.Response` return type the call sends
+  `MockHttpResponse`'s JSON schema as `output_schema`. A mocked call's trace entry no longer has `parent`;
+  observed steps keep it.
+- `observe` is unchanged.
+
 ## 1.6.2
 
 - **Step capture serializes each step once.** `drain_log_capture()` now returns a list of JSON strings

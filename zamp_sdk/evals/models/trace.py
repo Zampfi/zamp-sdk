@@ -15,7 +15,6 @@ class TracedCall(BaseModel):
     invocation_id: str = Field(
         description="Id the SDK gives this call; a retry of the call has the same id, so it keeps its call_number"
     )
-    parent: str = Field(description="Enclosing observed step, else file:function; for reading only, never matched")
     args: dict[str, JsonValue] = Field(
         description=(
             "Arguments by name; self, cls and credential names (token, api_key, headers, cookie, ... or ending in"
@@ -33,6 +32,7 @@ class ExternalCall(TracedCall):
 
 class ObservedStep(TracedCall):
     kind: Literal["observed_step"]
+    parent: str = Field(description="Enclosing observed step, else file:function; for reading only, never matched")
     outcome: ObservedStepOutcome
 
 

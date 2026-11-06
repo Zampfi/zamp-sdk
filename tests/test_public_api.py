@@ -74,6 +74,15 @@ class TestPublicApi:
             )
         )
 
+    def test_mocks_exported_from_package_root(self):
+        """The code executor rejects ``from zamp_sdk.mocks import ...`` (no submodule imports),
+        so ``mocks`` has to be reachable as ``from zamp_sdk import mocks``."""
+        from zamp_sdk import mocks
+
+        assert "mocks" in zamp_sdk.__all__
+        assert callable(mocks.mockable)
+        assert issubclass(mocks.MockFailedError, Exception)
+
     def test_all_exports(self):
         expected = {
             "ActionExecutor",
@@ -114,8 +123,8 @@ class TestPublicApi:
             # Agent-managed database access for scripts.
             "AgentDbError",
             "datasets",
-            # Fixtures and traces for eval runs.
             "evals",
+            "mocks",
             # Levelled logging + the two independent gates.
             "LogLevel",
             "LoggingConfig",

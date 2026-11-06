@@ -12,7 +12,7 @@ from zamp_sdk.evals.models import TracedCallInput
 from zamp_sdk.evals.utils.arguments import arguments_to_trace, bind_arguments, key_from_arguments
 
 
-def new_invocation_id() -> str:
+def new_call_id() -> str:
     if current_execution_host() is ExecutionHost.ACTIONS_HUB:
         from temporalio import workflow
 
@@ -34,7 +34,7 @@ def build_traced_call_input(
     return TracedCallInput(
         name=name,
         key=key_from_arguments(arguments, key_argument),
-        invocation_id=new_invocation_id(),
+        invocation_id=new_call_id(),
         parent=parent,
         args=arguments_to_trace(arguments),
     )

@@ -1,7 +1,7 @@
 from zamp_sdk.constants import (
-    EVAL_EXTERNAL_CALL_ACTION_NAME,
     EVAL_OBSERVED_STEP_ACTION_NAME,
     EVAL_READ_TRACE_ACTION_NAME,
+    MOCK_CALL_ACTION_NAME,
 )
 
 # Name of the action dispatched through ActionExecutor for every emitted block.
@@ -20,8 +20,8 @@ EMIT_ID_PREFIX = "emit_"
 NON_LOGGABLE_ACTIONS = frozenset(
     {
         EMIT_LOG_ACTION_NAME,
-        EVAL_EXTERNAL_CALL_ACTION_NAME,
         EVAL_OBSERVED_STEP_ACTION_NAME,
         EVAL_READ_TRACE_ACTION_NAME,
+        MOCK_CALL_ACTION_NAME,
     }
 )
