@@ -18,7 +18,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from zamp_sdk.capture import drain_log_capture
-from zamp_sdk.context.constants import ZAMP_METADATA_CONTEXT_KEY
 from zamp_sdk.logging import log_control
 
 ACTION_EXECUTOR_EXECUTE_PATH = "zamp_sdk.action_executor.ActionExecutor.execute"
@@ -38,7 +37,8 @@ def reset_logging_state(monkeypatch):
 @pytest.fixture
 def bind_metadata_context():
     def bind(metadata):
-        bound = {ZAMP_METADATA_CONTEXT_KEY: metadata}
+        # Hosts bind each metadata field flat, as the executor's interceptor does with bind_contextvars(**fields).
+        bound = dict(metadata or {})
         context_utils = SimpleNamespace(get_variable_from_context=bound.get)
         return patch.dict(sys.modules, {"zamp_public_workflow_sdk.actions_hub.utils.context_utils": context_utils})
 

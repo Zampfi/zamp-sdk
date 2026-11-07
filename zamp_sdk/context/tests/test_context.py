@@ -73,7 +73,7 @@ class TestCurrentEvalTrialId:
         monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "")
         assert current_eval_trial_id() is None
 
-    def test_actions_hub_reads_the_bound_metadata_context(self, monkeypatch, bind_metadata_context):
+    def test_actions_hub_reads_the_flat_bound_eval_trial_id(self, monkeypatch, bind_metadata_context):
         monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
         monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "from-env")
 
