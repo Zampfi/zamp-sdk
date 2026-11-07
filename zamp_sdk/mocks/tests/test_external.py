@@ -323,6 +323,22 @@ class TestRaises:
         with pytest.raises(ConnectionError, match="refused"):
             fetch_order_sync("O1")
 
+    def test_an_error_with_required_init_arguments_still_raises_as_that_type(
+        self, in_eval_trial, execute_action, raised
+    ):
+        import subprocess
+
+        import httpx
+
+        execute_action.return_value = raised("httpx.HTTPStatusError", "404 not found")
+        with pytest.raises(httpx.HTTPStatusError, match="404 not found"):
+            fetch_order_sync("O1")
+
+        execute_action.return_value = raised("subprocess.CalledProcessError", "exit 2")
+        with pytest.raises(subprocess.CalledProcessError) as raised_error:
+            fetch_order_sync("O1")
+        assert raised_error.value.args == ("exit 2",)
+
     def test_an_sdk_error_type_is_importable(self, in_eval_trial, execute_action, raised):
         execute_action.return_value = raised("zamp_sdk.AgentDbError", "boom")
 

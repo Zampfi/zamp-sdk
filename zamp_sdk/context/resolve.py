@@ -4,7 +4,7 @@ import os
 from typing import Any, Optional
 
 from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
-from zamp_sdk.context.constants import EVAL_TRIAL_ID_FIELD, ZAMP_METADATA_CONTEXT_KEY
+from zamp_sdk.context.constants import EVAL_TRIAL_ID_FIELD
 from zamp_sdk.context.env import (
     ENV_BRANCH_ID,
     ENV_CHANNEL_ID,
@@ -65,11 +65,8 @@ def current_eval_trial_id() -> str | None:
 
     from zamp_public_workflow_sdk.actions_hub.utils.context_utils import get_variable_from_context
 
-    metadata = get_variable_from_context(ZAMP_METADATA_CONTEXT_KEY)
-    if metadata is None:
-        return None
-
-    return metadata.get(EVAL_TRIAL_ID_FIELD)
+    # The executor's metadata interceptor binds each field flat in the context, not nested under a key.
+    return get_variable_from_context(EVAL_TRIAL_ID_FIELD) or None
 
 
 def resolve_channel_context() -> Optional[ChannelContext]:
