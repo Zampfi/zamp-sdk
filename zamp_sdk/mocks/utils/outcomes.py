@@ -24,6 +24,7 @@ from zamp_sdk.evals.models import RaisedOutcome
 from zamp_sdk.mocks.constants import (
     PLACEHOLDER_REQUEST_METHOD,
     PLACEHOLDER_REQUEST_URL,
+    UNBUILDABLE_EXCEPTION_ERROR,
     UNKNOWN_EXCEPTION_TYPE_ERROR,
 )
 from zamp_sdk.mocks.models import MockHttpResponse
@@ -69,6 +70,11 @@ def _instantiate(error_class: type[Exception], raised: RaisedOutcome) -> Excepti
     except TypeError:
         return MockFailedError(UNKNOWN_EXCEPTION_TYPE_ERROR.format(type=raised.type, message=raised.message))
     error.args = (raised.message,)
+    # Some (CalledProcessError) build their message from attributes only __init__ sets
+    try:
+        str(error)
+    except Exception:
+        return MockFailedError(UNBUILDABLE_EXCEPTION_ERROR.format(type=raised.type, message=raised.message))
     return error
 
 

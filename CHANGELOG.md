@@ -6,8 +6,9 @@
   executor.** `current_eval_trial_id()` looked for a nested `zamp_metadata_context` entry the executor never binds,
   so `@mocks.mockable` ran real bodies and `@evals.observe` saw no trial. `ZAMP_METADATA_CONTEXT_KEY` is removed.
 - **Fixed: a mocked `raises` outcome for an exception class with required `__init__` arguments**
-  (`httpx.HTTPStatusError`, `subprocess.CalledProcessError`) raises that type, not `TypeError`. The class is built
-  without `__init__` and `args` set to the message; if that is impossible, `MockFailedError` names the type.
+  (`httpx.HTTPStatusError`) raises that type, not `TypeError`. The class is built without `__init__` and `args` set
+  to the message. When that is impossible, or the bare instance cannot render its message
+  (`subprocess.CalledProcessError`), `MockFailedError` names the type.
 
 ## 2.0.0
 
