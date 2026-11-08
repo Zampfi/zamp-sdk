@@ -24,6 +24,7 @@ from zamp_sdk.evals.models import RaisedOutcome
 from zamp_sdk.mocks.constants import (
     PLACEHOLDER_REQUEST_METHOD,
     PLACEHOLDER_REQUEST_URL,
+    UNBUILDABLE_EXCEPTION_ERROR,
     UNKNOWN_EXCEPTION_TYPE_ERROR,
 )
 from zamp_sdk.mocks.models import MockHttpResponse
@@ -52,9 +53,29 @@ def build_exception(raised: RaisedOutcome, function_globals: dict[str, Any]) -> 
         error_class = vars(module).get(class_name) if module is not None else None
 
     if isinstance(error_class, type) and issubclass(error_class, Exception):
-        return error_class(raised.message)
+        return _instantiate(error_class, raised)
 
     return MockFailedError(UNKNOWN_EXCEPTION_TYPE_ERROR.format(type=raised.type, message=raised.message))
+
+
+def _instantiate(error_class: type[Exception], raised: RaisedOutcome) -> Exception:
+    try:
+        return error_class(raised.message)
+    except TypeError:
+        pass
+
+    # Classes with required extra arguments (httpx.HTTPStatusError, CalledProcessError) can't take just a message
+    try:
+        error = error_class.__new__(error_class)
+    except TypeError:
+        return MockFailedError(UNKNOWN_EXCEPTION_TYPE_ERROR.format(type=raised.type, message=raised.message))
+    error.args = (raised.message,)
+    # Some (CalledProcessError) build their message from attributes only __init__ sets
+    try:
+        str(error)
+    except Exception:
+        return MockFailedError(UNBUILDABLE_EXCEPTION_ERROR.format(type=raised.type, message=raised.message))
+    return error
 
 
 class ReturnType(NamedTuple):

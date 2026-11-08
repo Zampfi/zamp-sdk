@@ -323,6 +323,25 @@ class TestRaises:
         with pytest.raises(ConnectionError, match="refused"):
             fetch_order_sync("O1")
 
+    def test_an_error_with_required_init_arguments_still_raises_as_that_type(
+        self, in_eval_trial, execute_action, raised
+    ):
+        import httpx
+
+        execute_action.return_value = raised("httpx.HTTPStatusError", "404 not found")
+        with pytest.raises(httpx.HTTPStatusError, match="404 not found"):
+            fetch_order_sync("O1")
+
+    def test_an_error_that_cannot_show_its_message_without_init_raises_mock_failed(
+        self, in_eval_trial, execute_action, raised
+    ):
+        # CalledProcessError's __str__ reads returncode/cmd, which only __init__ sets
+        execute_action.return_value = raised("subprocess.CalledProcessError", "exit 2")
+
+        with pytest.raises(mocks.MockFailedError, match="^subprocess.CalledProcessError cannot be built") as error:
+            fetch_order_sync("O1")
+        assert "exit 2" in str(error.value)
+
     def test_an_sdk_error_type_is_importable(self, in_eval_trial, execute_action, raised):
         execute_action.return_value = raised("zamp_sdk.AgentDbError", "boom")
 
