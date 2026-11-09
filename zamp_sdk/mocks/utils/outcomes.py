@@ -20,14 +20,13 @@ from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationE
 from pydantic.errors import PydanticInvalidForJsonSchema
 
 from zamp_sdk.context import ExecutionHost, current_execution_host
-from zamp_sdk.evals.models import RaisedOutcome
 from zamp_sdk.mocks.constants import (
     PLACEHOLDER_REQUEST_METHOD,
     PLACEHOLDER_REQUEST_URL,
     UNBUILDABLE_EXCEPTION_ERROR,
     UNKNOWN_EXCEPTION_TYPE_ERROR,
 )
-from zamp_sdk.mocks.models import MockHttpResponse
+from zamp_sdk.mocks.models import MockHttpResponse, Raised
 from zamp_sdk.mocks.utils.errors import MockFailedError
 
 if TYPE_CHECKING:
@@ -41,7 +40,7 @@ _MOCK_HTTP_RESPONSE: TypeAdapter[object] = TypeAdapter(MockHttpResponse)
 _MOCK_HTTP_RESPONSE_OR_NONE: TypeAdapter[object] = TypeAdapter(MockHttpResponse | None)
 
 
-def build_exception(raised: RaisedOutcome, function_globals: dict[str, Any]) -> Exception:
+def build_exception(raised: Raised, function_globals: dict[str, Any]) -> Exception:
     module_name, _, class_name = raised.type.rpartition(".")
 
     # Code run by exec() on the executor has no module in sys.modules, so its own classes are read from its globals
@@ -58,7 +57,7 @@ def build_exception(raised: RaisedOutcome, function_globals: dict[str, Any]) -> 
     return MockFailedError(UNKNOWN_EXCEPTION_TYPE_ERROR.format(type=raised.type, message=raised.message))
 
 
-def _instantiate(error_class: type[Exception], raised: RaisedOutcome) -> Exception:
+def _instantiate(error_class: type[Exception], raised: Raised) -> Exception:
     try:
         return error_class(raised.message)
     except TypeError:

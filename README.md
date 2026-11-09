@@ -207,8 +207,8 @@ constraint, which you declare in the `CREATE TABLE` or add later with
 
 ## Mocks (`zamp_sdk.mocks`)
 
-Mark a call to the outside world as mockable, so an eval trial can answer it from a mock instead of running
-it. Outside a trial the decorator does nothing. Skill code must import `mocks` from the package root; the code
+Mark a call to the outside world as mockable, so a run with a mock case (`ZAMP_MOCK_CASE_ID`, or `mock_case_id` on
+the executor's context) asks the platform how to answer it. Without a mock case the decorator does nothing. Skill code must import `mocks` from the package root; the code
 executor rejects `from zamp_sdk.mocks import ...`.
 
 ```python
@@ -218,7 +218,7 @@ from zamp_sdk import mocks
 @mocks.mockable("erp.order")
 async def fetch_order(order_id: str) -> Order:
     """Fetch one order."""
-    ...                                   # in a trial: answered from the mock, never run
+    ...                                   # in a mock case: runs only when mocks decides run_real
 
 @mocks.mockable("erp.page")
 async def get_page(url: str) -> httpx.Response:
@@ -226,14 +226,14 @@ async def get_page(url: str) -> httpx.Response:
 
 try:
     order = await fetch_order("O1")
-except mocks.MockFailedError:             # the trial's mock could not answer this call
+except mocks.MockFailedError:             # mocks could not answer this call
     ...
 ```
 
 | Name | Does |
 |------|------|
-| `mocks.mockable(name)` | In a trial, answer the call from a mock instead of running it; the call sends only `name`, `input`, `output_schema` and `call_id` |
-| `mocks.MockFailedError` | Raised when the mock cannot answer a call (outcome `mock_failed`) or names an exception type the process cannot load; the message says which and why |
+| `mocks.mockable(name)` | In a mock case, send `case_id`, `name`, `input`, `output_schema` and `call_id` to the `mock_call` action and act out the decision: `run_real` runs the function, `answered` returns the value or raises the error |
+| `mocks.MockFailedError` | Raised when mocks cannot answer a call (outcome `mock_failed`), the reply is not a mock decision, or it names an exception type the process cannot load |
 
 - **`output_schema`** is the return type's JSON schema, or `None` without an annotation or when none can be built.
   For `httpx.Response` it is the schema of the `status`, `body`, `content`, `headers` object a mock answers with.

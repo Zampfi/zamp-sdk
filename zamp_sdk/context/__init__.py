@@ -20,6 +20,7 @@ from zamp_sdk.context.env import (
     ENV_LOG_ENABLED,
     ENV_LOG_LEVEL,
     ENV_MESSAGE_ID,
+    ENV_MOCK_CASE_ID,
     ENV_RUN_ID,
     ENV_STREAMING_ID,
     ENV_TOOL_CALL_ID,
@@ -29,6 +30,7 @@ from zamp_sdk.context.execution_host import ExecutionHost, current_execution_hos
 from zamp_sdk.context.resolve import (
     current_branch_context,
     current_eval_trial_id,
+    current_mock_case_id,
     resolve_channel_context,
     resolve_context,
 )
@@ -51,6 +53,7 @@ __all__ = [
     "ENV_LOG_ENABLED",
     "ENV_LOG_LEVEL",
     "ENV_MESSAGE_ID",
+    "ENV_MOCK_CASE_ID",
     "ENV_RUN_ID",
     "ENV_STREAMING_ID",
     "ENV_TOOL_CALL_ID",
@@ -60,6 +63,7 @@ __all__ = [
     "current_branch_context",
     "current_channel_context",
     "current_eval_trial_id",
+    "current_mock_case_id",
     "current_execution_host",
     "resolve_channel_context",
     "resolve_context",

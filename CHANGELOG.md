@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking: `@mocks.mockable` gates on the mock case, not the eval trial.** It asks mocks only when
+  `current_mock_case_id()` (env `ZAMP_MOCK_CASE_ID`, or `mock_case_id` on the executor's context) is set, sends
+  `MockCall{case_id, name, input, output_schema, call_id}` to `mock_call`, and acts out the reply: `RunReal` runs the
+  function, `Answered` returns `Returned`, raises `Raised`, or raises `MockFailedError` for `MockFailed` or any other
+  reply. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
+- **Credential names are matched with `-` and spaces read as `_`**, so header-style names (`x-authorization`,
+  `X-Api-Key`) are left out of mock inputs and traces.
+
 ## 2.0.1
 
 - **Fixed: eval trial id is read from the flat metadata fields hosts bind, so mocks/observe work in the code

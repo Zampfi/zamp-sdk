@@ -30,6 +30,8 @@ ENV_ENVIRONMENT = "ZAMP_ENVIRONMENT"
 # actions while it is set and run untouched otherwise.
 ENV_EVAL_TRIAL_ID = "ZAMP_EVAL_TRIAL_ID"
 
+ENV_MOCK_CASE_ID = "ZAMP_MOCK_CASE_ID"
+
 # This run's LoggingConfig, one variable per field, for a process with no workflow input to
 # carry it on. Read independently rather than all-or-none like the channel variables above: a
 # missing field just keeps its default.

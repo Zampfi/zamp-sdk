@@ -1,5 +1,6 @@
-# An argument, or a key inside a dict argument at any depth, whose lowercased name is one of these names or ends in
-# one of the suffixes is left out of the trace. Whole names only, so max_tokens or sort_key stay in.
+# An argument, or a key inside a dict argument at any depth, whose name (lowercased, "-" and " " read as "_") is one of
+# these names or ends in one of the suffixes is left out of the trace. Whole names only, so max_tokens or sort_key
+# stay in.
 UNTRACED_ARGUMENT_NAMES = frozenset(
     {
         "self",
@@ -35,6 +36,7 @@ UNTRACED_ARGUMENT_NAME_SUFFIXES = (
     "_api_key",
     "_credentials",
     "_cookie",
+    "_authorization",
 )
 
 # A value that contains itself has no JSON form, and its repr could carry a credential the trace leaves out.

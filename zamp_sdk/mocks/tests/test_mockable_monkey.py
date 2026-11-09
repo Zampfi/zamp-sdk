@@ -8,13 +8,13 @@ from decimal import Decimal
 
 import pytest
 
-from zamp_sdk.mocks.utils import build_mock_call_input
+from zamp_sdk.mocks.utils import build_mock_call
 
 
 def _payload(**arguments):
     def target(**kwargs): ...
 
-    mock = build_mock_call_input("n", inspect.signature(target), (), arguments, None)
+    mock = build_mock_call("case-1", "n", inspect.signature(target), (), arguments, None)
     return json.loads(json.dumps(mock.model_dump(mode="json")))
 
 

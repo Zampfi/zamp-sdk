@@ -70,8 +70,10 @@ class TestOutsideAnEvalTrial:
 
 
 class TestReturns:
-    async def test_async_runs_and_records_what_it_returned(self, in_eval_trial, execute_action, returned):
-        execute_action.side_effect = [returned({"id": "O1", "source": "mock"}), None]
+    async def test_async_runs_and_records_what_it_returned(
+        self, in_eval_trial, in_mock_case, execute_action, answered, returned
+    ):
+        execute_action.side_effect = [answered(returned({"id": "O1", "source": "mock"})), None]
 
         result = await load("O1")
 
@@ -87,8 +89,10 @@ class TestReturns:
             "outcome": {"kind": "returned", "value": result},
         }
 
-    def test_sync_runs_and_records_what_it_returned(self, in_eval_trial, execute_action, returned):
-        execute_action.side_effect = [returned({"id": "O1"}), None]
+    def test_sync_runs_and_records_what_it_returned(
+        self, in_eval_trial, in_mock_case, execute_action, answered, returned
+    ):
+        execute_action.side_effect = [answered(returned({"id": "O1"})), None]
 
         result = load_sync("O1")
 
@@ -97,8 +101,10 @@ class TestReturns:
         assert result == {"order": {"id": "O1"}}
         assert step["parent"] == "test_observe.py:test_sync_runs_and_records_what_it_returned"
 
-    async def test_a_nested_step_names_the_step_around_it(self, in_eval_trial, execute_action, returned):
-        execute_action.side_effect = [returned({"id": "O1"}), None, None]
+    async def test_a_nested_step_names_the_step_around_it(
+        self, in_eval_trial, in_mock_case, execute_action, answered, returned
+    ):
+        execute_action.side_effect = [answered(returned({"id": "O1"})), None, None]
 
         await review("O1")
 
@@ -106,8 +112,8 @@ class TestReturns:
         assert load_step["parent"] == "steps.review"
         assert review_step["parent"] == "test_observe.py:test_a_nested_step_names_the_step_around_it"
 
-    async def test_the_step_ends_with_the_call(self, in_eval_trial, execute_action, returned):
-        execute_action.side_effect = [returned({}), None, returned({})]
+    async def test_the_step_ends_with_the_call(self, in_eval_trial, in_mock_case, execute_action, answered, returned):
+        execute_action.side_effect = [answered(returned({})), None, answered(returned({}))]
 
         await load("O1")
         await fetch_order("O2")
@@ -212,19 +218,19 @@ class TestRaises:
 
 class TestOnTheExecutor:
     async def test_async_records_the_step_with_workflow_invocation_ids(
-        self, in_eval_trial_on_actions_hub, execute_action, returned, action_response
+        self, in_mocked_eval_trial_on_actions_hub, execute_action, answered, returned, action_response
     ):
-        execute_action.side_effect = [action_response(returned({"id": "O1"})), action_response()]
+        execute_action.side_effect = [action_response(answered(returned({"id": "O1"}))), action_response()]
 
         assert await load("O1") == {"order": {"id": "O1"}}
         inner, step = sent(execute_action)
         assert (inner["call_id"], step["invocation_id"]) == ("workflow-uuid", "workflow-uuid")
 
     async def test_a_failed_action_raises(
-        self, in_eval_trial_on_actions_hub, execute_action, returned, action_response
+        self, in_mocked_eval_trial_on_actions_hub, execute_action, answered, returned, action_response
     ):
         execute_action.side_effect = [
-            action_response(returned({"id": "O1"})),
+            action_response(answered(returned({"id": "O1"}))),
             action_response(status="FAILED", error="no eval trial"),
         ]
 

@@ -62,6 +62,6 @@ def _without_credentials(value: JsonValue) -> JsonValue:
 
 
 def _is_untraced(name: str) -> bool:
-    lowered = name.lower()
+    normalised = name.lower().replace("-", "_").replace(" ", "_")
 
-    return lowered in UNTRACED_ARGUMENT_NAMES or lowered.endswith(UNTRACED_ARGUMENT_NAME_SUFFIXES)
+    return normalised in UNTRACED_ARGUMENT_NAMES or normalised.endswith(UNTRACED_ARGUMENT_NAME_SUFFIXES)
