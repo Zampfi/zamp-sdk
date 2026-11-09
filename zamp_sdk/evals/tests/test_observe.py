@@ -218,21 +218,33 @@ class TestRaises:
 
 class TestOnTheExecutor:
     async def test_async_records_the_step_with_workflow_invocation_ids(
-        self, in_mocked_eval_trial_on_actions_hub, execute_action, answered, returned, action_response
+        self,
+        in_mocked_eval_trial_on_actions_hub,
+        actions_hub_mocks,
+        execute_action,
+        answered,
+        returned,
+        action_response,
     ):
-        execute_action.side_effect = [action_response(answered(returned({"id": "O1"}))), action_response()]
+        actions_hub_mocks.reply(answered(returned({"id": "O1"})))
+        execute_action.return_value = action_response()
 
         assert await load("O1") == {"order": {"id": "O1"}}
-        inner, step = sent(execute_action)
-        assert (inner["call_id"], step["invocation_id"]) == ("workflow-uuid", "workflow-uuid")
+        (step,) = sent(execute_action)
+        inner = actions_hub_mocks.ask_mocks.call_args.args[0]
+        assert (inner.call_id, step["invocation_id"]) == ("workflow-uuid", "workflow-uuid")
 
     async def test_a_failed_action_raises(
-        self, in_mocked_eval_trial_on_actions_hub, execute_action, answered, returned, action_response
+        self,
+        in_mocked_eval_trial_on_actions_hub,
+        actions_hub_mocks,
+        execute_action,
+        answered,
+        returned,
+        action_response,
     ):
-        execute_action.side_effect = [
-            action_response(answered(returned({"id": "O1"}))),
-            action_response(status="FAILED", error="no eval trial"),
-        ]
+        actions_hub_mocks.reply(answered(returned({"id": "O1"})))
+        execute_action.return_value = action_response(status="FAILED", error="no eval trial")
 
         with pytest.raises(RuntimeError, match="^eval_observed_step action-1 FAILED: no eval trial$"):
             await load("O1")

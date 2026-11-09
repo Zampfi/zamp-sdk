@@ -69,14 +69,12 @@ class TestGate:
         }
         assert call["call_id"]
 
-    async def test_case_id_from_env_or_context(
-        self, in_mock_case_on_actions_hub, execute_action, run_real, action_response
-    ):
-        execute_action.return_value = action_response(run_real)
+    async def test_case_id_from_env_or_context(self, in_mock_case_on_actions_hub, actions_hub_mocks, run_real):
+        actions_hub_mocks.reply(run_real)
 
         await fetch_order("O1")
 
-        assert sent(execute_action)[0]["case_id"] == "case-1"
+        assert actions_hub_mocks.ask_mocks.call_args.args[0].case_id == "case-1"
 
 
 class TestDecision:
@@ -168,6 +166,26 @@ class TestTheAskCarriesNoCase:
             assert await fetch_real_order("O1") == Order(id="O1", total=7)
 
         assert headers_by_action == [("mock_call", None), ("erp_fetch_order", "case-1")]
+
+
+class TestOnTheActionsHub:
+    async def test_the_ask_goes_through_actions_hub_ask_mocks_never_execute_action(
+        self, in_mock_case_on_actions_hub, actions_hub_mocks, execute_action, answered_returned
+    ):
+        actions_hub_mocks.reply(answered_returned({"id": "O1", "total": 7}))
+
+        assert await fetch_order("O1", api_key="secret-k") == Order(id="O1", total=7)
+
+        (call,) = actions_hub_mocks.ask_mocks.call_args.args
+        assert call.model_dump(mode="json") == {
+            "case_id": "case-1",
+            "name": "erp.order",
+            "input": {"order_id": "O1"},
+            "output_schema": Order.model_json_schema(),
+            "call_id": "workflow-uuid",
+        }
+        execute_action.assert_not_called()
+        actions_hub_mocks.execute_action.assert_not_called()
 
 
 class TestLayering:
