@@ -4,9 +4,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
+from zamp_public_workflow_sdk.actions_hub.models.mock_models import MockCall as ActionsHubMockCall
+from zamp_public_workflow_sdk.actions_hub.models.mock_models import MockDecision as ActionsHubMockDecision
 
 from zamp_sdk import ActionExecutor, mocks
 from zamp_sdk.mocks import mockable
+from zamp_sdk.mocks.models import MockCall, MockDecision
 
 
 class Order(BaseModel):
@@ -127,8 +130,6 @@ class TestDecision:
 
 class TestReplyModels:
     def test_reply_models_live_in_mocks(self):
-        from zamp_sdk.mocks.models import MockCall, MockDecision
-
         decisions = TypeAdapter(MockDecision)
         wire = [
             {"decision": "run_real"},
@@ -141,6 +142,14 @@ class TestReplyModels:
         with pytest.raises(ValidationError):
             decisions.validate_python({"decision": "run_real", "extra": 1})
         assert set(MockCall.model_fields) == {"case_id", "name", "input", "output_schema", "call_id"}
+
+
+class TestWireModelsMatchActionsHub:
+    def test_mock_call_schema_equals_actions_hub(self):
+        assert MockCall.model_json_schema() == ActionsHubMockCall.model_json_schema()
+
+    def test_mock_decision_schema_equals_actions_hub(self):
+        assert TypeAdapter(MockDecision).json_schema() == TypeAdapter(ActionsHubMockDecision).json_schema()
 
 
 class TestTheAskCarriesNoCase:
@@ -177,6 +186,7 @@ class TestOnTheActionsHub:
         assert await fetch_order("O1", api_key="secret-k") == Order(id="O1", total=7)
 
         (call,) = actions_hub_mocks.ask_mocks.call_args.args
+        assert isinstance(call, ActionsHubMockCall)
         assert call.model_dump(mode="json") == {
             "case_id": "case-1",
             "name": "erp.order",

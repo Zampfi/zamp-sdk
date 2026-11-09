@@ -4,7 +4,8 @@
 
 - **Breaking: `@mocks.mockable` gates on the mock case, not the eval trial.** It asks mocks only when
   `current_mock_case_id()` (env `ZAMP_MOCK_CASE_ID`, or `mock_case_id` on the executor's context) is set, sends
-  `MockCall{case_id, name, input, output_schema, call_id}` to `mock_call`, and acts out the reply: `RunReal` runs the
+  `MockCall{case_id, name, input, output_schema, call_id}` to mocks (the `mock_call` action over the API,
+  `ActionsHub.ask_mocks` on the actions hub), and acts out the reply: `RunReal` runs the
   function, `Answered` returns `Returned`, raises `Raised`, or raises `MockFailedError` for `MockFailed` or any other
   reply. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
 - **Credential names are matched with `-` and spaces read as `_`**, so header-style names (`x-authorization`,
@@ -12,6 +13,10 @@
 - **Breaking: shared call helpers move to `zamp_sdk.calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
   now `zamp_sdk.calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.calls.constants`.
 - **The `mock_call` request carries no mock case** (no `X-MOCK-CASE-ID`), so asking mocks is never itself mocked.
+- **Requires a public-workflow-sdk with `ActionsHub.ask_mocks` on the actions hub.** zamp-sdk does not declare it as a
+  runtime dependency: the host process provides it, and the first release that has `ask_mocks` does not exist yet, so
+  there is no minimum version to name. Development uses a path dependency on `../public-workflow-sdk` in the dev
+  group; swap it for that released version (`>=` it) at release time.
 
 ## 2.0.1
 

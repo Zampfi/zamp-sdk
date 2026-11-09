@@ -40,6 +40,7 @@ mypy = "*"
 pre-commit = "*"
 diff-cover = "*"
 httpx = "*"
+zamp-public-workflow-sdk = {path = "../public-workflow-sdk", develop = true}
 
 [build-system]
 requires = ["poetry-core"]
