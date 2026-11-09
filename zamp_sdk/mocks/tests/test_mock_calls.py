@@ -73,7 +73,7 @@ class TestGate:
         }
         assert call["call_id"]
 
-    async def test_case_id_from_env_or_context(
+    async def test_case_id_from_actions_hub_context(
         self, in_mock_case_on_actions_hub, execute_action, run_real, action_response
     ):
         execute_action.return_value = action_response(run_real)
