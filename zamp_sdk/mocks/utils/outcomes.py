@@ -110,7 +110,6 @@ def as_return_type(return_type: ReturnType, value: JsonValue) -> object:
 
 
 def output_schema_of(return_type: ReturnType) -> dict[str, JsonValue] | None:
-    """The JSON schema a mock reply is written against, or None when the return type has none."""
     annotation, adapter = return_type
     if _is_httpx_response(annotation):
         # A Response has no schema of its own; a mock answers it with a MockHttpResponse.

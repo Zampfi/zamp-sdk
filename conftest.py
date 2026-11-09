@@ -88,7 +88,7 @@ def in_mocked_eval_trial_on_actions_hub(monkeypatch, bind_metadata_context):
 
 
 @pytest.fixture
-def on_actions_hub_outside_a_trial(monkeypatch, bind_metadata_context):
+def on_actions_hub_without_trial_or_case(monkeypatch, bind_metadata_context):
     with _on_actions_hub(monkeypatch, bind_metadata_context({"branch_id": "b1"})):
         yield
 

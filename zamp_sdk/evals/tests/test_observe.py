@@ -237,7 +237,7 @@ class TestOnTheExecutor:
         with pytest.raises(RuntimeError, match="^eval_observed_step action-1 FAILED: no eval trial$"):
             await load("O1")
 
-    def test_sync_runs_untouched_outside_a_trial(self, on_actions_hub_outside_a_trial, execute_action):
+    def test_sync_runs_untouched_outside_a_trial(self, on_actions_hub_without_trial_or_case, execute_action):
         assert load_sync("O1") == {"order": {"id": "O1"}}
 
         execute_action.assert_not_called()

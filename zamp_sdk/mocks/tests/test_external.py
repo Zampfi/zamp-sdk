@@ -70,7 +70,7 @@ def _exec_skill_code():
     return skill_globals
 
 
-class TestOutsideAnEvalTrial:
+class TestOutsideAMockCase:
     async def test_async_runs_untouched(self, execute_action):
         assert await fetch_order("O1") == Order(id="O1", total=-1)
 
@@ -89,62 +89,66 @@ class TestOutsideAnEvalTrial:
 
 
 class TestReturns:
-    async def test_async_returns_the_mock_as_the_return_type(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"id": "O1", "total": 7})
+    async def test_async_returns_the_mock_as_the_return_type(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"id": "O1", "total": 7})
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
 
-    def test_sync_returns_the_mock_as_the_return_type(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"id": "O1", "total": 7})
+    def test_sync_returns_the_mock_as_the_return_type(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"id": "O1", "total": 7})
 
         assert fetch_order_sync("O1") == Order(id="O1", total=7)
 
-    async def test_sync_call_inside_a_running_loop(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"id": "O1", "total": 7})
+    async def test_sync_call_inside_a_running_loop(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"id": "O1", "total": 7})
 
         assert fetch_order_sync("O1") == Order(id="O1", total=7)
 
-    async def test_without_an_annotation_returns_the_raw_value(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"state": "down"})
+    async def test_without_an_annotation_returns_the_raw_value(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"state": "down"})
 
         assert await fetch_status() == {"state": "down"}
 
-    async def test_a_human_ask_returns_none(self, in_mock_case, execute_action, returned):
+    async def test_a_human_ask_returns_none(self, in_mock_case, execute_action, answered_returned):
         @mockable("ask.decision")
         async def ask() -> None: ...
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
 
         assert await ask() is None
 
-    async def test_bytes_are_read_back_from_base64(self, in_mock_case, execute_action, returned):
+    async def test_bytes_are_read_back_from_base64(self, in_mock_case, execute_action, answered_returned):
         @mockable("erp.pdf")
         async def fetch_pdf() -> bytes:
             raise NotImplementedError
 
-        execute_action.return_value = returned("JVBERvv_")
+        execute_action.return_value = answered_returned("JVBERvv_")
 
         assert await fetch_pdf() == b"%PDF\xfb\xff"
 
-    async def test_bytes_inside_a_return_type_are_read_back_from_base64(self, in_mock_case, execute_action, returned):
+    async def test_bytes_inside_a_return_type_are_read_back_from_base64(
+        self, in_mock_case, execute_action, answered_returned
+    ):
         @mockable("erp.pdfs")
         async def fetch_pdfs() -> dict[str, list[bytes]]:
             raise NotImplementedError
 
-        execute_action.return_value = returned({"O1": ["JVBERvv_"]})
+        execute_action.return_value = answered_returned({"O1": ["JVBERvv_"]})
 
         assert await fetch_pdfs() == {"O1": [b"%PDF\xfb\xff"]}
 
-    async def test_an_annotated_model_is_returned_as_the_model(self, in_mock_case, execute_action, returned):
+    async def test_an_annotated_model_is_returned_as_the_model(self, in_mock_case, execute_action, answered_returned):
         @mockable("erp.order")
         async def fetch() -> Annotated[Order, Field(description="the order")]:
             raise NotImplementedError
 
-        execute_action.return_value = returned({"id": "O1", "total": 5})
+        execute_action.return_value = answered_returned({"id": "O1", "total": 5})
 
         assert await fetch() == Order(id="O1", total=5)
 
-    async def test_an_annotated_typed_dict_is_returned_as_the_dict(self, in_mock_case, execute_action, returned):
+    async def test_an_annotated_typed_dict_is_returned_as_the_dict(
+        self, in_mock_case, execute_action, answered_returned
+    ):
         class Invoice(TypedDict):
             id: str
 
@@ -152,12 +156,12 @@ class TestReturns:
         async def fetch() -> Annotated[Invoice, Field(description="the invoice")]:
             raise NotImplementedError
 
-        execute_action.return_value = returned({"id": "I1"})
+        execute_action.return_value = answered_returned({"id": "I1"})
 
         assert await fetch() == {"id": "I1"}
 
     async def test_a_return_type_pydantic_cannot_validate_returns_the_raw_value(
-        self, in_mock_case, execute_action, returned
+        self, in_mock_case, execute_action, answered_returned
     ):
         class Session:
             pass
@@ -166,47 +170,47 @@ class TestReturns:
         async def open_session() -> Session:
             raise NotImplementedError
 
-        execute_action.return_value = returned({"id": "s1"})
+        execute_action.return_value = answered_returned({"id": "s1"})
 
         assert await open_session() == {"id": "s1"}
 
     async def test_an_unresolvable_parameter_annotation_keeps_the_return_type(
-        self, in_mock_case, execute_action, returned
+        self, in_mock_case, execute_action, answered_returned
     ):
         @mockable("erp.order")
         async def fetch(client: "Decimal") -> Order:
             raise NotImplementedError
 
-        execute_action.return_value = returned({"id": "O1", "total": 7})
+        execute_action.return_value = answered_returned({"id": "O1", "total": 7})
 
         assert await fetch(None) == Order(id="O1", total=7)
 
     async def test_a_string_return_annotation_is_evaluated_off_the_executor(
-        self, in_mock_case, execute_action, returned
+        self, in_mock_case, execute_action, answered_returned
     ):
         @mockable("erp.order")
         async def fetch() -> "Order":
             raise NotImplementedError
 
-        execute_action.return_value = returned({"id": "O1", "total": 7})
+        execute_action.return_value = answered_returned({"id": "O1", "total": 7})
 
         assert await fetch() == Order(id="O1", total=7)
 
     async def test_a_return_type_only_known_to_type_checkers_returns_the_raw_value(
-        self, in_mock_case, execute_action, returned
+        self, in_mock_case, execute_action, answered_returned
     ):
         @mockable("erp.total")
         async def fetch_total() -> "Decimal":
             raise NotImplementedError
 
-        execute_action.return_value = returned("12.50")
+        execute_action.return_value = answered_returned("12.50")
 
         assert await fetch_total() == "12.50"
 
     async def test_the_signature_and_return_type_are_read_once_per_function(
-        self, in_mock_case, execute_action, returned
+        self, in_mock_case, execute_action, answered_returned
     ):
-        execute_action.return_value = returned({"id": "O1"})
+        execute_action.return_value = answered_returned({"id": "O1"})
         with (
             patch("inspect.signature", wraps=inspect.signature) as read_signature,
             patch("zamp_sdk.mocks.utils.outcomes.TypeAdapter", wraps=TypeAdapter) as build_adapter,
@@ -224,67 +228,73 @@ class TestReturns:
 
 
 class TestHttpResponse:
-    async def test_built_from_status_json_body_and_headers(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"status": 200, "body": {"id": "O1"}, "headers": {"X-Page": "1"}})
+    async def test_built_from_status_json_body_and_headers(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned(
+            {"status": 200, "body": {"id": "O1"}, "headers": {"X-Page": "1"}}
+        )
 
         response = await get_page("https://erp.invalid")
 
         assert (response.status_code, response.json(), response.headers["X-Page"]) == (200, {"id": "O1"}, "1")
 
-    async def test_a_string_body_is_text(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"status": 200, "body": "<html/>"})
+    async def test_a_string_body_is_text(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"status": 200, "body": "<html/>"})
 
         assert (await get_page("https://erp.invalid")).text == "<html/>"
 
-    async def test_content_is_the_decoded_bytes(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"status": 200, "content": base64.b64encode(b"%PDF-1.7").decode()})
+    async def test_content_is_the_decoded_bytes(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned(
+            {"status": 200, "content": base64.b64encode(b"%PDF-1.7").decode()}
+        )
 
         assert (await get_page("https://erp.invalid")).content == b"%PDF-1.7"
 
-    async def test_content_reads_the_url_safe_base64_a_trace_writes(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"status": 200, "content": "JVBERvv_"})
+    async def test_content_reads_the_url_safe_base64_a_trace_writes(
+        self, in_mock_case, execute_action, answered_returned
+    ):
+        execute_action.return_value = answered_returned({"status": 200, "content": "JVBERvv_"})
 
         assert (await get_page("https://erp.invalid")).content == b"%PDF\xfb\xff"
 
-    async def test_a_field_the_response_does_not_know_is_ignored(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"status": 200, "body": {"id": "O1"}, "reason": "OK"})
+    async def test_a_field_the_response_does_not_know_is_ignored(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"status": 200, "body": {"id": "O1"}, "reason": "OK"})
 
         assert (await get_page("https://erp.invalid")).json() == {"id": "O1"}
 
-    async def test_an_http_error_raises_on_raise_for_status(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"status": 503, "body": {"error": "busy"}})
+    async def test_an_http_error_raises_on_raise_for_status(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"status": 503, "body": {"error": "busy"}})
 
         response = await get_page("https://erp.invalid")
 
         with pytest.raises(httpx.HTTPStatusError, match="503"):
             response.raise_for_status()
 
-    async def test_any_call_name_builds_a_response(self, in_mock_case, execute_action, returned):
+    async def test_any_call_name_builds_a_response(self, in_mock_case, execute_action, answered_returned):
         @mockable("erp:fetch")
         async def fetch() -> httpx.Response:
             raise NotImplementedError
 
-        execute_action.return_value = returned({"status": 404})
+        execute_action.return_value = answered_returned({"status": 404})
 
         with pytest.raises(httpx.HTTPStatusError, match="404"):
             (await fetch()).raise_for_status()
 
-    async def test_an_optional_response(self, in_mock_case, execute_action, returned):
+    async def test_an_optional_response(self, in_mock_case, execute_action, answered_returned):
         @mockable("erp.maybe")
         async def maybe() -> Optional[httpx.Response]: ...
 
-        execute_action.return_value = returned({"status": 204})
+        execute_action.return_value = answered_returned({"status": 204})
         assert (await maybe()).status_code == 204
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         assert await maybe() is None
 
 
 class TestHttpResponseOutputSchema:
     async def test_a_response_return_type_sends_the_mock_http_response_schema(
-        self, in_mock_case, execute_action, returned
+        self, in_mock_case, execute_action, answered_returned
     ):
-        execute_action.return_value = returned({"status": 200})
+        execute_action.return_value = answered_returned({"status": 200})
 
         await get_page("https://erp.invalid")
 
@@ -292,11 +302,13 @@ class TestHttpResponseOutputSchema:
         assert call["output_schema"] == MockHttpResponse.model_json_schema()
         assert "status" in call["output_schema"]["properties"]
 
-    async def test_an_optional_response_allows_null_in_the_schema(self, in_mock_case, execute_action, returned):
+    async def test_an_optional_response_allows_null_in_the_schema(
+        self, in_mock_case, execute_action, answered_returned
+    ):
         @mockable("erp.maybe")
         async def maybe() -> Optional[httpx.Response]: ...
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
 
         await maybe()
 
@@ -306,56 +318,58 @@ class TestHttpResponseOutputSchema:
 
 
 class TestRaises:
-    async def test_async_raises_what_the_outcome_describes(self, in_mock_case, execute_action, raised):
-        execute_action.return_value = raised("builtins.TimeoutError", "read timed out")
+    async def test_async_raises_what_the_outcome_describes(self, in_mock_case, execute_action, answered_raised):
+        execute_action.return_value = answered_raised("builtins.TimeoutError", "read timed out")
 
         with pytest.raises(TimeoutError, match="read timed out"):
             await fetch_order("O1")
 
-    def test_sync_raises_what_the_outcome_describes(self, in_mock_case, execute_action, raised):
-        execute_action.return_value = raised("builtins.ConnectionError", "refused")
+    def test_sync_raises_what_the_outcome_describes(self, in_mock_case, execute_action, answered_raised):
+        execute_action.return_value = answered_raised("builtins.ConnectionError", "refused")
 
         with pytest.raises(ConnectionError, match="refused"):
             fetch_order_sync("O1")
 
     def test_an_error_with_required_init_arguments_still_raises_as_that_type(
-        self, in_mock_case, execute_action, raised
+        self, in_mock_case, execute_action, answered_raised
     ):
         import httpx
 
-        execute_action.return_value = raised("httpx.HTTPStatusError", "404 not found")
+        execute_action.return_value = answered_raised("httpx.HTTPStatusError", "404 not found")
         with pytest.raises(httpx.HTTPStatusError, match="404 not found"):
             fetch_order_sync("O1")
 
     def test_an_error_that_cannot_show_its_message_without_init_raises_mock_failed(
-        self, in_mock_case, execute_action, raised
+        self, in_mock_case, execute_action, answered_raised
     ):
         # CalledProcessError's __str__ reads returncode/cmd, which only __init__ sets
-        execute_action.return_value = raised("subprocess.CalledProcessError", "exit 2")
+        execute_action.return_value = answered_raised("subprocess.CalledProcessError", "exit 2")
 
         with pytest.raises(mocks.MockFailedError, match="^subprocess.CalledProcessError cannot be built") as error:
             fetch_order_sync("O1")
         assert "exit 2" in str(error.value)
 
-    def test_an_sdk_error_type_is_importable(self, in_mock_case, execute_action, raised):
-        execute_action.return_value = raised("zamp_sdk.AgentDbError", "boom")
+    def test_an_sdk_error_type_is_importable(self, in_mock_case, execute_action, answered_raised):
+        execute_action.return_value = answered_raised("zamp_sdk.AgentDbError", "boom")
 
         with pytest.raises(AgentDbError, match="boom"):
             fetch_order_sync("O1")
 
     async def test_a_type_that_is_not_an_exception_class_raises_the_lookup_error_without_running_it(
-        self, in_mock_case, execute_action, raised
+        self, in_mock_case, execute_action, answered_raised
     ):
-        execute_action.return_value = raised("os.system", "touch /tmp/pwned")
+        execute_action.return_value = answered_raised("os.system", "touch /tmp/pwned")
 
         with pytest.raises(mocks.MockFailedError, match="^os.system is not an exception class"):
             await fetch_order("O1")
 
-    async def test_a_module_getattr_is_not_called_for_the_type(self, in_mock_case, execute_action, raised, monkeypatch):
+    async def test_a_module_getattr_is_not_called_for_the_type(
+        self, in_mock_case, execute_action, answered_raised, monkeypatch
+    ):
         lazy_module = types.ModuleType("lazy_errors")
         lazy_module.__getattr__ = Mock(side_effect=AttributeError)
         monkeypatch.setitem(sys.modules, "lazy_errors", lazy_module)
-        execute_action.return_value = raised("lazy_errors.LazyError", "boom")
+        execute_action.return_value = answered_raised("lazy_errors.LazyError", "boom")
 
         with pytest.raises(mocks.MockFailedError, match="^lazy_errors.LazyError is not an exception class"):
             await fetch_order("O1")
@@ -363,10 +377,10 @@ class TestRaises:
         lazy_module.__getattr__.assert_not_called()
 
     async def test_an_exception_defined_in_code_run_by_exec_is_read_from_its_globals(
-        self, in_mock_case, execute_action, raised
+        self, in_mock_case, execute_action, answered_raised
     ):
         cancel_order = _exec_skill_code()["cancel_order"]
-        execute_action.return_value = raised("skill_code_run_by_exec.OrderLockedError", "locked")
+        execute_action.return_value = answered_raised("skill_code_run_by_exec.OrderLockedError", "locked")
 
         with pytest.raises(Exception, match="^locked$") as error:
             await cancel_order("O1")
@@ -374,30 +388,30 @@ class TestRaises:
         assert type(error.value).__name__ == "OrderLockedError"
 
     async def test_a_name_in_its_globals_that_is_not_an_exception_class_raises_the_lookup_error(
-        self, in_mock_case, execute_action, raised
+        self, in_mock_case, execute_action, answered_raised
     ):
         cancel_order = _exec_skill_code()["cancel_order"]
-        execute_action.return_value = raised("skill_code_run_by_exec.cancel_order", "boom")
+        execute_action.return_value = answered_raised("skill_code_run_by_exec.cancel_order", "boom")
 
         with pytest.raises(mocks.MockFailedError, match="^skill_code_run_by_exec.cancel_order is not an exception"):
             await cancel_order("O1")
 
-    async def test_an_httpx_transport_error(self, in_mock_case, execute_action, raised):
-        execute_action.return_value = raised("httpx.ConnectTimeout", "timed out")
+    async def test_an_httpx_transport_error(self, in_mock_case, execute_action, answered_raised):
+        execute_action.return_value = answered_raised("httpx.ConnectTimeout", "timed out")
 
         with pytest.raises(httpx.ConnectTimeout, match="timed out"):
             await get_page("https://erp.invalid")
 
     async def test_a_mock_failure_raises_mock_failed_error_with_the_engine_message(
-        self, in_mock_case, execute_action, mock_failed
+        self, in_mock_case, execute_action, answered_mock_failed
     ):
-        execute_action.return_value = mock_failed("erp.order:O1#3: the mock list for this call ran out")
+        execute_action.return_value = answered_mock_failed("erp.order:O1#3: the mock list for this call ran out")
 
         with pytest.raises(mocks.MockFailedError, match="^erp.order:O1#3: the mock list for this call ran out$"):
             await fetch_order("O1")
 
-    def test_a_sync_mock_failure_raises_mock_failed_error(self, in_mock_case, execute_action, mock_failed):
-        execute_action.return_value = mock_failed("erp.status#1: no mock")
+    def test_a_sync_mock_failure_raises_mock_failed_error(self, in_mock_case, execute_action, answered_mock_failed):
+        execute_action.return_value = answered_mock_failed("erp.status#1: no mock")
 
         with pytest.raises(mocks.MockFailedError, match="^erp.status#1: no mock$"):
             fetch_status_sync()
@@ -410,8 +424,8 @@ class TestRaises:
 
 
 class TestRequest:
-    async def test_async_sends_the_call(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"id": "O1", "total": 7})
+    async def test_async_sends_the_call(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"id": "O1", "total": 7})
 
         await fetch_order("O1")
 
@@ -426,42 +440,44 @@ class TestRequest:
             "call_id": call["call_id"],
         }
 
-    def test_sync_sends_arguments_by_name(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"id": "O1", "total": 7})
+    def test_sync_sends_arguments_by_name(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"id": "O1", "total": 7})
 
         fetch_order_sync(realm="test", order_id="O1")
 
         (call,) = sent(execute_action)
         assert call["input"] == {"order_id": "O1", "realm": "test"}
 
-    def test_secret_arguments_are_never_sent(self, in_mock_case, execute_action, returned):
+    def test_secret_arguments_are_never_sent(self, in_mock_case, execute_action, answered_returned):
         @mockable("erp.token")
         def fetch_token(url: str, headers: dict, auth: str, token: str, credentials: dict): ...
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         fetch_token("https://erp.invalid", {"Authorization": "Bearer x"}, "basic", "t0k", {"id": "c1"})
 
         assert sent(execute_action)[0]["input"] == {"url": "https://erp.invalid"}
 
-    def test_secret_arguments_passed_through_kwargs_are_never_sent(self, in_mock_case, execute_action, returned):
+    def test_secret_arguments_passed_through_kwargs_are_never_sent(
+        self, in_mock_case, execute_action, answered_returned
+    ):
         @mockable("erp.request")
         def request(method: str, url: str, **kwargs): ...
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         request("GET", "https://erp.invalid", headers={"Authorization": "Bearer x"}, token="t0k", timeout=5)
 
         assert sent(execute_action)[0]["input"] == {"method": "GET", "url": "https://erp.invalid", "timeout": 5}
 
-    def test_arguments_named_like_a_credential_are_never_sent(self, in_mock_case, execute_action, returned):
+    def test_arguments_named_like_a_credential_are_never_sent(self, in_mock_case, execute_action, answered_returned):
         @mockable("erp.login")
         def login(url: str, api_key: str, Password: str, client_secret: str, **kwargs): ...
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         login("https://erp.invalid", "k1", "p1", "cs1", Authorization="Bearer x", refresh_token="t0k", page=2)
 
         assert sent(execute_action)[0]["input"] == {"url": "https://erp.invalid", "page": 2}
 
-    def test_only_whole_credential_names_are_left_out(self, in_mock_case, execute_action, returned):
+    def test_only_whole_credential_names_are_left_out(self, in_mock_case, execute_action, answered_returned):
         @mockable("llm.complete")
         def complete(**kwargs): ...
 
@@ -490,16 +506,16 @@ class TestRequest:
             "session_cookie",
             "jwt",
         ]
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         complete(**{name: 1 for name in kept + dropped})
 
         assert sent(execute_action)[0]["input"] == {name: 1 for name in kept}
 
-    def test_header_style_credential_names_are_never_sent(self, in_mock_case, execute_action, returned):
+    def test_header_style_credential_names_are_never_sent(self, in_mock_case, execute_action, answered_returned):
         @mockable("erp.request")
         def request(url: str, **kwargs): ...
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         request(
             "https://erp.invalid",
             **{"x-authorization": "Bearer x", "X-Api-Key": "k1", "Refresh Token": "t0k", "x-page": 2},
@@ -512,11 +528,13 @@ class TestRequest:
             "config": {"region": "eu"},
         }
 
-    def test_credential_keys_inside_a_dict_argument_are_never_sent(self, in_mock_case, execute_action, returned):
+    def test_credential_keys_inside_a_dict_argument_are_never_sent(
+        self, in_mock_case, execute_action, answered_returned
+    ):
         @mockable("erp.send")
         def send(config: dict, requests: list): ...
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         send(
             {"region": "eu", "api_key": "k1", "nested": {"Authorization": "Bearer x", "page": 2}},
             [{"headers": {"cookie": "c"}, "path": "/orders"}],
@@ -527,7 +545,7 @@ class TestRequest:
             "requests": [{"path": "/orders"}],
         }
 
-    async def test_a_method_never_sends_its_instance(self, in_mock_case, execute_action, returned):
+    async def test_a_method_never_sends_its_instance(self, in_mock_case, execute_action, answered_returned):
         class Client:
             def __init__(self, token: str):
                 self.token = token
@@ -541,14 +559,14 @@ class TestRequest:
             def status(cls, realm: str) -> str:
                 return "live"
 
-        execute_action.return_value = returned({})
+        execute_action.return_value = answered_returned({})
         await Client("t0k").fetch("O1")
-        execute_action.return_value = returned("live")
+        execute_action.return_value = answered_returned("live")
         Client.status("prod")
 
         assert [call["input"] for call in sent(execute_action)] == [{"order_id": "O1"}, {"realm": "prod"}]
 
-    def test_an_argument_json_cannot_hold_is_sent_as_its_repr(self, in_mock_case, execute_action, returned):
+    def test_an_argument_json_cannot_hold_is_sent_as_its_repr(self, in_mock_case, execute_action, answered_returned):
         class Session:
             def __repr__(self):
                 return "<Session>"
@@ -556,46 +574,48 @@ class TestRequest:
         @mockable("erp.post")
         def post(session: Session, order: Order): ...
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         post(Session(), Order(id="O1", total=7))
 
         assert sent(execute_action)[0]["input"] == {"session": "<Session>", "order": {"id": "O1", "total": 7}}
 
-    def test_an_argument_that_contains_itself_is_sent_as_its_type_only(self, in_mock_case, execute_action, returned):
+    def test_an_argument_that_contains_itself_is_sent_as_its_type_only(
+        self, in_mock_case, execute_action, answered_returned
+    ):
         @mockable("erp.post")
         def post(lines: list, page: int): ...
 
         lines: list = []
         lines.append(lines)
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         post(lines, 2)
 
         assert sent(execute_action)[0]["input"] == {"lines": "<list that contains itself>", "page": 2}
 
     def test_an_argument_that_contains_itself_does_not_send_its_credentials(
-        self, in_mock_case, execute_action, returned
+        self, in_mock_case, execute_action, answered_returned
     ):
         @mockable("erp.connect")
         def connect(config: dict): ...
 
         config: dict = {"host": "erp", "password": "secret"}
         config["self"] = config
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         connect(config)
 
         assert sent(execute_action)[0]["input"] == {"config": "<dict that contains itself>"}
 
-    def test_bytes_are_sent_as_base64(self, in_mock_case, execute_action, returned):
+    def test_bytes_are_sent_as_base64(self, in_mock_case, execute_action, answered_returned):
         @mockable("erp.upload")
         def upload(name: bytes, content: bytes): ...
 
-        execute_action.return_value = returned(None)
+        execute_action.return_value = answered_returned(None)
         upload(b"invoice.pdf", b"%PDF\xff")
 
         assert sent(execute_action)[0]["input"] == {"name": "aW52b2ljZS5wZGY=", "content": "JVBERv8="}
 
-    def test_every_call_has_its_own_call_id(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned("down")
+    def test_every_call_has_its_own_call_id(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned("down")
 
         fetch_status_sync()
         fetch_status_sync()
@@ -606,62 +626,62 @@ class TestRequest:
 
 class TestOnTheExecutor:
     async def test_async_reads_the_bound_id_through_the_action_response(
-        self, in_mock_case_on_actions_hub, execute_action, returned, action_response
+        self, in_mock_case_on_actions_hub, execute_action, answered_returned, action_response
     ):
-        execute_action.return_value = action_response(returned({"id": "O1", "total": 7}))
+        execute_action.return_value = action_response(answered_returned({"id": "O1", "total": 7}))
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
         assert sent(execute_action)[0]["call_id"] == "workflow-uuid"
 
     async def test_a_mock_failure_raises_mock_failed_error(
-        self, in_mock_case_on_actions_hub, execute_action, mock_failed, action_response
+        self, in_mock_case_on_actions_hub, execute_action, answered_mock_failed, action_response
     ):
-        execute_action.return_value = action_response(mock_failed("erp.order:O1#1: no mock"))
+        execute_action.return_value = action_response(answered_mock_failed("erp.order:O1#1: no mock"))
 
         with pytest.raises(mocks.MockFailedError, match="^erp.order:O1#1: no mock$"):
             await fetch_order("O1")
 
     async def test_a_string_return_annotation_is_not_evaluated(
-        self, in_mock_case_on_actions_hub, execute_action, returned, action_response
+        self, in_mock_case_on_actions_hub, execute_action, answered_returned, action_response
     ):
         @mockable("erp.order")
         async def fetch() -> "Order":
             raise NotImplementedError
 
-        execute_action.return_value = action_response(returned({"id": "O1", "total": 7}))
+        execute_action.return_value = action_response(answered_returned({"id": "O1", "total": 7}))
 
         assert await fetch() == {"id": "O1", "total": 7}
 
     async def test_a_string_nested_in_the_return_annotation_is_not_evaluated(
-        self, in_mock_case_on_actions_hub, execute_action, returned, action_response
+        self, in_mock_case_on_actions_hub, execute_action, answered_returned, action_response
     ):
         @mockable("erp.orders")
         async def fetch() -> list["Order"]:
             raise NotImplementedError
 
-        execute_action.return_value = action_response(returned([{"id": "O1", "total": 7}]))
+        execute_action.return_value = action_response(answered_returned([{"id": "O1", "total": 7}]))
 
         assert await fetch() == [{"id": "O1", "total": 7}]
 
     async def test_a_literal_return_annotation_is_still_validated(
-        self, in_mock_case_on_actions_hub, execute_action, returned, action_response
+        self, in_mock_case_on_actions_hub, execute_action, answered_returned, action_response
     ):
         @mockable("erp.state")
         async def fetch() -> Optional[Literal["open", "closed"]]:
             raise NotImplementedError
 
-        execute_action.return_value = action_response(returned("pending"))
+        execute_action.return_value = action_response(answered_returned("pending"))
 
         with pytest.raises(ValidationError):
             await fetch()
 
     async def test_a_failed_action_raises(self, in_mock_case_on_actions_hub, execute_action, action_response):
-        execute_action.return_value = action_response(status="FAILED", error="no eval trial")
+        execute_action.return_value = action_response(status="FAILED", error="no mock case")
 
-        with pytest.raises(RuntimeError, match="^mock_call action-1 FAILED: no eval trial$"):
+        with pytest.raises(RuntimeError, match="^mock_call action-1 FAILED: no mock case$"):
             await fetch_order("O1")
 
-    def test_sync_runs_untouched_outside_a_trial(self, on_actions_hub_outside_a_trial, execute_action):
+    def test_sync_runs_untouched_outside_a_mock_case(self, on_actions_hub_without_trial_or_case, execute_action):
         assert fetch_order_sync("O1") == Order(id="O1", total=-1)
 
         execute_action.assert_not_called()
@@ -685,11 +705,11 @@ class TestTheActionLeavesNoTrace:
         monkeypatch.setenv("ZAMP_TOOL_CALL_ID", "t")
         monkeypatch.setenv("ZAMP_RUN_ID", "r")
 
-    async def test_a_request_is_never_logged_or_captured(self, in_mock_case, returned):
+    async def test_a_request_is_never_logged_or_captured(self, in_mock_case, answered_returned):
         configure_auto_action_logs(True)
         start_log_capture()
         with patch.object(ActionExecutor, "_execute_action", new_callable=AsyncMock) as run:
-            run.return_value = returned({"id": "O1", "total": 7})
+            run.return_value = answered_returned({"id": "O1", "total": 7})
             await fetch_order("O1")
 
         assert drained_steps() == []

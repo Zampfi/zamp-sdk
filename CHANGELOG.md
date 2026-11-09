@@ -9,6 +9,9 @@
   reply. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
 - **Credential names are matched with `-` and spaces read as `_`**, so header-style names (`x-authorization`,
   `X-Api-Key`) are left out of mock inputs and traces.
+- **Breaking: shared call helpers move to `zamp_sdk.calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
+  now `zamp_sdk.calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.calls.constants`.
+- **The `mock_call` request carries no mock case** (no `X-MOCK-CASE-ID`), so asking mocks is never itself mocked.
 
 ## 2.0.1
 

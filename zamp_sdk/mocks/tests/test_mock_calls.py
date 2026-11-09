@@ -1,7 +1,11 @@
+import ast
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from zamp_sdk import mocks
+from zamp_sdk import ActionExecutor, mocks
 from zamp_sdk.mocks import mockable
 
 
@@ -83,22 +87,22 @@ class TestDecision:
         assert fetch_order_sync("O2") == Order(id="O2", total=-1)
         assert real_calls == ["O1", "O2"]
 
-    async def test_answered_returned_is_returned(self, in_mock_case, execute_action, returned):
-        execute_action.return_value = returned({"id": "O1", "total": 7})
+    async def test_answered_returned_is_returned(self, in_mock_case, execute_action, answered_returned):
+        execute_action.return_value = answered_returned({"id": "O1", "total": 7})
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
         assert fetch_order_sync("O1") == Order(id="O1", total=7)
         assert real_calls == []
 
-    async def test_answered_raised_is_raised(self, in_mock_case, execute_action, raised):
-        execute_action.return_value = raised("builtins.TimeoutError", "read timed out")
+    async def test_answered_raised_is_raised(self, in_mock_case, execute_action, answered_raised):
+        execute_action.return_value = answered_raised("builtins.TimeoutError", "read timed out")
 
         with pytest.raises(TimeoutError, match="^read timed out$"):
             await fetch_order("O1")
         assert real_calls == []
 
-    async def test_mock_failed_is_mock_failed_error(self, in_mock_case, execute_action, mock_failed):
-        execute_action.return_value = mock_failed("The request could not be completed.")
+    async def test_mock_failed_is_mock_failed_error(self, in_mock_case, execute_action, answered_mock_failed):
+        execute_action.return_value = answered_mock_failed("The request could not be completed.")
 
         with pytest.raises(mocks.MockFailedError, match="^The request could not be completed.$"):
             await fetch_order("O1")
@@ -139,3 +143,41 @@ class TestReplyModels:
         with pytest.raises(ValidationError):
             decisions.validate_python({"decision": "run_real", "extra": 1})
         assert set(MockCall.model_fields) == {"case_id", "name", "input", "output_schema", "call_id"}
+
+
+class TestTheAskCarriesNoCase:
+    async def test_mock_call_request_has_no_case_header_while_the_real_call_does(self, in_mock_case, monkeypatch):
+        monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
+        monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
+        results = iter([{"decision": "run_real"}, {"id": "O1", "total": 7}])
+        headers_by_action = []
+
+        def client(base_url, default_headers):
+            http = AsyncMock()
+            http.post.side_effect = lambda endpoint, data: headers_by_action.append(
+                (data["action_name"], default_headers.get("X-MOCK-CASE-ID"))
+            ) or {"id": "action-1"}
+            http.get.return_value = {"status": "COMPLETED", "result": next(results)}
+            return http
+
+        @mockable("erp.order")
+        async def fetch_real_order(order_id: str) -> Order:
+            return Order.model_validate(await ActionExecutor.execute("erp_fetch_order", {"order_id": order_id}))
+
+        with patch("zamp_sdk.action_executor.action_executor.HttpClient", side_effect=client):
+            assert await fetch_real_order("O1") == Order(id="O1", total=7)
+
+        assert headers_by_action == [("mock_call", None), ("erp_fetch_order", "case-1")]
+
+
+class TestLayering:
+    def test_mocks_does_not_depend_on_evals(self):
+        mocks_package = Path(mocks.__file__).parent
+        imported = {
+            node.module
+            for path in mocks_package.rglob("*.py")
+            for node in ast.walk(ast.parse(path.read_text()))
+            if isinstance(node, ast.ImportFrom) and node.module
+        }
+
+        assert {module for module in imported if module.startswith("zamp_sdk.evals")} == set()

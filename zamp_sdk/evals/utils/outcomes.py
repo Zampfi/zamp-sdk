@@ -1,5 +1,5 @@
+from zamp_sdk.calls.utils import to_json_value
 from zamp_sdk.evals.models import RaisedOutcome, ReturnedOutcome
-from zamp_sdk.evals.utils.arguments import to_json_value
 
 
 def to_raised(error: Exception) -> RaisedOutcome:

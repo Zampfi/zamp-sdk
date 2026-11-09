@@ -8,10 +8,10 @@ from zamp_sdk.action_executor.constants import (
     ACTION_ENVELOPE_KEYS,
     BRANCH_HEADERS,
     EVAL_TRIAL_ID_HEADER,
-    HEADER_MOCK_CASE_ID,
     IN_PROGRESS_STATUSES,
     INLINE_RESPONSE_GRACE_SECONDS,
     INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS,
+    MOCK_CASE_ID_HEADER,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
@@ -267,14 +267,13 @@ class ActionExecutor:
 
     @staticmethod
     def _ambient_run_headers() -> dict[str, str]:
-        """The branch, eval trial and mock case this process runs in, as request headers."""
         headers = {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
         eval_trial_id = current_eval_trial_id()
         if eval_trial_id is not None:
             headers[EVAL_TRIAL_ID_HEADER] = eval_trial_id
         mock_case_id = current_mock_case_id()
         if mock_case_id is not None:
-            headers[HEADER_MOCK_CASE_ID] = mock_case_id
+            headers[MOCK_CASE_ID_HEADER] = mock_case_id
 
         return headers
 

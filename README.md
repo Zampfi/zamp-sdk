@@ -240,7 +240,7 @@ except mocks.MockFailedError:             # mocks could not answer this call
 - **Mock calls carry no key**; the platform's mock config decides the reply.
 - **Bytes are base64.** A mock value for a `bytes` return type must be base64 text.
 - **Sync functions** work in a sandbox. In workflow code on ActionsHub, make a decorated function `async`:
-  a sync one is refused inside a trial. Generator functions cannot be decorated.
+  a sync one is refused in a mock case. Generator functions cannot be decorated.
 
 ## Evals (`zamp_sdk.evals`)
 

@@ -3,8 +3,9 @@ from typing import Any
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from zamp_sdk.constants import MOCK_CALL_ACTION_NAME
-from zamp_sdk.evals.utils import arguments_to_trace, bind_arguments, call_eval_action, new_call_id
+from zamp_sdk.calls.constants import MOCK_CALL_ACTION_NAME
+from zamp_sdk.calls.utils import arguments_without_credentials, bind_arguments, call_platform_action, new_call_id
+from zamp_sdk.context import without_mock_case
 from zamp_sdk.mocks.constants import UNKNOWN_MOCK_REPLY_ERROR
 from zamp_sdk.mocks.models import MockCall, MockDecision, MockFailed, MockOutcome, Raised
 from zamp_sdk.mocks.utils.errors import MockFailedError
@@ -24,14 +25,15 @@ def build_mock_call(
     return MockCall(
         case_id=case_id,
         name=name,
-        input=arguments_to_trace(bind_arguments(signature, args, kwargs)),
+        input=arguments_without_credentials(bind_arguments(signature, args, kwargs)),
         output_schema=output_schema,
         call_id=new_call_id(),
     )
 
 
 async def ask_mocks(call: MockCall) -> MockDecision:
-    reply = await call_eval_action(MOCK_CALL_ACTION_NAME, call.model_dump(mode="json"))
+    with without_mock_case():
+        reply = await call_platform_action(MOCK_CALL_ACTION_NAME, call.model_dump(mode="json"))
     try:
         return _mock_decision_adapter.validate_python(reply)
     except ValidationError as error:

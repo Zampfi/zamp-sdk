@@ -6,7 +6,7 @@ BRANCH_HEADERS = {
     "environment": "X-ENVIRONMENT",
 }
 
-# Request header the platform reads to run an action inside an eval trial; carries current_eval_trial_id().
+# Request headers the platform reads to run an action inside an eval trial and a mock case; they carry
+# current_eval_trial_id() and current_mock_case_id().
 EVAL_TRIAL_ID_HEADER = "X-EVAL-TRIAL-ID"
-
-HEADER_MOCK_CASE_ID = "X-MOCK-CASE-ID"
+MOCK_CASE_ID_HEADER = "X-MOCK-CASE-ID"

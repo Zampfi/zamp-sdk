@@ -5,10 +5,9 @@ from types import FrameType
 
 from pydantic import JsonValue
 
+from zamp_sdk.calls.utils import ResultT, call_platform_action, run_blocking
 from zamp_sdk.evals.constants import EVAL_OBSERVED_STEP_ACTION_NAME, STEP_ERROR_NOT_TRACED_MESSAGE
 from zamp_sdk.evals.models import ObservedStepInput, ObservedStepOutcome, TracedCallInput
-from zamp_sdk.evals.utils.blocking import ResultT, run_blocking
-from zamp_sdk.evals.utils.eval_actions import call_eval_action
 from zamp_sdk.evals.utils.outcomes import to_raised, to_returned
 
 _enclosing_observed_step_name: ContextVar[str | None] = ContextVar("zamp_eval_enclosing_observed_step", default=None)
@@ -25,14 +24,14 @@ async def run_observed(call: TracedCallInput, invoke: Callable[[], Awaitable[Res
     except Exception as error:
         # Whatever the trace send raises, the caller still gets the function's own error, as outside a trial.
         try:
-            await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
+            await call_platform_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
         except Exception as trace_error:
             error.add_note(STEP_ERROR_NOT_TRACED_MESSAGE.format(name=call.name, error=trace_error))
         raise
     finally:
         _enclosing_observed_step_name.reset(reset_token)
 
-    await call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result)))
+    await call_platform_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result)))
 
     return result
 
@@ -44,7 +43,7 @@ def run_observed_sync(call: TracedCallInput, invoke: Callable[[], ResultT]) -> R
     except Exception as error:
         try:
             run_blocking(
-                call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
+                call_platform_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_raised(error)))
             )
         except Exception as trace_error:
             error.add_note(STEP_ERROR_NOT_TRACED_MESSAGE.format(name=call.name, error=trace_error))
@@ -52,7 +51,7 @@ def run_observed_sync(call: TracedCallInput, invoke: Callable[[], ResultT]) -> R
     finally:
         _enclosing_observed_step_name.reset(reset_token)
 
-    run_blocking(call_eval_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result))))
+    run_blocking(call_platform_action(EVAL_OBSERVED_STEP_ACTION_NAME, _observed_step_params(call, to_returned(result))))
 
     return result
 

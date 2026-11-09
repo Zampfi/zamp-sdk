@@ -4,16 +4,14 @@ import sys
 from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
+from zamp_sdk.calls.utils import call_platform_action, raise_if_on_actions_hub, reject_generator
 from zamp_sdk.context import current_eval_trial_id
 from zamp_sdk.evals.constants import EVAL_READ_TRACE_ACTION_NAME, KEY_ARGUMENT_NOT_A_PARAMETER_ERROR
 from zamp_sdk.evals.models import ReadTraceResult, TraceEntry
 from zamp_sdk.evals.utils import (
     accepts_argument,
     build_traced_call_input,
-    call_eval_action,
     parent_of,
-    raise_if_on_actions_hub,
-    reject_generator,
     run_observed,
     run_observed_sync,
 )
@@ -71,4 +69,4 @@ async def read_trace() -> list[TraceEntry]:
     if current_eval_trial_id() is None:
         return []
 
-    return ReadTraceResult.model_validate(await call_eval_action(EVAL_READ_TRACE_ACTION_NAME, {})).entries
+    return ReadTraceResult.model_validate(await call_platform_action(EVAL_READ_TRACE_ACTION_NAME, {})).entries

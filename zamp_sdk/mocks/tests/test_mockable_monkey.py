@@ -1,5 +1,3 @@
-"""Odd arguments never break a mockable call's payload."""
-
 import inspect
 import json
 import math
