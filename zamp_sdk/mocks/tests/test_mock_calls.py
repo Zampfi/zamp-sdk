@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
+from zamp_public_workflow_sdk.actions_hub import ActionsHub
 from zamp_public_workflow_sdk.actions_hub.models.mock_models import MockCall as ActionsHubMockCall
 from zamp_public_workflow_sdk.actions_hub.models.mock_models import MockDecision as ActionsHubMockDecision
 
@@ -72,12 +73,14 @@ class TestGate:
         }
         assert call["call_id"]
 
-    async def test_case_id_from_env_or_context(self, in_mock_case_on_actions_hub, actions_hub_mocks, run_real):
-        actions_hub_mocks.reply(run_real)
+    async def test_case_id_from_env_or_context(
+        self, in_mock_case_on_actions_hub, execute_action, run_real, action_response
+    ):
+        execute_action.return_value = action_response(run_real)
 
         await fetch_order("O1")
 
-        assert actions_hub_mocks.ask_mocks.call_args.args[0].case_id == "case-1"
+        assert sent(execute_action)[0]["case_id"] == "case-1"
 
 
 class TestDecision:
@@ -178,24 +181,34 @@ class TestTheAskCarriesNoCase:
 
 
 class TestOnTheActionsHub:
-    async def test_the_ask_goes_through_actions_hub_ask_mocks_never_execute_action(
-        self, in_mock_case_on_actions_hub, actions_hub_mocks, execute_action, answered_returned
-    ):
-        actions_hub_mocks.reply(answered_returned({"id": "O1", "total": 7}))
+    async def test_the_ask_goes_through_the_action_gateway_never_actions_hub(self, in_mock_case_on_actions_hub):
+        gateway = AsyncMock(
+            return_value={
+                "id": "action-1",
+                "status": "COMPLETED",
+                "result": {"decision": "answered", "outcome": {"kind": "returned", "value": {"id": "O1", "total": 7}}},
+                "error": None,
+            }
+        )
+        with (
+            patch("zamp_sdk.action_executor.routing.get_action_gateway", return_value=gateway),
+            patch("zamp_sdk.action_executor.routing.is_registered_locally", new=AsyncMock(return_value=False)),
+            patch.object(ActionsHub, "ask_mocks", new=AsyncMock()) as ask_mocks,
+            patch.object(ActionsHub, "execute_action", new=AsyncMock()) as execute_action,
+        ):
+            assert await fetch_order("O1", api_key="secret-k") == Order(id="O1", total=7)
 
-        assert await fetch_order("O1", api_key="secret-k") == Order(id="O1", total=7)
-
-        (call,) = actions_hub_mocks.ask_mocks.call_args.args
-        assert isinstance(call, ActionsHubMockCall)
-        assert call.model_dump(mode="json") == {
+        action_name, params = gateway.call_args.args
+        assert action_name == "mock_call"
+        assert params == {
             "case_id": "case-1",
             "name": "erp.order",
             "input": {"order_id": "O1"},
             "output_schema": Order.model_json_schema(),
             "call_id": "workflow-uuid",
         }
+        ask_mocks.assert_not_called()
         execute_action.assert_not_called()
-        actions_hub_mocks.execute_action.assert_not_called()
 
 
 class TestLayering:

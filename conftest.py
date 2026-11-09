@@ -74,31 +74,13 @@ def in_mock_case(monkeypatch):
 
 
 @pytest.fixture
-def actions_hub_mocks():
-    from pydantic import TypeAdapter
-    from zamp_public_workflow_sdk.actions_hub import ActionsHub
-    from zamp_public_workflow_sdk.actions_hub.models.mock_models import MockDecision
-
-    decisions = TypeAdapter(MockDecision)
-    with (
-        patch.object(ActionsHub, "ask_mocks", new=AsyncMock()) as ask_mocks,
-        patch.object(ActionsHub, "execute_action", new=AsyncMock()) as execute_action,
-    ):
-        yield SimpleNamespace(
-            ask_mocks=ask_mocks,
-            execute_action=execute_action,
-            reply=lambda decision: setattr(ask_mocks, "return_value", decisions.validate_python(decision)),
-        )
-
-
-@pytest.fixture
-def in_mock_case_on_actions_hub(monkeypatch, bind_metadata_context, actions_hub_mocks):
+def in_mock_case_on_actions_hub(monkeypatch, bind_metadata_context):
     with _on_actions_hub(monkeypatch, bind_metadata_context({"mock_case_id": "case-1"})):
         yield
 
 
 @pytest.fixture
-def in_mocked_eval_trial_on_actions_hub(monkeypatch, bind_metadata_context, actions_hub_mocks):
+def in_mocked_eval_trial_on_actions_hub(monkeypatch, bind_metadata_context):
     with _on_actions_hub(
         monkeypatch, bind_metadata_context({"eval_trial_id": "run1-1-item1-1", "mock_case_id": "case-1"})
     ):

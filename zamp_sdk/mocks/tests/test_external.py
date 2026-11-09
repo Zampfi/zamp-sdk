@@ -625,60 +625,60 @@ class TestRequest:
 
 
 class TestOnTheExecutor:
-    async def test_async_asks_through_actions_hub_with_a_workflow_call_id(
-        self, in_mock_case_on_actions_hub, actions_hub_mocks, answered_returned
+    async def test_async_reads_the_bound_id_through_the_action_response(
+        self, in_mock_case_on_actions_hub, execute_action, answered_returned, action_response
     ):
-        actions_hub_mocks.reply(answered_returned({"id": "O1", "total": 7}))
+        execute_action.return_value = action_response(answered_returned({"id": "O1", "total": 7}))
 
         assert await fetch_order("O1") == Order(id="O1", total=7)
-        assert actions_hub_mocks.ask_mocks.call_args.args[0].call_id == "workflow-uuid"
+        assert sent(execute_action)[0]["call_id"] == "workflow-uuid"
 
     async def test_a_mock_failure_raises_mock_failed_error(
-        self, in_mock_case_on_actions_hub, actions_hub_mocks, answered_mock_failed
+        self, in_mock_case_on_actions_hub, execute_action, answered_mock_failed, action_response
     ):
-        actions_hub_mocks.reply(answered_mock_failed("erp.order:O1#1: no mock"))
+        execute_action.return_value = action_response(answered_mock_failed("erp.order:O1#1: no mock"))
 
         with pytest.raises(mocks.MockFailedError, match="^erp.order:O1#1: no mock$"):
             await fetch_order("O1")
 
     async def test_a_string_return_annotation_is_not_evaluated(
-        self, in_mock_case_on_actions_hub, actions_hub_mocks, answered_returned
+        self, in_mock_case_on_actions_hub, execute_action, answered_returned, action_response
     ):
         @mockable("erp.order")
         async def fetch() -> "Order":
             raise NotImplementedError
 
-        actions_hub_mocks.reply(answered_returned({"id": "O1", "total": 7}))
+        execute_action.return_value = action_response(answered_returned({"id": "O1", "total": 7}))
 
         assert await fetch() == {"id": "O1", "total": 7}
 
     async def test_a_string_nested_in_the_return_annotation_is_not_evaluated(
-        self, in_mock_case_on_actions_hub, actions_hub_mocks, answered_returned
+        self, in_mock_case_on_actions_hub, execute_action, answered_returned, action_response
     ):
         @mockable("erp.orders")
         async def fetch() -> list["Order"]:
             raise NotImplementedError
 
-        actions_hub_mocks.reply(answered_returned([{"id": "O1", "total": 7}]))
+        execute_action.return_value = action_response(answered_returned([{"id": "O1", "total": 7}]))
 
         assert await fetch() == [{"id": "O1", "total": 7}]
 
     async def test_a_literal_return_annotation_is_still_validated(
-        self, in_mock_case_on_actions_hub, actions_hub_mocks, answered_returned
+        self, in_mock_case_on_actions_hub, execute_action, answered_returned, action_response
     ):
         @mockable("erp.state")
         async def fetch() -> Optional[Literal["open", "closed"]]:
             raise NotImplementedError
 
-        actions_hub_mocks.reply(answered_returned("pending"))
+        execute_action.return_value = action_response(answered_returned("pending"))
 
         with pytest.raises(ValidationError):
             await fetch()
 
-    async def test_a_failed_ask_raises(self, in_mock_case_on_actions_hub, actions_hub_mocks):
-        actions_hub_mocks.ask_mocks.side_effect = RuntimeError("MockCallWorkflow failed")
+    async def test_a_failed_action_raises(self, in_mock_case_on_actions_hub, execute_action, action_response):
+        execute_action.return_value = action_response(status="FAILED", error="no mock case")
 
-        with pytest.raises(RuntimeError, match="^MockCallWorkflow failed$"):
+        with pytest.raises(RuntimeError, match="^mock_call action-1 FAILED: no mock case$"):
             await fetch_order("O1")
 
     def test_sync_runs_untouched_outside_a_mock_case(self, on_actions_hub_without_trial_or_case, execute_action):
@@ -686,11 +686,11 @@ class TestOnTheExecutor:
 
         execute_action.assert_not_called()
 
-    def test_sync_refuses_in_workflow_code(self, in_mock_case_on_actions_hub, actions_hub_mocks):
+    def test_sync_refuses_in_workflow_code(self, in_mock_case_on_actions_hub, execute_action):
         with pytest.raises(RuntimeError, match="^erp.order: a sync function .* make fetch_order_sync async$"):
             fetch_order_sync("O1")
 
-        actions_hub_mocks.ask_mocks.assert_not_called()
+        execute_action.assert_not_called()
 
 
 class TestTheActionLeavesNoTrace:
