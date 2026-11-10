@@ -6,7 +6,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from zamp_sdk.calls.constants import MOCK_CALL_ACTION_NAME
 from zamp_sdk.calls.utils import arguments_without_credentials, bind_arguments, call_platform_action, new_call_id
 from zamp_sdk.context import without_mock_case
-from zamp_sdk.mocks.constants import UNKNOWN_MOCK_REPLY_ERROR
+from zamp_sdk.mocks.constants import MOCKED_VALUE_UNFIT_ERROR, UNKNOWN_MOCK_REPLY_ERROR
 from zamp_sdk.mocks.models import MockCall, MockDecision, MockFailed, MockOutcome, Raised
 from zamp_sdk.mocks.utils.errors import MockFailedError
 from zamp_sdk.mocks.utils.outcomes import ReturnType, as_return_type, build_exception
@@ -47,4 +47,7 @@ def act_out(outcome: MockOutcome, return_type: ReturnType, function_globals: dic
     if isinstance(outcome, Raised):
         raise build_exception(outcome, function_globals)
 
-    return as_return_type(return_type, outcome.value)
+    try:
+        return as_return_type(return_type, outcome.value)
+    except ValidationError:
+        raise MockFailedError(MOCKED_VALUE_UNFIT_ERROR) from None

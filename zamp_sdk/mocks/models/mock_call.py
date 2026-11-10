@@ -8,7 +8,7 @@ class MockCall(BaseModel):
 
     case_id: str = Field(description="The case the call runs under")
     name: str = Field(description="The call's name: an action or skill call name")
-    input: dict[str, JsonValue] = Field(description="The call's arguments by name, credentials stripped")
+    input: JsonValue = Field(description="The call's arguments, credentials stripped; by name when they are named")
     output_schema: dict[str, JsonValue] | None = Field(
         description="JSON schema of what the call returns; none when unknown"
     )

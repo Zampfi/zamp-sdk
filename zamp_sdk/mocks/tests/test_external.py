@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import httpx
 import pytest
-from pydantic import BaseModel, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, TypeAdapter
 
 from conftest import drained_steps
 from zamp_sdk import AgentDbError, configure_auto_action_logs, mocks
@@ -672,8 +672,10 @@ class TestOnTheExecutor:
 
         execute_action.return_value = action_response(answered_returned("pending"))
 
-        with pytest.raises(ValidationError):
+        with pytest.raises(mocks.MockFailedError, match="does not fit") as raised:
             await fetch()
+
+        assert "pending" not in str(raised.value)
 
     async def test_a_failed_action_raises(self, in_mock_case_on_actions_hub, execute_action, action_response):
         execute_action.return_value = action_response(status="FAILED", error="no mock case")
