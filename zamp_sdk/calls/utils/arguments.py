@@ -1,9 +1,12 @@
 import inspect
+import re
 
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
 
 from zamp_sdk.calls.constants import PLACEHOLDER_CIRCULAR_VALUE, UNSENT_ARGUMENT_NAME_SUFFIXES, UNSENT_ARGUMENT_NAMES
+
+_CAMEL_CASE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
 def bind_arguments(
@@ -45,6 +48,6 @@ def _without_credentials(value: JsonValue) -> JsonValue:
 
 
 def _is_unsent(name: str) -> bool:
-    normalised = name.lower().replace("-", "_").replace(" ", "_")
+    normalised = _CAMEL_CASE_BOUNDARY.sub("_", name).lower().replace("-", "_").replace(" ", "_")
 
     return normalised in UNSENT_ARGUMENT_NAMES or normalised.endswith(UNSENT_ARGUMENT_NAME_SUFFIXES)

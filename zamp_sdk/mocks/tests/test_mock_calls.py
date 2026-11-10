@@ -9,6 +9,7 @@ from zamp_public_workflow_sdk.actions_hub.models.mock_models import MockCall as 
 from zamp_public_workflow_sdk.actions_hub.models.mock_models import MockDecision as ActionsHubMockDecision
 
 from zamp_sdk import ActionExecutor, mocks
+from zamp_sdk.calls.utils import arguments_without_credentials
 from zamp_sdk.mocks import mockable
 from zamp_sdk.mocks.models import MockCall, MockDecision
 
@@ -222,3 +223,13 @@ class TestLayering:
         }
 
         assert {module for module in imported if module.startswith("zamp_sdk.evals")} == set()
+
+
+class TestCredentialNamesAreStrippedInAnyCasing:
+    @pytest.mark.parametrize(
+        "name", ["accessToken", "clientSecret", "authToken", "privateKey", "Api-Key", "DB_PASSWORD"]
+    )
+    def test_a_credential_name_is_not_sent(self, name):
+        sent = arguments_without_credentials({name: "CANARY", "orderId": "O1"})
+
+        assert sent == {"orderId": "O1"}
