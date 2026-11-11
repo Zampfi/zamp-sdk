@@ -40,7 +40,8 @@ mypy = "*"
 pre-commit = "*"
 diff-cover = "*"
 httpx = "*"
-zamp-public-workflow-sdk = {path = "../public-workflow-sdk", develop = true}
+zamp-public-workflow-sdk = {git = "ssh://git@github.com/Zampfi/public-workflow-sdk.git", rev = "0e60a3307bf4baf5e74213b65769756620bf7b9e"}
+# Workaround: public-workflow-sdk imports these at import time but lists them only as its own dev dependencies. Remove them when it declares them at runtime.
 cryptography = "45.0.5"
 google-cloud-storage = "2.11.0"
 pandas = ">=2.2.2"

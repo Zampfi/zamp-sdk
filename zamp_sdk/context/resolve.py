@@ -82,9 +82,12 @@ def _current_run_value(env_name: str, context_field: str) -> str | None:
 
 
 def resolve_channel_context() -> Optional[ChannelContext]:
+    # The host decides the source, never a fallback between both: sandbox code that calls bind_channel_context
+    # must not be able to redirect its output to a channel the runtime did not give it.
     if current_execution_host() is ExecutionHost.ACTIONS_HUB:
         return current_channel_context()
     try:
         return ChannelContext(**resolve_context())
     except Exception:
+        # Best-effort: a failed resolution must never break the action call.
         return None

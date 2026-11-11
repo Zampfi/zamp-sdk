@@ -3135,7 +3135,7 @@ optional = false
 python-versions = ">=3.12"
 groups = ["dev"]
 files = []
-develop = true
+develop = false
 
 [package.dependencies]
 nexus-rpc = "1.4.0"
@@ -3147,10 +3147,12 @@ structlog = "*"
 temporalio = "1.30.0"
 
 [package.source]
-type = "directory"
-url = "../public-workflow-sdk"
+type = "git"
+url = "ssh://git@github.com/Zampfi/public-workflow-sdk.git"
+reference = "0e60a3307bf4baf5e74213b65769756620bf7b9e"
+resolved_reference = "0e60a3307bf4baf5e74213b65769756620bf7b9e"
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "e0989b1ee57ee5ac7ce40d074687e81a3df5acaffdc9f4a2e8117adfbafef3e0"
+content-hash = "1b8dbac0ca9689822fc598eb2a9a3acf69105f37430d769c0aa28e43e1a0cb5b"

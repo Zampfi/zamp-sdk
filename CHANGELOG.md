@@ -8,16 +8,17 @@
   every route (HTTP in a sandbox, the host's action gateway on the actions hub), and acts out the reply: `RunReal` runs
   the function, `Answered` returns `Returned`, raises `Raised`, or raises `MockFailedError` for `MockFailed` or any other
   reply. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
-- **Credential names are matched with `-` and spaces read as `_`**, so header-style names (`x-authorization`,
-  `X-Api-Key`) are left out of mock inputs and traces.
+- **Credential names are matched after splitting camelCase boundaries, lowercasing, and reading `-` and spaces as
+  `_`**, so `apiKey`, `accessToken`, `x-authorization` and `X-Api-Key` are left out of mock inputs and traces.
+  `_authorization` joins the credential suffixes.
 - **Breaking: shared call helpers move to `zamp_sdk.calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
   now `zamp_sdk.calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.calls.constants`.
 - **The `mock_call` request over HTTP carries no mock case** (no `X-MOCK-CASE-ID`). On the gateway the run's context
   still carries it, so zamp-sdk relies on pantheon's `mock_call` and zamp-executor's `call_external_action` not being
   mockable (the default), so the gateway never asks mocks about the ask itself.
-- **Dev dependency on public-workflow-sdk by path.** A test checks that `zamp_sdk.mocks.models` keeps the same JSON
-  schemas as public-workflow-sdk's mock models. Development uses `../public-workflow-sdk` in the dev group; swap it
-  for the released version that has those models at release time.
+- **Dev dependency on public-workflow-sdk by git pin.** A test checks that `zamp_sdk.mocks.models` keeps the same JSON
+  schemas as public-workflow-sdk's mock models. The dev group pins the exact commit of public-workflow-sdk's
+  `anand/mocks-sdk-gate` branch; swap it for the released tag that has those models at merge time.
 
 ## 2.0.1
 
