@@ -3129,7 +3129,7 @@ propcache = ">=0.2.1"
 
 [[package]]
 name = "zamp-public-workflow-sdk"
-version = "0.0.231"
+version = "0.0.232"
 description = "Workflow Manager"
 optional = false
 python-versions = ">=3.12"
@@ -3149,10 +3149,10 @@ temporalio = "1.30.0"
 [package.source]
 type = "git"
 url = "ssh://git@github.com/Zampfi/public-workflow-sdk.git"
-reference = "087ee8e1e4c86fbdfa8fb32f535463b534d39704"
-resolved_reference = "087ee8e1e4c86fbdfa8fb32f535463b534d39704"
+reference = "068f4ddfd1b5b8caacf39c9178377e6be7fc3787"
+resolved_reference = "068f4ddfd1b5b8caacf39c9178377e6be7fc3787"
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "979b3063c17f5a7ca58e9b6620b4bbe0d650e88c0bf3fa73e2b1b51bd41072bb"
+content-hash = "74ee4a3f114806b7e86a61a1c7f237372f88438264db74c137f3df2a9c218b0c"
