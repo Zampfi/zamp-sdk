@@ -40,7 +40,7 @@ async def ask_mocks(call: MockCall) -> MockDecision:
         raise MockFailedError(UNKNOWN_MOCK_REPLY_ERROR.format(name=call.name)) from None
 
 
-def act_out(outcome: MockOutcome, return_type: ReturnType, function_globals: dict[str, Any]) -> Any:
+def act_out(name: str, outcome: MockOutcome, return_type: ReturnType, function_globals: dict[str, Any]) -> Any:
     if isinstance(outcome, MockFailed):
         raise MockFailedError(outcome.message)
 
@@ -50,4 +50,4 @@ def act_out(outcome: MockOutcome, return_type: ReturnType, function_globals: dic
     try:
         return as_return_type(return_type, outcome.value)
     except ValidationError:
-        raise MockFailedError(MOCKED_VALUE_UNFIT_ERROR) from None
+        raise MockFailedError(MOCKED_VALUE_UNFIT_ERROR.format(name=name)) from None

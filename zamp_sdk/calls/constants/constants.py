@@ -31,6 +31,7 @@ UNSENT_ARGUMENT_NAME_SUFFIXES = (
     "_access_key",
     "_token",
     "_api_key",
+    "_apikey",
     "_credentials",
     "_cookie",
     "_authorization",

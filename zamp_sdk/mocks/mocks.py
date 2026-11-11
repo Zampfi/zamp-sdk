@@ -47,7 +47,7 @@ def mockable(name: str) -> Callable[[_FunctionT], _FunctionT]:
                 if isinstance(decision, RunReal):
                     return await func(*args, **kwargs)
 
-                return act_out(decision.outcome, return_type(), func.__globals__)
+                return act_out(name, decision.outcome, return_type(), func.__globals__)
 
             return cast(_FunctionT, call_async)
 
@@ -63,7 +63,7 @@ def mockable(name: str) -> Callable[[_FunctionT], _FunctionT]:
             if isinstance(decision, RunReal):
                 return func(*args, **kwargs)
 
-            return act_out(decision.outcome, return_type(), func.__globals__)
+            return act_out(name, decision.outcome, return_type(), func.__globals__)
 
         return cast(_FunctionT, call_sync)
 

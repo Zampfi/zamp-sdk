@@ -233,7 +233,7 @@ except mocks.MockFailedError:             # mocks could not answer this call
 | Name | Does |
 |------|------|
 | `mocks.mockable(name)` | In a mock case, send `MockCall{case_id, name, input, output_schema, call_id}` as the `mock_call` action through `ActionExecutor` and act out the decision: `run_real` runs the function, `answered` returns the value or raises the error |
-| `mocks.MockFailedError` | Raised when mocks cannot answer a call (outcome `mock_failed`), the reply is not a mock decision, or it names an exception type the process cannot load |
+| `mocks.MockFailedError` | Raised when mocks cannot answer a call (outcome `mock_failed`), the reply is not a mock decision, the answered value does not fit the return type, or it names an exception type the process cannot load |
 
 - **`output_schema`** is the return type's JSON schema, or `None` without an annotation or when none can be built.
   For `httpx.Response` it is the schema of the `status`, `body`, `content`, `headers` object a mock answers with.

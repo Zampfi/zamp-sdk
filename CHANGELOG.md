@@ -6,8 +6,8 @@
   `current_mock_case_id()` (env `ZAMP_MOCK_CASE_ID`, or `mock_case_id` on the executor's context) is set, sends
   `MockCall{case_id, name, input, output_schema, call_id}` as the `mock_call` action through `ActionExecutor` on
   every route (HTTP in a sandbox, the host's action gateway on the actions hub), and acts out the reply: `RunReal` runs
-  the function, `Answered` returns `Returned`, raises `Raised`, or raises `MockFailedError` for `MockFailed` or any other
-  reply. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
+  the function, `Answered` returns `Returned`, raises `Raised`, or raises `MockFailedError` for `MockFailed`, any other
+  reply, or an answered value that does not fit the return type. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
 - **Credential names are matched after splitting camelCase boundaries, lowercasing, and reading `-` and spaces as
   `_`**, so `apiKey`, `accessToken`, `x-authorization` and `X-Api-Key` are left out of mock inputs and traces.
   `_authorization` joins the credential suffixes.

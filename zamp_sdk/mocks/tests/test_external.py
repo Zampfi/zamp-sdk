@@ -519,7 +519,8 @@ class TestRequest:
         request(
             "https://erp.invalid",
             **{"x-authorization": "Bearer x", "X-Api-Key": "k1", "Refresh Token": "t0k", "x-page": 2},
-            config={"X-Api-Key": "k2", "Client-Secret": "cs", "region": "eu"},
+            **{"DBPassword": "p1", "APIToken": "p2", "x-apikey": "p3", "HTTPAuthorization": "p4"},
+            config={"X-Api-Key": "k2", "Client-Secret": "cs", "SMTPPassword": "p5", "region": "eu"},
         )
 
         assert sent(execute_action)[0]["input"] == {
@@ -672,7 +673,7 @@ class TestOnTheExecutor:
 
         execute_action.return_value = action_response(answered_returned("pending"))
 
-        with pytest.raises(mocks.MockFailedError, match="does not fit") as raised:
+        with pytest.raises(mocks.MockFailedError, match="^erp.state: the mocked value does not fit") as raised:
             await fetch()
 
         assert "pending" not in str(raised.value)
