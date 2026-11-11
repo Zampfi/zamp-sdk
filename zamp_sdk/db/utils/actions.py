@@ -14,7 +14,7 @@ re-decided per call site:
    psycopg2 path never had.
 
 ``execution_mode`` is the one knob passed through; a caller's explicit choice always wins. When
-omitted on the ``API`` host it defaults to ``DEFAULT_EXECUTION_MODE`` (INLINE); on any other host
+omitted on the ``API`` host it defaults to ``API_HOST_DEFAULT_EXECUTION_MODE`` (INLINE); on any other host
 none is sent, as before.
 """
 
@@ -34,7 +34,7 @@ def _resolve_execution_mode(execution_mode: ExecutionMode | None) -> ExecutionMo
     if execution_mode is not None:
         return execution_mode
     if current_execution_host() is ExecutionHost.API:
-        return constants.DEFAULT_EXECUTION_MODE
+        return constants.API_HOST_DEFAULT_EXECUTION_MODE
     return None
 
 

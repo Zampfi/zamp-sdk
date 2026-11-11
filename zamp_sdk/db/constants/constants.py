@@ -14,7 +14,7 @@ ACTION_DROP_DATASET = "agent_db_drop_dataset"
 
 # Mode used on the API host (sandbox scripts, SDK callers) when the caller passes none: the platform
 # runs agent-DB actions inline. Other hosts (zamp-executor's ActionsHub) send no default.
-DEFAULT_EXECUTION_MODE = ExecutionMode.INLINE
+API_HOST_DEFAULT_EXECUTION_MODE = ExecutionMode.INLINE
 
 # The auto-injected primary key every agent-db dataset carries.
 ID_COLUMN = "id"
