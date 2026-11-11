@@ -3149,10 +3149,10 @@ temporalio = "1.30.0"
 [package.source]
 type = "git"
 url = "ssh://git@github.com/Zampfi/public-workflow-sdk.git"
-reference = "0e60a3307bf4baf5e74213b65769756620bf7b9e"
-resolved_reference = "0e60a3307bf4baf5e74213b65769756620bf7b9e"
+reference = "087ee8e1e4c86fbdfa8fb32f535463b534d39704"
+resolved_reference = "087ee8e1e4c86fbdfa8fb32f535463b534d39704"
 
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "1b8dbac0ca9689822fc598eb2a9a3acf69105f37430d769c0aa28e43e1a0cb5b"
+content-hash = "979b3063c17f5a7ca58e9b6620b4bbe0d650e88c0bf3fa73e2b1b51bd41072bb"
