@@ -32,8 +32,8 @@ def fetch_invoice_sync(invoice_id: str) -> Invoice:
     return Invoice(id=invoice_id, total=-1)
 
 
-async def both(invoice_id: str) -> list:
-    outcomes = []
+async def both(invoice_id: str) -> list[Invoice | Exception]:
+    outcomes: list[Invoice | Exception] = []
     for call in (fetch_invoice, fetch_invoice_sync):
         try:
             result = call(invoice_id)

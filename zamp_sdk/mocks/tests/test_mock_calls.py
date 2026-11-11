@@ -164,10 +164,12 @@ class TestTheAskCarriesNoCase:
         headers_by_action = []
 
         def client(base_url, default_headers):
+            def post(endpoint, data):
+                headers_by_action.append((data["action_name"], default_headers.get("X-MOCK-CASE-ID")))
+                return {"id": "action-1"}
+
             http = AsyncMock()
-            http.post.side_effect = lambda endpoint, data: headers_by_action.append(
-                (data["action_name"], default_headers.get("X-MOCK-CASE-ID"))
-            ) or {"id": "action-1"}
+            http.post.side_effect = post
             http.get.return_value = {"status": "COMPLETED", "result": next(results)}
             return http
 
