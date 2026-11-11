@@ -179,6 +179,12 @@ await datasets.execute(select(customers.c.id, customers.c.name))
 
 Declaring your own `id` is safe and wins — the injection is skipped.
 
+### Execution mode
+
+Every `datasets` helper runs **INLINE** by default: a low-latency single attempt with a cap of about 60s, and
+`retry_policy` is not applied. Pass `execution_mode=ExecutionMode.DURABLE` for long-running statements or
+retries. An explicit mode always wins. (`ActionExecutor.execute` itself is unchanged: omitted still means durable.)
+
 ### Errors
 
 One exception type, `AgentDbError`, carrying Postgres's own vocabulary:

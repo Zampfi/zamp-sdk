@@ -5,11 +5,13 @@ from zamp_sdk.db.constants.constants import (
     ACTION_EXECUTE_SQL,
     COMPILE_DIALECT,
     DDL_DIALECT,
+    DEFAULT_EXECUTION_MODE,
     DEFAULT_PAGE_SIZE,
     ID_COLUMN,
 )
 
 __all__ = [
+    "DEFAULT_EXECUTION_MODE",
     "ACTION_CREATE_DATASET",
     "ACTION_DESCRIBE_DATASET",
     "ACTION_DROP_DATASET",

@@ -152,11 +152,22 @@ class TestExecutionModePassthrough:
         assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
 
     @pytest.mark.asyncio
-    async def test_mode_defaults_to_none(self):
+    async def test_mode_defaults_to_inline(self):
+        from zamp_sdk.action_executor import ExecutionMode
+
         with patch(_EXECUTE, new=AsyncMock(return_value={})) as mock:
             await actions.call("a", {})
 
-        assert mock.await_args.kwargs["execution_mode"] is None
+        assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
+
+    @pytest.mark.asyncio
+    async def test_explicit_durable_wins_over_the_default(self):
+        from zamp_sdk.action_executor import ExecutionMode
+
+        with patch(_EXECUTE, new=AsyncMock(return_value={})) as mock:
+            await actions.call("a", {}, execution_mode=ExecutionMode.DURABLE)
+
+        assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.DURABLE
 
 
 class TestGatewayEnvelope:

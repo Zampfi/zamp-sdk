@@ -13,7 +13,8 @@ re-decided per call site:
    replace that reasoning. Notably, write paths must not gain a retry the raw
    psycopg2 path never had.
 
-``execution_mode`` is the one knob passed through, and only when the caller gives it.
+``execution_mode`` is the one knob passed through; a caller's explicit choice always wins, and
+when omitted it defaults to ``DEFAULT_EXECUTION_MODE`` (INLINE).
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from typing import Any
 
 from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
 from zamp_sdk.action_executor.constants import ACTION_ENVELOPE_KEYS, SUCCESS_STATUSES
+from zamp_sdk.db import constants
 from zamp_sdk.db.utils.errors import AgentDbError
 
 
@@ -33,7 +35,11 @@ async def call(
 ) -> Any:
     """Execute a platform action, translating any failure to AgentDbError."""
     try:
-        response = await ActionExecutor.execute(action_name, params, execution_mode=execution_mode)
+        response = await ActionExecutor.execute(
+            action_name,
+            params,
+            execution_mode=execution_mode if execution_mode is not None else constants.DEFAULT_EXECUTION_MODE,
+        )
     except AgentDbError:
         raise
     except TimeoutError:
