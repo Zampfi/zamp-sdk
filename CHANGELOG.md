@@ -3,7 +3,7 @@
 ## 2.1.0
 
 - **Changed: the `zamp_sdk.db` helpers (`datasets.table/tables/execute/transaction/stream/create/drop`) default to
-  `ExecutionMode.INLINE`** when no `execution_mode` is given. Pass `ExecutionMode.DURABLE` to opt out (long
+  `ExecutionMode.INLINE`** when no `execution_mode` is given on the API host (sandbox scripts, SDK programs); the ActionsHub host (zamp-executor) sends no default, as before. Pass `ExecutionMode.DURABLE` to opt out (long
   statements, retries). `ActionExecutor.execute`'s own default is unchanged: `None` there still means durable.
 
 ## 2.0.2

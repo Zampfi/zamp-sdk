@@ -12,9 +12,8 @@ ACTION_DESCRIBE_DATASET = "agent_db_describe_dataset"
 ACTION_CREATE_DATASET = "agent_db_create_dataset"
 ACTION_DROP_DATASET = "agent_db_drop_dataset"
 
-# Mode used when the caller passes none. Routing already handles hosts: on the code-executor gateway
-# route ``execution_mode`` is ignored and the action runs durably; on the API route the platform
-# runs agent-DB actions inline.
+# Mode used on the API host (sandbox scripts, SDK callers) when the caller passes none: the platform
+# runs agent-DB actions inline. Other hosts (zamp-executor's ActionsHub) send no default.
 DEFAULT_EXECUTION_MODE = ExecutionMode.INLINE
 
 # The auto-injected primary key every agent-db dataset carries.

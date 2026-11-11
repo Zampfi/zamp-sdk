@@ -29,7 +29,7 @@ from zamp_sdk.db.utils import (
 async def table(name: str, *, execution_mode: ExecutionMode | None = None) -> sa.Table:
     """Fetch one dataset's schema and return a live ``sqlalchemy.Table``.
 
-    execution_mode: default runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
+    execution_mode: default (API host) runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
     ``ExecutionMode.DURABLE`` for long-running statements or retries.
     """
     tables = await _describe([name], execution_mode)
@@ -44,7 +44,7 @@ async def tables(names: list[str], *, execution_mode: ExecutionMode | None = Non
     A script touching nine tables describes them once rather than nine times. The
     returned tables share one ``MetaData``, so joins across them compose.
 
-    execution_mode: default runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
+    execution_mode: default (API host) runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
     ``ExecutionMode.DURABLE`` for long-running statements or retries.
     """
     return await _describe(names, execution_mode)
@@ -81,7 +81,7 @@ async def execute(
       **errors** rather than truncating, so a runaway read fails loudly instead of
       returning a silently partial answer.
 
-    execution_mode: default runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
+    execution_mode: default (API host) runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
     ``ExecutionMode.DURABLE`` for long-running statements or retries.
     """
     sql, args = compile_statement(statement)
@@ -107,7 +107,7 @@ def transaction(*, max_result_rows: int | None = None, execution_mode: Execution
     block lands together or not at all. Results arrive on ``tx.results`` after the
     block exits, aligned with ``add()`` order.
 
-    execution_mode: default runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
+    execution_mode: default (API host) runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
     ``ExecutionMode.DURABLE`` for long-running statements or retries.
     """
     return Transaction(max_result_rows=max_result_rows, execution_mode=execution_mode)
@@ -132,7 +132,7 @@ async def stream(
     of being silently overridden. Each page is one call, so ``page_size`` may not
     exceed the server's ``max_result_rows``.
 
-    execution_mode: default runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
+    execution_mode: default (API host) runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
     ``ExecutionMode.DURABLE`` for long-running statements or retries.
     """
     key_column = _key_column(statement, key)
@@ -229,7 +229,7 @@ async def create(
     author's DDL as-is and reads the result back, rather than mirroring the rule
     client-side (which would keep the same logic in step across two repos).
 
-    execution_mode: default runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
+    execution_mode: default (API host) runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
     ``ExecutionMode.DURABLE`` for long-running statements or retries.
     """
     create_sql = str(CreateTable(table_object).compile(dialect=constants.DDL_DIALECT))
@@ -250,7 +250,7 @@ async def create(
 async def drop(table_or_name: sa.Table | str, *, execution_mode: ExecutionMode | None = None) -> None:
     """Delete a dataset and all of its rows. Irreversible.
 
-    execution_mode: default runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
+    execution_mode: default (API host) runs INLINE (low-latency single attempt, about 60s cap, ``retry_policy`` not applied); pass
     ``ExecutionMode.DURABLE`` for long-running statements or retries.
     """
     name = table_or_name.name if isinstance(table_or_name, sa.Table) else table_or_name
