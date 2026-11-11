@@ -1,4 +1,5 @@
 import ast
+import traceback
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -130,6 +131,17 @@ class TestDecision:
         with pytest.raises(mocks.MockFailedError, match="^erp.order: mocks replied with something that is not a"):
             await fetch_order("O1")
         assert real_calls == []
+
+    async def test_a_rejected_reply_is_raised_without_its_cause_chain(self, in_mock_case, execute_action):
+        execute_action.return_value = {"decision": "answered", "outcome": {"kind": "returned", "secret": "s3cr3t"}}
+
+        with pytest.raises(mocks.MockFailedError) as raised:
+            await fetch_order("O1")
+
+        printed = "".join(traceback.format_exception(raised.value))
+        assert raised.value.__cause__ is None
+        assert "ValidationError" not in printed
+        assert "s3cr3t" not in printed
 
 
 class TestReplyModels:

@@ -36,8 +36,8 @@ async def ask_mocks(call: MockCall) -> MockDecision:
         reply = await call_platform_action(MOCK_CALL_ACTION_NAME, call.model_dump(mode="json"))
     try:
         return _mock_decision_adapter.validate_python(reply)
-    except ValidationError as error:
-        raise MockFailedError(UNKNOWN_MOCK_REPLY_ERROR.format(name=call.name)) from error
+    except ValidationError:
+        raise MockFailedError(UNKNOWN_MOCK_REPLY_ERROR.format(name=call.name)) from None
 
 
 def act_out(outcome: MockOutcome, return_type: ReturnType, function_globals: dict[str, Any]) -> Any:
