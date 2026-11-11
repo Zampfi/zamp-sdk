@@ -13,8 +13,8 @@
 - **Breaking: shared call helpers move to `zamp_sdk.calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
   now `zamp_sdk.calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.calls.constants`.
 - **The `mock_call` request over HTTP carries no mock case** (no `X-MOCK-CASE-ID`). On the gateway the run's context
-  still carries it, so zamp-sdk relies on pantheon registering `mock_call` and zamp-executor registering
-  `call_external_action` as `Mocking.NEVER`.
+  still carries it, so zamp-sdk relies on pantheon's `mock_call` and zamp-executor's `call_external_action` not being
+  mockable (the default), so the gateway never asks mocks about the ask itself.
 - **Dev dependency on public-workflow-sdk by path.** A test checks that `zamp_sdk.mocks.models` keeps the same JSON
   schemas as public-workflow-sdk's mock models. Development uses `../public-workflow-sdk` in the dev group; swap it
   for the released version that has those models at release time.
