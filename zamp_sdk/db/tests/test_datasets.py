@@ -37,6 +37,11 @@ DESCRIBE_RESPONSE = {
 }
 
 
+def _enveloped(result):
+    """What the executor's gateway route actually returns for a completed action."""
+    return {"id": "a1", "status": "COMPLETED", "result": result, "error": None}
+
+
 @pytest.fixture
 def executor():
     with patch(_ACTIONS, new=AsyncMock()) as mock:
@@ -595,3 +600,34 @@ class TestExecutionMode:
         await datasets.drop("t", execution_mode=mode)
 
         assert self._modes(executor) == [mode]
+
+
+class TestThroughTheGatewayEnvelope:
+    """The same calls with the response wrapped the way the code executor receives it."""
+
+    @pytest.mark.asyncio
+    async def test_table_finds_a_dataset_described_inside_the_envelope(self, executor):
+        executor.return_value = _enveloped(DESCRIBE_RESPONSE)
+
+        table = await datasets.table("invoices")
+
+        assert table.name == "invoices"
+
+    @pytest.mark.asyncio
+    async def test_execute_returns_rows_from_inside_the_envelope(self, executor):
+        table = await _invoices(executor)
+        executor.return_value = _enveloped({"results": [{"rows": [{"id": 1}], "row_count": 1}]})
+
+        assert await datasets.execute(select(table)) == [{"id": 1}]
+
+    @pytest.mark.asyncio
+    async def test_execute_raises_on_a_failed_statement_inside_the_envelope(self, executor):
+        table = await _invoices(executor)
+        executor.return_value = _enveloped(
+            {"results": [], "success": False, "error": "statement 0 failed [sqlstate=42703]: no column"}
+        )
+
+        with pytest.raises(AgentDbError) as exc:
+            await datasets.execute(select(table))
+
+        assert exc.value.sqlstate == "42703"

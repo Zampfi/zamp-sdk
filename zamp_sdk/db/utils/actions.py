@@ -4,8 +4,10 @@ Every call funnels through here so two rules hold everywhere rather than being
 re-decided per call site:
 
 1. **Failures become AgentDbError.** Callers catch one type — whether the action
-   failed outright or completed reporting ``success: false`` in its result, which is
-   how ``agent_db_execute_sql`` returns a failed body.
+   raised, came back in the gateway's ``{"id", "status", "result", "error"}`` envelope
+   with a failed status, or completed reporting ``success: false`` in its result, which
+   is how ``agent_db_execute_sql`` returns a failed body. Callers get the answer from
+   inside the envelope, never the envelope itself.
 2. **No retry or timeout overrides are ever sent.** The platform's defaults exist
    because someone reasoned about the seam; a client-side override would silently
    replace that reasoning. Notably, write paths must not gain a retry the raw
@@ -19,6 +21,7 @@ from __future__ import annotations
 from typing import Any
 
 from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
+from zamp_sdk.action_executor.constants import ACTION_ENVELOPE_KEYS, SUCCESS_STATUSES
 from zamp_sdk.db.utils.errors import AgentDbError
 
 
@@ -37,6 +40,11 @@ async def call(
         raise
     except Exception as exc:
         raise AgentDbError.from_exception(exc) from exc
+    if isinstance(response, dict) and ACTION_ENVELOPE_KEYS.issubset(response):
+        if response["status"] not in SUCCESS_STATUSES:
+            error = response.get("error") or "unknown error"
+            raise AgentDbError.from_exception(RuntimeError(f"Action {response['id']} {response['status']}: {error}"))
+        response = response["result"]
     if isinstance(response, dict) and response.get("success") is False:
         raise AgentDbError.from_exception(RuntimeError(response.get("error") or f"{action_name} failed"))
     return response
