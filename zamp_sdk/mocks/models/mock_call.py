@@ -12,7 +12,9 @@ class MockCall(BaseModel):
     output_schema: dict[str, JsonValue] | None = Field(
         description="JSON schema of what the call returns; none when unknown"
     )
-    call_id: str = Field(description="The call's id; a retry reuses it")
+    call_id: str = Field(
+        description="The call's id; deterministic on workflow replay. A caller outside a workflow may supply its own stable id"
+    )
 
 
 class Returned(BaseModel):
