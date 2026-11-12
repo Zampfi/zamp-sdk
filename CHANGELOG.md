@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.2
+
+- **Fixed: `datasets` calls in a code workflow read the answer from inside the action gateway's envelope.** On the
+  actions-hub host the gateway returns `{"id", "status", "result", "error"}`, and the bridge looked for its keys on the
+  envelope. `datasets.table()` raised `dataset ... was not found, or you have no access to it` for a table that
+  exists, and `datasets.execute()` returned `[]` without raising for a failed statement. The bridge now unwraps
+  `result`, and a status other than `COMPLETED` raises `AgentDbError` with the platform's error, `sqlstate` and
+  statement index.
+
 ## 2.0.1
 
 - **Fixed: eval trial id is read from the flat metadata fields hosts bind, so mocks/observe work in the code

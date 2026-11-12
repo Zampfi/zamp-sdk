@@ -37,6 +37,11 @@ DESCRIBE_RESPONSE = {
 }
 
 
+def _enveloped(result):
+    """What the executor's gateway route actually returns for a completed action."""
+    return {"id": "a1", "status": "COMPLETED", "result": result, "error": None}
+
+
 @pytest.fixture
 def executor():
     with patch(_ACTIONS, new=AsyncMock()) as mock:
@@ -595,3 +600,82 @@ class TestExecutionMode:
         await datasets.drop("t", execution_mode=mode)
 
         assert self._modes(executor) == [mode]
+
+
+class TestThroughTheGatewayEnvelope:
+    """The same calls with the response wrapped the way the code executor receives it."""
+
+    @pytest.mark.asyncio
+    async def test_table_finds_a_dataset_described_inside_the_envelope(self, executor):
+        executor.return_value = _enveloped(DESCRIBE_RESPONSE)
+
+        table = await datasets.table("invoices")
+
+        assert table.name == "invoices"
+
+    @pytest.mark.asyncio
+    async def test_execute_returns_rows_from_inside_the_envelope(self, executor):
+        table = await _invoices(executor)
+        executor.return_value = _enveloped({"results": [{"rows": [{"id": 1}], "row_count": 1}]})
+
+        assert await datasets.execute(select(table)) == [{"id": 1}]
+
+    @pytest.mark.asyncio
+    async def test_execute_raises_on_a_failed_statement_inside_the_envelope(self, executor):
+        table = await _invoices(executor)
+        executor.return_value = _enveloped(
+            {"results": [], "success": False, "error": "statement 0 failed [sqlstate=42703]: no column"}
+        )
+
+        with pytest.raises(AgentDbError) as exc:
+            await datasets.execute(select(table))
+
+        assert exc.value.sqlstate == "42703"
+
+    @pytest.mark.asyncio
+    async def test_a_transaction_reads_its_results_from_inside_the_envelope(self, executor):
+        table = await _invoices(executor)
+        executor.return_value = _enveloped({"results": [{"rows": [{"n": 1}]}, {"rows": [{"n": 2}]}]})
+
+        async with datasets.transaction() as tx:
+            first = tx.add(select(table))
+            second = tx.add(select(table))
+
+        assert tx.results[first]["rows"] == [{"n": 1}]
+        assert tx.results[second]["rows"] == [{"n": 2}]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_transaction_raises_from_the_block(self, executor):
+        table = await _invoices(executor)
+        executor.return_value = {
+            "id": "a9",
+            "status": "FAILED",
+            "result": None,
+            "error": "statement 1 failed [sqlstate=23505]: dup",
+        }
+
+        with pytest.raises(AgentDbError) as exc:
+            async with datasets.transaction() as tx:
+                tx.add(select(table))
+                tx.add(select(table))
+
+        assert exc.value.sqlstate == "23505"
+
+    @pytest.mark.asyncio
+    async def test_create_reads_the_describe_back_from_inside_the_envelope(self, executor):
+        table = sa.Table("invoices", sa.MetaData(), sa.Column("id", sa.Integer, primary_key=True))
+        executor.side_effect = [
+            _enveloped({"table_name": "invoices", "created": True, "skipped": False}),
+            _enveloped(DESCRIBE_RESPONSE),
+        ]
+
+        created = await datasets.create(table)
+
+        assert created.name == "invoices"
+
+    @pytest.mark.asyncio
+    async def test_a_failed_drop_raises(self, executor):
+        executor.return_value = {"id": "a7", "status": "FAILED", "result": None, "error": "permission denied"}
+
+        with pytest.raises(AgentDbError, match="permission denied"):
+            await datasets.drop("invoices")
