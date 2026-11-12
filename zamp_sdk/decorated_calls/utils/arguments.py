@@ -4,7 +4,11 @@ import re
 from pydantic import JsonValue
 from pydantic_core import to_jsonable_python
 
-from zamp_sdk.calls.constants import PLACEHOLDER_CIRCULAR_VALUE, UNSENT_ARGUMENT_NAME_SUFFIXES, UNSENT_ARGUMENT_NAMES
+from zamp_sdk.decorated_calls.constants import (
+    PLACEHOLDER_CIRCULAR_VALUE,
+    UNSENT_ARGUMENT_NAME_SUFFIXES,
+    UNSENT_ARGUMENT_NAMES,
+)
 
 _CAMEL_CASE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
 

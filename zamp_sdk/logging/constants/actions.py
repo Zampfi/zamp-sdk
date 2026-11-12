@@ -1,4 +1,4 @@
-from zamp_sdk.calls.constants import (
+from zamp_sdk.decorated_calls.constants import (
     EVAL_OBSERVED_STEP_ACTION_NAME,
     EVAL_READ_TRACE_ACTION_NAME,
     MOCK_CALL_ACTION_NAME,

@@ -3,9 +3,14 @@ from typing import Any
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from zamp_sdk.calls.constants import MOCK_CALL_ACTION_NAME
-from zamp_sdk.calls.utils import arguments_without_credentials, bind_arguments, call_platform_action, new_call_id
 from zamp_sdk.context import without_mock_case
+from zamp_sdk.decorated_calls.constants import MOCK_CALL_ACTION_NAME
+from zamp_sdk.decorated_calls.utils import (
+    arguments_without_credentials,
+    bind_arguments,
+    call_platform_action,
+    new_call_id,
+)
 from zamp_sdk.mocks.constants import MOCKED_VALUE_UNFIT_ERROR, UNKNOWN_MOCK_REPLY_ERROR
 from zamp_sdk.mocks.models import MockCall, MockDecision, MockFailed, MockOutcome, Raised
 from zamp_sdk.mocks.utils.errors import MockFailedError

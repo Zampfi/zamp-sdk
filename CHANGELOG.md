@@ -11,8 +11,8 @@
 - **Credential names are matched after splitting camelCase boundaries, lowercasing, and reading `-` and spaces as
   `_`**, so `apiKey`, `accessToken`, `x-authorization` and `X-Api-Key` are left out of mock inputs and traces.
   `_authorization` joins the credential suffixes.
-- **Breaking: shared call helpers move to `zamp_sdk.calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
-  now `zamp_sdk.calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.calls.constants`.
+- **Breaking: shared call helpers move to `zamp_sdk.decorated_calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
+  now `zamp_sdk.decorated_calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.decorated_calls.constants`.
 - **The `mock_call` request over HTTP carries no mock case** (no `X-MOCK-CASE-ID`). On the gateway the run's context
   still carries it, so zamp-sdk relies on pantheon's `mock_call` and zamp-executor's `call_external_action` not being
   mockable (the default), so the gateway never asks mocks about the ask itself.

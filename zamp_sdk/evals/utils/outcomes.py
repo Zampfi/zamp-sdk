@@ -1,4 +1,4 @@
-from zamp_sdk.calls.utils import to_json_value
+from zamp_sdk.decorated_calls.utils import to_json_value
 from zamp_sdk.evals.models import RaisedOutcome, ReturnedOutcome
 
 

@@ -1,6 +1,6 @@
 import inspect
 
-from zamp_sdk.calls.utils import arguments_without_credentials, bind_arguments, new_call_id
+from zamp_sdk.decorated_calls.utils import arguments_without_credentials, bind_arguments, new_call_id
 from zamp_sdk.evals.models import TracedCallInput
 from zamp_sdk.evals.utils.arguments import key_from_arguments
 

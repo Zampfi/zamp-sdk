@@ -5,8 +5,8 @@ from pydantic import JsonValue
 from zamp_sdk.action_executor import ActionExecutor
 from zamp_sdk.action_executor.constants import ACTION_ENVELOPE_KEYS, SUCCESS_STATUSES
 from zamp_sdk.action_executor.models.action_response import ActionResponse
-from zamp_sdk.calls.constants import PLATFORM_ACTION_FAILED_ERROR
 from zamp_sdk.context import ExecutionHost, current_execution_host
+from zamp_sdk.decorated_calls.constants import PLATFORM_ACTION_FAILED_ERROR
 
 
 def new_call_id() -> str:

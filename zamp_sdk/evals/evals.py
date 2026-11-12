@@ -4,8 +4,8 @@ import sys
 from collections.abc import Callable
 from typing import Any, TypeVar, cast
 
-from zamp_sdk.calls.utils import call_platform_action, raise_if_on_actions_hub, reject_generator
 from zamp_sdk.context import current_eval_trial_id
+from zamp_sdk.decorated_calls.utils import call_platform_action, raise_if_on_actions_hub, reject_generator
 from zamp_sdk.evals.constants import EVAL_READ_TRACE_ACTION_NAME, KEY_ARGUMENT_NOT_A_PARAMETER_ERROR
 from zamp_sdk.evals.models import ReadTraceResult, TraceEntry
 from zamp_sdk.evals.utils import (

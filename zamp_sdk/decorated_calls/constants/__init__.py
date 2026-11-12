@@ -1,14 +1,14 @@
-from zamp_sdk.calls.constants.actions import (
+from zamp_sdk.decorated_calls.constants.actions import (
     EVAL_OBSERVED_STEP_ACTION_NAME,
     EVAL_READ_TRACE_ACTION_NAME,
     MOCK_CALL_ACTION_NAME,
 )
-from zamp_sdk.calls.constants.constants import (
+from zamp_sdk.decorated_calls.constants.constants import (
     PLACEHOLDER_CIRCULAR_VALUE,
     UNSENT_ARGUMENT_NAME_SUFFIXES,
     UNSENT_ARGUMENT_NAMES,
 )
-from zamp_sdk.calls.constants.messages import (
+from zamp_sdk.decorated_calls.constants.messages import (
     GENERATOR_FUNCTION_ERROR,
     PLATFORM_ACTION_FAILED_ERROR,
     SYNC_CALL_ON_ACTIONS_HUB_ERROR,

@@ -1,4 +1,4 @@
-from zamp_sdk.calls.constants import EVAL_OBSERVED_STEP_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME
+from zamp_sdk.decorated_calls.constants import EVAL_OBSERVED_STEP_ACTION_NAME, EVAL_READ_TRACE_ACTION_NAME
 from zamp_sdk.evals.constants.messages import KEY_ARGUMENT_NOT_A_PARAMETER_ERROR, STEP_ERROR_NOT_TRACED_MESSAGE
 
 __all__ = [

@@ -5,7 +5,7 @@ from types import FrameType
 
 from pydantic import JsonValue
 
-from zamp_sdk.calls.utils import ResultT, call_platform_action, run_blocking
+from zamp_sdk.decorated_calls.utils import ResultT, call_platform_action, run_blocking
 from zamp_sdk.evals.constants import EVAL_OBSERVED_STEP_ACTION_NAME, STEP_ERROR_NOT_TRACED_MESSAGE
 from zamp_sdk.evals.models import ObservedStepInput, ObservedStepOutcome, TracedCallInput
 from zamp_sdk.evals.utils.outcomes import to_raised, to_returned

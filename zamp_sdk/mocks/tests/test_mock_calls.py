@@ -9,7 +9,7 @@ import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from zamp_sdk import ActionExecutor, mocks
-from zamp_sdk.calls.utils import arguments_without_credentials
+from zamp_sdk.decorated_calls.utils import arguments_without_credentials
 from zamp_sdk.mocks import mockable
 from zamp_sdk.mocks.models import MockCall, MockDecision
 
