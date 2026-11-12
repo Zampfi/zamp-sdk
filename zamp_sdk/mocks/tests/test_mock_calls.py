@@ -1,6 +1,8 @@
 import ast
+import sys
 import traceback
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -185,7 +187,12 @@ class TestTheAskCarriesNoCase:
 
 
 class TestOnTheActionsHub:
-    async def test_the_ask_goes_through_the_action_gateway(self, in_mock_case_on_actions_hub):
+    async def test_the_ask_goes_through_the_action_gateway_never_actions_hub(
+        self, in_mock_case_on_actions_hub, monkeypatch
+    ):
+        actions_hub = SimpleNamespace(ActionsHub=SimpleNamespace(ask_mocks=AsyncMock(), execute_action=AsyncMock()))
+        monkeypatch.setitem(sys.modules, "zamp_public_workflow_sdk", SimpleNamespace(actions_hub=actions_hub))
+        monkeypatch.setitem(sys.modules, "zamp_public_workflow_sdk.actions_hub", actions_hub)
         gateway = AsyncMock(
             return_value={
                 "id": "action-1",
@@ -209,6 +216,8 @@ class TestOnTheActionsHub:
             "output_schema": Order.model_json_schema(),
             "call_id": "workflow-uuid",
         }
+        actions_hub.ActionsHub.ask_mocks.assert_not_called()
+        actions_hub.ActionsHub.execute_action.assert_not_called()
 
 
 class TestLayering:
