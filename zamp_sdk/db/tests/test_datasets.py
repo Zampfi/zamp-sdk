@@ -631,3 +631,51 @@ class TestThroughTheGatewayEnvelope:
             await datasets.execute(select(table))
 
         assert exc.value.sqlstate == "42703"
+
+    @pytest.mark.asyncio
+    async def test_a_transaction_reads_its_results_from_inside_the_envelope(self, executor):
+        table = await _invoices(executor)
+        executor.return_value = _enveloped({"results": [{"rows": [{"n": 1}]}, {"rows": [{"n": 2}]}]})
+
+        async with datasets.transaction() as tx:
+            first = tx.add(select(table))
+            second = tx.add(select(table))
+
+        assert tx.results[first]["rows"] == [{"n": 1}]
+        assert tx.results[second]["rows"] == [{"n": 2}]
+
+    @pytest.mark.asyncio
+    async def test_a_failed_transaction_raises_from_the_block(self, executor):
+        table = await _invoices(executor)
+        executor.return_value = {
+            "id": "a9",
+            "status": "FAILED",
+            "result": None,
+            "error": "statement 1 failed [sqlstate=23505]: dup",
+        }
+
+        with pytest.raises(AgentDbError) as exc:
+            async with datasets.transaction() as tx:
+                tx.add(select(table))
+                tx.add(select(table))
+
+        assert exc.value.sqlstate == "23505"
+
+    @pytest.mark.asyncio
+    async def test_create_reads_the_describe_back_from_inside_the_envelope(self, executor):
+        table = sa.Table("invoices", sa.MetaData(), sa.Column("id", sa.Integer, primary_key=True))
+        executor.side_effect = [
+            _enveloped({"table_name": "invoices", "created": True, "skipped": False}),
+            _enveloped(DESCRIBE_RESPONSE),
+        ]
+
+        created = await datasets.create(table)
+
+        assert created.name == "invoices"
+
+    @pytest.mark.asyncio
+    async def test_a_failed_drop_raises(self, executor):
+        executor.return_value = {"id": "a7", "status": "FAILED", "result": None, "error": "permission denied"}
+
+        with pytest.raises(AgentDbError, match="permission denied"):
+            await datasets.drop("invoices")
