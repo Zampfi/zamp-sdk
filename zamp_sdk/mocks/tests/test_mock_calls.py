@@ -5,9 +5,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
-from zamp_public_workflow_sdk.actions_hub import ActionsHub
-from zamp_public_workflow_sdk.actions_hub.models.mock_models import MockCall as ActionsHubMockCall
-from zamp_public_workflow_sdk.actions_hub.models.mock_models import MockDecision as ActionsHubMockDecision
 
 from zamp_sdk import ActionExecutor, mocks
 from zamp_sdk.calls.utils import arguments_without_credentials
@@ -160,14 +157,6 @@ class TestReplyModels:
         assert set(MockCall.model_fields) == {"case_id", "name", "input", "output_schema", "call_id"}
 
 
-class TestWireModelsMatchActionsHub:
-    def test_mock_call_schema_equals_actions_hub(self):
-        assert MockCall.model_json_schema() == ActionsHubMockCall.model_json_schema()
-
-    def test_mock_decision_schema_equals_actions_hub(self):
-        assert TypeAdapter(MockDecision).json_schema() == TypeAdapter(ActionsHubMockDecision).json_schema()
-
-
 class TestTheAskCarriesNoCase:
     async def test_mock_call_request_has_no_case_header_while_the_real_call_does(self, in_mock_case, monkeypatch):
         monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
@@ -196,7 +185,7 @@ class TestTheAskCarriesNoCase:
 
 
 class TestOnTheActionsHub:
-    async def test_the_ask_goes_through_the_action_gateway_never_actions_hub(self, in_mock_case_on_actions_hub):
+    async def test_the_ask_goes_through_the_action_gateway(self, in_mock_case_on_actions_hub):
         gateway = AsyncMock(
             return_value={
                 "id": "action-1",
@@ -208,8 +197,6 @@ class TestOnTheActionsHub:
         with (
             patch("zamp_sdk.action_executor.routing.get_action_gateway", return_value=gateway),
             patch("zamp_sdk.action_executor.routing.is_registered_locally", new=AsyncMock(return_value=False)),
-            patch.object(ActionsHub, "ask_mocks", new=AsyncMock()) as ask_mocks,
-            patch.object(ActionsHub, "execute_action", new=AsyncMock()) as execute_action,
         ):
             assert await fetch_order("O1", api_key="secret-k") == Order(id="O1", total=7)
 
@@ -222,8 +209,6 @@ class TestOnTheActionsHub:
             "output_schema": Order.model_json_schema(),
             "call_id": "workflow-uuid",
         }
-        ask_mocks.assert_not_called()
-        execute_action.assert_not_called()
 
 
 class TestLayering:

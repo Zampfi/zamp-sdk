@@ -16,9 +16,6 @@
 - **The `mock_call` request over HTTP carries no mock case** (no `X-MOCK-CASE-ID`). On the gateway the run's context
   still carries it, so zamp-sdk relies on pantheon's `mock_call` and zamp-executor's `call_external_action` not being
   mockable (the default), so the gateway never asks mocks about the ask itself.
-- **Dev dependency on public-workflow-sdk by git pin.** A test checks that `zamp_sdk.mocks.models` keeps the same JSON
-  schemas as public-workflow-sdk's mock models. The dev group pins the exact commit of public-workflow-sdk's
-  `anand/mocks-sdk-gate` branch; swap it for the released tag that has those models at merge time.
 
 ## 2.0.1
 
