@@ -3,6 +3,7 @@ from zamp_sdk.db.constants.constants import (
     ACTION_DESCRIBE_DATASET,
     ACTION_DROP_DATASET,
     ACTION_EXECUTE_SQL,
+    API_HOST_DEFAULT_EXECUTION_MODE,
     COMPILE_DIALECT,
     DDL_DIALECT,
     DEFAULT_PAGE_SIZE,
@@ -10,6 +11,7 @@ from zamp_sdk.db.constants.constants import (
 )
 
 __all__ = [
+    "API_HOST_DEFAULT_EXECUTION_MODE",
     "ACTION_CREATE_DATASET",
     "ACTION_DESCRIBE_DATASET",
     "ACTION_DROP_DATASET",

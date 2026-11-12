@@ -152,11 +152,47 @@ class TestExecutionModePassthrough:
         assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
 
     @pytest.mark.asyncio
-    async def test_mode_defaults_to_none(self):
+    async def test_mode_defaults_to_inline(self):
+        from zamp_sdk.action_executor import ExecutionMode
+
         with patch(_EXECUTE, new=AsyncMock(return_value={})) as mock:
             await actions.call("a", {})
 
+        assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
+
+    @pytest.mark.asyncio
+    async def test_explicit_durable_wins_over_the_default(self):
+        from zamp_sdk.action_executor import ExecutionMode
+
+        with patch(_EXECUTE, new=AsyncMock(return_value={})) as mock:
+            await actions.call("a", {}, execution_mode=ExecutionMode.DURABLE)
+
+        assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.DURABLE
+
+    @pytest.mark.asyncio
+    async def test_no_default_mode_off_the_api_host(self):
+        from zamp_sdk.context import ExecutionHost
+
+        with (
+            patch("zamp_sdk.db.utils.actions.current_execution_host", return_value=ExecutionHost.ACTIONS_HUB),
+            patch(_EXECUTE, new=AsyncMock(return_value={})) as mock,
+        ):
+            await actions.call("a", {})
+
         assert mock.await_args.kwargs["execution_mode"] is None
+
+    @pytest.mark.asyncio
+    async def test_explicit_mode_wins_off_the_api_host(self):
+        from zamp_sdk.action_executor import ExecutionMode
+        from zamp_sdk.context import ExecutionHost
+
+        with (
+            patch("zamp_sdk.db.utils.actions.current_execution_host", return_value=ExecutionHost.ACTIONS_HUB),
+            patch(_EXECUTE, new=AsyncMock(return_value={})) as mock,
+        ):
+            await actions.call("a", {}, execution_mode=ExecutionMode.INLINE)
+
+        assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
 
 
 class TestGatewayEnvelope:

@@ -533,7 +533,7 @@ class TestCreateAndDrop:
 
 
 class TestExecutionMode:
-    """The mode reaches the executor on every call; omitting it sends None."""
+    """The mode reaches the executor on every call; omitting it sends INLINE, explicit DURABLE wins."""
 
     INLINE = ExecutionMode.INLINE
 
@@ -541,37 +541,41 @@ class TestExecutionMode:
     def _modes(executor):
         return [c.kwargs["execution_mode"] for c in executor.await_args_list]
 
+    @staticmethod
+    def _expected(mode, calls):
+        return [mode or ExecutionMode.INLINE] * calls
+
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, ExecutionMode.DURABLE, None])
     async def test_table_and_tables(self, executor, mode):
         executor.return_value = DESCRIBE_RESPONSE
 
         await datasets.table("invoices", execution_mode=mode)
         await datasets.tables(["invoices"], execution_mode=mode)
 
-        assert self._modes(executor) == [mode, mode]
+        assert self._modes(executor) == self._expected(mode, 2)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, ExecutionMode.DURABLE, None])
     async def test_execute(self, executor, mode):
         table = await _invoices(executor)
 
         await datasets.execute(select(table), execution_mode=mode)
 
-        assert self._modes(executor) == [mode]
+        assert self._modes(executor) == self._expected(mode, 1)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, ExecutionMode.DURABLE, None])
     async def test_transaction(self, executor, mode):
         table = await _invoices(executor)
 
         async with datasets.transaction(execution_mode=mode) as tx:
             tx.add(select(table))
 
-        assert self._modes(executor) == [mode]
+        assert self._modes(executor) == self._expected(mode, 1)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, ExecutionMode.DURABLE, None])
     async def test_stream_every_page(self, executor, mode):
         table = await _invoices(executor)
         executor.side_effect = [
@@ -582,24 +586,24 @@ class TestExecutionMode:
 
         [page async for page in datasets.stream(select(table), page_size=2, execution_mode=mode)]
 
-        assert self._modes(executor) == [mode, mode, mode]
+        assert self._modes(executor) == self._expected(mode, 3)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, ExecutionMode.DURABLE, None])
     async def test_create_covers_the_create_and_describe_calls(self, executor, mode):
         executor.return_value = TestCreateAndDrop._CUSTOMERS_DESCRIBE
         source = sa.Table("customers", sa.MetaData(), sa.Column("name", sa.Text))
 
         await datasets.create(source, execution_mode=mode)
 
-        assert self._modes(executor) == [mode, mode]
+        assert self._modes(executor) == self._expected(mode, 2)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, None])
+    @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, ExecutionMode.DURABLE, None])
     async def test_drop(self, executor, mode):
         await datasets.drop("t", execution_mode=mode)
 
-        assert self._modes(executor) == [mode]
+        assert self._modes(executor) == self._expected(mode, 1)
 
 
 class TestThroughTheGatewayEnvelope:
