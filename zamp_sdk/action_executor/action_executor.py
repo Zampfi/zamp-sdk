@@ -11,6 +11,7 @@ from zamp_sdk.action_executor.constants import (
     IN_PROGRESS_STATUSES,
     INLINE_RESPONSE_GRACE_SECONDS,
     INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS,
+    MOCK_CASE_ID_HEADER,
     POLL_BACKOFF_COEFFICIENT,
     POLL_INITIAL_INTERVAL_SECONDS,
     POLL_MAX_INTERVAL_SECONDS,
@@ -34,6 +35,7 @@ from zamp_sdk.context import (
     ChannelContext,
     current_branch_context,
     current_eval_trial_id,
+    current_mock_case_id,
     resolve_channel_context,
 )
 from zamp_sdk.logger import get_logger
@@ -265,11 +267,13 @@ class ActionExecutor:
 
     @staticmethod
     def _ambient_run_headers() -> dict[str, str]:
-        """The branch and eval trial this process runs in, as request headers."""
         headers = {BRANCH_HEADERS[k]: v for k, v in current_branch_context().items()}
         eval_trial_id = current_eval_trial_id()
         if eval_trial_id is not None:
             headers[EVAL_TRIAL_ID_HEADER] = eval_trial_id
+        mock_case_id = current_mock_case_id()
+        if mock_case_id is not None:
+            headers[MOCK_CASE_ID_HEADER] = mock_case_id
 
         return headers
 
@@ -359,8 +363,6 @@ class ActionExecutor:
             base_url=config.base_url,
             default_headers={
                 "Authorization": f"Bearer {config.auth_token}",
-                # The platform runs the action in this branch (DB, files, spawned tasks) and eval
-                # trial — only on the deployment that supplied them.
                 **(cls._ambient_run_headers() if cls._is_ambient_deployment(config) else {}),
             },
         )

@@ -1,6 +1,4 @@
-# An argument, or a key inside a dict argument at any depth, whose lowercased name is one of these names or ends in
-# one of the suffixes is left out of the trace. Whole names only, so max_tokens or sort_key stay in.
-UNTRACED_ARGUMENT_NAMES = frozenset(
+UNSENT_ARGUMENT_NAMES = frozenset(
     {
         "self",
         "cls",
@@ -24,7 +22,7 @@ UNTRACED_ARGUMENT_NAMES = frozenset(
         "cookies",
     }
 )
-UNTRACED_ARGUMENT_NAME_SUFFIXES = (
+UNSENT_ARGUMENT_NAME_SUFFIXES = (
     "_password",
     "_passphrase",
     "_secret",
@@ -33,9 +31,10 @@ UNTRACED_ARGUMENT_NAME_SUFFIXES = (
     "_access_key",
     "_token",
     "_api_key",
+    "_apikey",
     "_credentials",
     "_cookie",
+    "_authorization",
 )
 
-# A value that contains itself has no JSON form, and its repr could carry a credential the trace leaves out.
 PLACEHOLDER_CIRCULAR_VALUE = "<{type} that contains itself>"

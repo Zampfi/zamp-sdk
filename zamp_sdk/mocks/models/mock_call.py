@@ -1,0 +1,58 @@
+from typing import Annotated, Literal, TypeAlias
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
+
+
+class MockCall(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str = Field(description="The case the call runs under")
+    name: str = Field(description="The call's name: an action or skill call name")
+    input: JsonValue = Field(description="The call's arguments; by name when they are named")
+    output_schema: dict[str, JsonValue] | None = Field(
+        description="JSON schema of what the call returns; none when unknown"
+    )
+    call_id: str = Field(
+        description="The call's id; deterministic on workflow replay. A caller outside a workflow may supply its own stable id"
+    )
+
+
+class Returned(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: Literal["returned"] = Field(description="The call returned")
+    value: JsonValue = Field(description="What the call returned")
+
+
+class Raised(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: Literal["raised"] = Field(description="The call raised")
+    type: str = Field(description="The exception's type name")
+    message: str = Field(description="The exception's message")
+
+
+class MockFailed(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: Literal["mock_failed"] = Field(description="Mocks could not answer; the call fails and is not retried")
+    message: str = Field(description="Neutral text the subject sees")
+
+
+MockOutcome: TypeAlias = Annotated[Returned | Raised | MockFailed, Field(discriminator="kind")]
+
+
+class RunReal(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    decision: Literal["run_real"] = Field(description="The real call runs")
+
+
+class Answered(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    decision: Literal["answered"] = Field(description="Mocks answered the call")
+    outcome: MockOutcome = Field(description="What the call is answered with")
+
+
+MockDecision: TypeAlias = Annotated[RunReal | Answered, Field(discriminator="decision")]

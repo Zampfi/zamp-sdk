@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- **Breaking: `@mocks.mockable` gates on the mock case, not the eval trial.** It asks mocks only when
+  `current_mock_case_id()` (env `ZAMP_MOCK_CASE_ID`, or `mock_case_id` on the executor's context) is set, sends
+  `MockCall{case_id, name, input, output_schema, call_id}` as the `mock_call` action through `ActionExecutor` on
+  every route (HTTP in a sandbox, the host's action gateway on the actions hub), and acts out the reply: `RunReal` runs
+  the function, `Answered` returns `Returned`, raises `Raised`, or raises `MockFailedError` for `MockFailed`, any other
+  reply, or an answered value that does not fit the return type. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
+- **Credential names are matched after splitting camelCase boundaries, lowercasing, and reading `-` and spaces as
+  `_`**, so `apiKey`, `accessToken`, `x-authorization` and `X-Api-Key` are left out of mock inputs and traces.
+  `_apikey` and `_authorization` join the credential suffixes.
+- **Breaking: shared call helpers move to `zamp_sdk.decorated_calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
+  now `zamp_sdk.decorated_calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.decorated_calls.constants`.
+
 ## 2.1.0
 
 - **Changed: the `zamp_sdk.db` helpers (`datasets.table/tables/execute/transaction/stream/create/drop`) default to

@@ -11,6 +11,7 @@ from zamp_sdk.context import (
     clear_channel_context,
     current_branch_context,
     current_eval_trial_id,
+    current_mock_case_id,
     resolve_channel_context,
     resolve_context,
 )
@@ -31,6 +32,7 @@ def _clear_zamp_env(monkeypatch):
         "ZAMP_ENVIRONMENT",
         "ZAMP_TOOL_EXECUTION_MODE",
         "ZAMP_EVAL_TRIAL_ID",
+        "ZAMP_MOCK_CASE_ID",
         "ZAMP_SDK_EXECUTION_HOST",
     ):
         monkeypatch.delenv(var, raising=False)
@@ -91,6 +93,33 @@ class TestCurrentEvalTrialId:
 
         with bind_metadata_context(None):
             assert current_eval_trial_id() is None
+
+
+class TestCurrentMockCaseId:
+    def test_none_outside_a_mock_case(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "run1-1-item1-1")
+        assert current_mock_case_id() is None
+
+    def test_reads_the_injected_id(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_MOCK_CASE_ID", "case-1")
+        assert current_mock_case_id() == "case-1"
+
+    def test_blank_is_none(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_MOCK_CASE_ID", "")
+        assert current_mock_case_id() is None
+
+    def test_actions_hub_reads_the_flat_bound_mock_case_id(self, monkeypatch, bind_metadata_context):
+        monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
+        monkeypatch.setenv("ZAMP_MOCK_CASE_ID", "from-env")
+
+        with bind_metadata_context({"mock_case_id": "case-1", "eval_trial_id": "run1-1-item1-1"}):
+            assert current_mock_case_id() == "case-1"
+
+    def test_actions_hub_none_when_the_context_has_no_id(self, monkeypatch, bind_metadata_context):
+        monkeypatch.setenv("ZAMP_SDK_EXECUTION_HOST", "actions_hub")
+
+        with bind_metadata_context({"eval_trial_id": "run1-1-item1-1"}):
+            assert current_mock_case_id() is None
 
 
 class TestResolveContext:
