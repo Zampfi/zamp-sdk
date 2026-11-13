@@ -14,8 +14,23 @@
 - **Breaking: shared call helpers move to `zamp_sdk.decorated_calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
   now `zamp_sdk.decorated_calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.decorated_calls.constants`.
 - **The `mock_call` request over HTTP carries no mock case** (no `X-MOCK-CASE-ID`). On the gateway the run's context
-  still carries it, so zamp-sdk relies on pantheon's `mock_call` and zamp-executor's `call_external_action` not being
-  mockable (the default), so the gateway never asks mocks about the ask itself.
+  still carries it, so zamp-sdk relies on no case's rules naming pantheon's `mock_call` or zamp-executor's
+  `call_external_action`, so the gateway never asks mocks about the ask itself.
+
+## 2.1.0
+
+- **Changed: the `zamp_sdk.db` helpers (`datasets.table/tables/execute/transaction/stream/create/drop`) default to
+  `ExecutionMode.INLINE`** when no `execution_mode` is given on the API host (sandbox scripts, SDK programs); the ActionsHub host (zamp-executor) sends no default, as before. Pass `ExecutionMode.DURABLE` to opt out (long
+  statements, retries). `ActionExecutor.execute`'s own default is unchanged: `None` there still means durable.
+
+## 2.0.2
+
+- **Fixed: `datasets` calls in a code workflow read the answer from inside the action gateway's envelope.** On the
+  actions-hub host the gateway returns `{"id", "status", "result", "error"}`, and the bridge looked for its keys on the
+  envelope. `datasets.table()` raised `dataset ... was not found, or you have no access to it` for a table that
+  exists, and `datasets.execute()` returned `[]` without raising for a failed statement. The bridge now unwraps
+  `result`, and a status other than `COMPLETED` raises `AgentDbError` with the platform's error, `sqlstate` and
+  statement index.
 
 ## 2.0.1
 

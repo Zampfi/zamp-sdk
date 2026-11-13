@@ -152,8 +152,92 @@ class TestExecutionModePassthrough:
         assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
 
     @pytest.mark.asyncio
-    async def test_mode_defaults_to_none(self):
+    async def test_mode_defaults_to_inline(self):
+        from zamp_sdk.action_executor import ExecutionMode
+
         with patch(_EXECUTE, new=AsyncMock(return_value={})) as mock:
             await actions.call("a", {})
 
+        assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
+
+    @pytest.mark.asyncio
+    async def test_explicit_durable_wins_over_the_default(self):
+        from zamp_sdk.action_executor import ExecutionMode
+
+        with patch(_EXECUTE, new=AsyncMock(return_value={})) as mock:
+            await actions.call("a", {}, execution_mode=ExecutionMode.DURABLE)
+
+        assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.DURABLE
+
+    @pytest.mark.asyncio
+    async def test_no_default_mode_off_the_api_host(self):
+        from zamp_sdk.context import ExecutionHost
+
+        with (
+            patch("zamp_sdk.db.utils.actions.current_execution_host", return_value=ExecutionHost.ACTIONS_HUB),
+            patch(_EXECUTE, new=AsyncMock(return_value={})) as mock,
+        ):
+            await actions.call("a", {})
+
         assert mock.await_args.kwargs["execution_mode"] is None
+
+    @pytest.mark.asyncio
+    async def test_explicit_mode_wins_off_the_api_host(self):
+        from zamp_sdk.action_executor import ExecutionMode
+        from zamp_sdk.context import ExecutionHost
+
+        with (
+            patch("zamp_sdk.db.utils.actions.current_execution_host", return_value=ExecutionHost.ACTIONS_HUB),
+            patch(_EXECUTE, new=AsyncMock(return_value={})) as mock,
+        ):
+            await actions.call("a", {}, execution_mode=ExecutionMode.INLINE)
+
+        assert mock.await_args.kwargs["execution_mode"] is ExecutionMode.INLINE
+
+
+class TestGatewayEnvelope:
+    """The executor's gateway returns ``{"id", "status", "result", "error"}`` and reports a
+    failed action as a value. The bridge must read the answer from ``result`` and raise on
+    a failed status, or every caller looks for its keys on the wrapper and finds nothing."""
+
+    @pytest.mark.asyncio
+    async def test_the_answer_is_read_from_inside_the_envelope(self):
+        envelope = {"id": "a1", "status": "COMPLETED", "result": {"datasets": [{"table_name": "t"}]}, "error": None}
+
+        with patch(_EXECUTE, new=AsyncMock(return_value=envelope)):
+            assert await actions.call("agent_db_describe_dataset", {}) == {"datasets": [{"table_name": "t"}]}
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", ["FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"])
+    async def test_a_failed_status_raises_with_the_platform_error(self, status):
+        envelope = {
+            "id": "a1",
+            "status": status,
+            "result": None,
+            "error": "statement 2 failed [sqlstate=23505]: duplicate key",
+        }
+
+        with patch(_EXECUTE, new=AsyncMock(return_value=envelope)):
+            with pytest.raises(AgentDbError) as exc:
+                await actions.call("agent_db_execute_sql", {})
+
+        assert exc.value.sqlstate == "23505"
+        assert exc.value.statement_index == 2
+        assert exc.value.action_status == status
+        assert exc.value.action_id == "a1"
+
+    @pytest.mark.asyncio
+    async def test_success_false_inside_the_envelope_still_raises(self):
+        """The silent twin: a completed execute whose body reports a failed statement."""
+        envelope = {
+            "id": "a1",
+            "status": "COMPLETED",
+            "result": {"results": [], "success": False, "error": "statement 1 failed [sqlstate=42703]: no column"},
+            "error": None,
+        }
+
+        with patch(_EXECUTE, new=AsyncMock(return_value=envelope)):
+            with pytest.raises(AgentDbError) as exc:
+                await actions.call("agent_db_execute_sql", {})
+
+        assert exc.value.sqlstate == "42703"

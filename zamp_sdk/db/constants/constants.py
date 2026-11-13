@@ -4,11 +4,17 @@ from __future__ import annotations
 
 from sqlalchemy.dialects import postgresql
 
+from zamp_sdk.action_executor import ExecutionMode
+
 # ─── Platform action names (the agent-db activities the bridge calls) ───
 ACTION_EXECUTE_SQL = "agent_db_execute_sql"
 ACTION_DESCRIBE_DATASET = "agent_db_describe_dataset"
 ACTION_CREATE_DATASET = "agent_db_create_dataset"
 ACTION_DROP_DATASET = "agent_db_drop_dataset"
+
+# Mode used on the API host (sandbox scripts, SDK callers) when the caller passes none: the platform
+# runs agent-DB actions inline. Other hosts (zamp-executor's ActionsHub) send no default.
+API_HOST_DEFAULT_EXECUTION_MODE = ExecutionMode.INLINE
 
 # The auto-injected primary key every agent-db dataset carries.
 ID_COLUMN = "id"
