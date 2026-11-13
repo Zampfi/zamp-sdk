@@ -279,6 +279,21 @@ entries = await evals.read_trace()        # the trial's calls so far; [] outside
   Generator functions cannot be decorated.
 - Only an observed step records a `parent`; a mocked call's trace entry does not.
 
+## When a tool call needs approval
+
+A workspace can require a human's approval before a tool runs. When it does, the platform refuses the call with the
+action status `APPROVAL_REQUIRED` (not a failure, and not something to keep polling), and the SDK **stops your code
+at that call** so it cannot carry on without the approval. The platform shows an approval card and re-runs the code
+once it is granted. Like `request_user_input`, how it stops depends on the host:
+
+| Host | What happens |
+|------|--------------|
+| Sandbox script | Prints `__ZAMP_SDK_TOOL_APPROVAL__ {"policy_result_id": ..., "action_name": ...}` and exits with code `43` |
+| Code-executor workflow | Raises `zamp_sdk.ToolApprovalRequired` (`.policy_result_id`, `.action_name`); the executor ends the phase |
+
+Both are deliberately uncatchable by `except Exception`: the script exits, and `ToolApprovalRequired` derives from
+`BaseException`. Do not catch it; if you need cleanup, use `finally`.
+
 ## Error Handling
 
 | Exception | When |

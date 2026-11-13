@@ -16,14 +16,20 @@ from zamp_sdk.action_executor.constants.polling import (
 )
 from zamp_sdk.action_executor.constants.routes import Route
 from zamp_sdk.action_executor.constants.statuses import (
+    APPROVAL_REQUIRED_STATUSES,
     IN_PROGRESS_STATUSES,
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
     ActionStatus,
 )
+from zamp_sdk.action_executor.constants.tool_approval import (
+    SDK_TOOL_APPROVAL_EXIT_CODE,
+    SDK_TOOL_APPROVAL_MARKER,
+)
 
 __all__ = [
     "ACTION_ENVELOPE_KEYS",
+    "APPROVAL_REQUIRED_STATUSES",
     "BRANCH_HEADERS",
     "EVAL_TRIAL_ID_HEADER",
     "ActionStatus",
@@ -39,6 +45,8 @@ __all__ = [
     "POST_RETRY_MAX_INTERVAL_SECONDS",
     "POST_RETRY_TIMEOUT_SECONDS",
     "Route",
+    "SDK_TOOL_APPROVAL_EXIT_CODE",
+    "SDK_TOOL_APPROVAL_MARKER",
     "SUCCESS_STATUSES",
     "TERMINAL_FAILURE_STATUSES",
 ]

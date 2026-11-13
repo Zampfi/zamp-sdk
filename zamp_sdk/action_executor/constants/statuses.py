@@ -8,6 +8,7 @@ class ActionStatus(StrEnum):
     CANCELED = "CANCELED"
     TERMINATED = "TERMINATED"
     TIMED_OUT = "TIMED_OUT"
+    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
 
 
 SUCCESS_STATUSES = frozenset({ActionStatus.COMPLETED})
@@ -20,3 +21,5 @@ TERMINAL_FAILURE_STATUSES = frozenset(
     }
 )
 IN_PROGRESS_STATUSES = frozenset({ActionStatus.RUNNING})
+# Refused until a human approves the call: not a failure, and not a state to keep polling.
+APPROVAL_REQUIRED_STATUSES = frozenset({ActionStatus.APPROVAL_REQUIRED})

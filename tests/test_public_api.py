@@ -114,6 +114,7 @@ class TestPublicApi:
             "user_input_from",
             "ChannelContext",
             "ChannelType",
+            "ToolApprovalRequired",
             "ToolExecutionMode",
             "bind_channel_context",
             "clear_channel_context",

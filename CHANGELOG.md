@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.2.0
+
+- **Added: a tool call that needs a human's approval stops the calling code.** The platform refuses such a call with
+  the new action status `APPROVAL_REQUIRED` and a `policy_result_id`. The SDK handles it on every route (inline,
+  durable poll, gateway). In a sandbox script it prints `__ZAMP_SDK_TOOL_APPROVAL__ {"policy_result_id", "action_name"}`
+  and exits with code `43`, like `request_user_input`. In a code-executor workflow it raises the new
+  `zamp_sdk.ToolApprovalRequired`, a `BaseException` (so `except Exception` cannot swallow it) carrying
+  `policy_result_id` and `action_name`. Unknown statuses still raise `RuntimeError`.
+
 ## 2.1.0
 
 - **Changed: the `zamp_sdk.db` helpers (`datasets.table/tables/execute/transaction/stream/create/drop`) default to

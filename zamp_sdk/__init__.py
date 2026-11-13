@@ -1,6 +1,7 @@
 from zamp_sdk import evals, mocks
 from zamp_sdk.action_executor import ActionExecutor, ExecutionMode
 from zamp_sdk.action_executor.models import RetryPolicy, SdkConfig
+from zamp_sdk.action_executor.utils import ToolApprovalRequired
 from zamp_sdk.context import (
     ChannelContext,
     ChannelType,
@@ -59,6 +60,7 @@ __all__ = [
     "BaseWorkflow",
     "ChannelContext",
     "ChannelType",
+    "ToolApprovalRequired",
     "ToolExecutionMode",
     "ContentBlock",
     "ContentBlockType",
