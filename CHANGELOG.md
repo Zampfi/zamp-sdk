@@ -10,7 +10,7 @@
   reply, or an answered value that does not fit the return type. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
 - **Credential names are matched after splitting camelCase boundaries, lowercasing, and reading `-` and spaces as
   `_`**, so `apiKey`, `accessToken`, `x-authorization` and `X-Api-Key` are left out of mock inputs and traces.
-  `_authorization` joins the credential suffixes.
+  `_apikey` and `_authorization` join the credential suffixes.
 - **Breaking: shared call helpers move to `zamp_sdk.decorated_calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
   now `zamp_sdk.decorated_calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.decorated_calls.constants`.
 
