@@ -50,6 +50,32 @@ def _assert_halted(host: str, raised: pytest.ExceptionInfo, capsys, action_name:
         assert _POLICY_ID in str(raised.value) and action_name in str(raised.value)
 
 
+@pytest.mark.parametrize("missing", [{}, {"policy_result_id": None}, {"policy_result_id": ""}])
+class TestMissingPolicyResultId:
+    """Nothing can approve such a response, so it is a plain error on both hosts, not a halt."""
+
+    _BAD = {"id": "act-9", "status": "APPROVAL_REQUIRED", "result": None, "error": "x"}
+
+    def test_inline(self, host, missing):
+        with pytest.raises(RuntimeError, match="Action act-9 APPROVAL_REQUIRED without a policy_result_id"):
+            ActionExecutor._result_or_raise({**self._BAD, **missing}, "act-9", action_name="send_email")
+
+    async def test_poll(self, host, missing):
+        client = AsyncMock()
+        client.get.return_value = {**self._BAD, **missing}
+        with (
+            patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock),
+            pytest.raises(RuntimeError, match="Action act-9 APPROVAL_REQUIRED without a policy_result_id"),
+        ):
+            await ActionExecutor._poll_action_result(client, "act-9", action_name="send_email")
+
+    async def test_gateway(self, host, missing):
+        request = ActionRequest(action_name="send_email", params={})
+        gateway = AsyncMock(return_value={**self._BAD, **missing})
+        with pytest.raises(RuntimeError, match="Action act-9 APPROVAL_REQUIRED without a policy_result_id"):
+            await ActionExecutor._execute_via_gateway(request, gateway)
+
+
 def test_marker_and_exit_code_match_the_platform():
     assert SDK_TOOL_APPROVAL_MARKER == "__ZAMP_SDK_TOOL_APPROVAL__"
     assert SDK_TOOL_APPROVAL_EXIT_CODE == 43

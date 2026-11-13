@@ -148,7 +148,7 @@ class ActionExecutor:
         return result
 
     @staticmethod
-    def _halt_for_tool_approval(data: dict, action_name: str) -> NoReturn:
+    def _halt_for_tool_approval(data: dict, action_id: str, action_name: str) -> NoReturn:
         """Stop the calling code: the platform refused the call until a human approves it.
 
         Exits rather than raises in a sandbox script, for the reason ``request_user_input``
@@ -157,6 +157,9 @@ class ActionExecutor:
         ``ToolApprovalRequired``, a ``BaseException`` the executor catches to end the phase.
         """
         policy_result_id = data.get("policy_result_id")
+        if not policy_result_id:
+            # Malformed: nothing could approve this call, so halting would strand the run.
+            raise RuntimeError(f"Action {action_id} APPROVAL_REQUIRED without a policy_result_id")
         if current_execution_host() is ExecutionHost.ACTIONS_HUB:
             raise ToolApprovalRequired(policy_result_id, action_name)
         print(tool_approval_marker_line(policy_result_id, action_name), flush=True)
@@ -253,7 +256,7 @@ class ActionExecutor:
             and ACTION_ENVELOPE_KEYS.issubset(result)
             and result["status"] in APPROVAL_REQUIRED_STATUSES
         ):
-            cls._halt_for_tool_approval(result, request.action_name)
+            cls._halt_for_tool_approval(result, result["id"], request.action_name)
         return result
 
     @staticmethod
@@ -518,7 +521,7 @@ class ActionExecutor:
         if action_status in SUCCESS_STATUSES:
             return data.get("result")
         if action_status in APPROVAL_REQUIRED_STATUSES:
-            ActionExecutor._halt_for_tool_approval(data, action_name)
+            ActionExecutor._halt_for_tool_approval(data, action_id, action_name)
         if action_status in TERMINAL_FAILURE_STATUSES:
             raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
         raise RuntimeError(f"Action {action_id} unexpected status: {action_status}")
@@ -567,7 +570,7 @@ class ActionExecutor:
             if action_status in SUCCESS_STATUSES:
                 return data.get("result")
             if action_status in APPROVAL_REQUIRED_STATUSES:
-                cls._halt_for_tool_approval(data, action_name)
+                cls._halt_for_tool_approval(data, action_id, action_name)
             if action_status in TERMINAL_FAILURE_STATUSES:
                 raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
             if action_status not in IN_PROGRESS_STATUSES:
