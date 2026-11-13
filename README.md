@@ -244,8 +244,7 @@ except mocks.MockFailedError:             # mocks could not answer this call
 - **`output_schema`** is the return type's JSON schema, or `None` without an annotation or when none can be built.
   For `httpx.Response` it is the schema of the `status`, `body`, `content`, `headers` object a mock answers with.
 - **Where the ask goes.** `ActionExecutor` routes `mock_call` like any action: in a sandbox over HTTP; on an actions
-  hub through the registered action gateway (zamp-executor always registers one); in a process that registers
-  `mock_call` itself (pantheon), in-process.
+  hub through the registered action gateway (zamp-executor always registers one).
 - **Mock calls carry no key**; the platform's mock config decides the reply.
 - **Bytes are base64.** A mock value for a `bytes` return type must be base64 text.
 - **Sync functions** work in a sandbox. In workflow code on ActionsHub, make a decorated function `async`:
