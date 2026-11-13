@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator
-from contextlib import contextmanager
-from contextvars import ContextVar
 from typing import Any, Optional
 
 from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
@@ -23,8 +20,6 @@ from zamp_sdk.context.env import (
     ENV_TOOL_EXECUTION_MODE,
 )
 from zamp_sdk.context.execution_host import ExecutionHost, current_execution_host
-
-_mock_case_withheld: ContextVar[bool] = ContextVar("zamp_mock_case_withheld", default=False)
 
 
 def resolve_context() -> dict[str, Any]:
@@ -56,19 +51,7 @@ def current_eval_trial_id() -> str | None:
 
 
 def current_mock_case_id() -> str | None:
-    if _mock_case_withheld.get():
-        return None
-
     return _current_run_value(ENV_MOCK_CASE_ID, MOCK_CASE_ID_FIELD)
-
-
-@contextmanager
-def without_mock_case() -> Iterator[None]:
-    token = _mock_case_withheld.set(True)
-    try:
-        yield
-    finally:
-        _mock_case_withheld.reset(token)
 
 
 def _current_run_value(env_name: str, context_field: str) -> str | None:

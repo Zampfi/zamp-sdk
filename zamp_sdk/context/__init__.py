@@ -33,7 +33,6 @@ from zamp_sdk.context.resolve import (
     current_mock_case_id,
     resolve_channel_context,
     resolve_context,
-    without_mock_case,
 )
 
 __all__ = [
@@ -68,5 +67,4 @@ __all__ = [
     "current_execution_host",
     "resolve_channel_context",
     "resolve_context",
-    "without_mock_case",
 ]

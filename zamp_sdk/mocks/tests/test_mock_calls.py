@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
-from zamp_sdk import ActionExecutor, mocks
+from zamp_sdk import mocks
 from zamp_sdk.decorated_calls.utils import arguments_without_credentials
 from zamp_sdk.mocks import mockable
 from zamp_sdk.mocks.models import MockCall, MockDecision
@@ -171,33 +171,6 @@ class TestReplyModels:
                 {"case_id": "c", "name": "n", "input": {}, "output_schema": None, "call_id": "i", "extra": 1}
             )
         assert set(MockCall.model_fields) == {"case_id", "name", "input", "output_schema", "call_id"}
-
-
-class TestTheAskCarriesNoCase:
-    async def test_mock_call_request_has_no_case_header_while_the_real_call_does(self, in_mock_case, monkeypatch):
-        monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
-        monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
-        results = iter([{"decision": "run_real"}, {"id": "O1", "total": 7}])
-        headers_by_action = []
-
-        def client(base_url, default_headers):
-            def post(endpoint, data):
-                headers_by_action.append((data["action_name"], default_headers.get("X-MOCK-CASE-ID")))
-                return {"id": "action-1"}
-
-            http = AsyncMock()
-            http.post.side_effect = post
-            http.get.return_value = {"status": "COMPLETED", "result": next(results)}
-            return http
-
-        @mockable("erp.order")
-        async def fetch_real_order(order_id: str) -> Order:
-            return Order.model_validate(await ActionExecutor.execute("erp_fetch_order", {"order_id": order_id}))
-
-        with patch("zamp_sdk.action_executor.action_executor.HttpClient", side_effect=client):
-            assert await fetch_real_order("O1") == Order(id="O1", total=7)
-
-        assert headers_by_action == [("mock_call", None), ("erp_fetch_order", "case-1")]
 
 
 class TestOnTheActionsHub:

@@ -6,7 +6,6 @@ from pydantic import BaseModel
 
 from zamp_sdk import ActionExecutor, mocks
 from zamp_sdk.action_executor.utils.http_client import HttpClientError
-from zamp_sdk.context import current_mock_case_id
 from zamp_sdk.mocks import mockable
 
 EXECUTOR = "zamp_sdk.action_executor.action_executor"
@@ -129,21 +128,7 @@ class TestGate8WhereTheCaseComesFrom:
         execute_action.assert_not_awaited()
 
 
-class TestGate6TheAskWithholdsTheCase:
-    async def test_gate_6_the_case_is_withheld_during_the_ask_and_restored_after(self, in_mock_case):
-        seen = []
-
-        async def execute(action_name, params, **kwargs):
-            seen.append((action_name, current_mock_case_id()))
-            return {"decision": "run_real"}
-
-        with patch(f"{EXECUTOR}.ActionExecutor.execute", side_effect=execute):
-            await fetch_invoice("I1")
-            fetch_invoice_sync("I2")
-
-        assert seen == [("mock_call", None), ("mock_call", None)]
-        assert current_mock_case_id() == "case-1"
-
+class TestGate6TheAsk:
     async def test_gate_6_a_mockable_called_while_another_asks_is_still_asked(self, in_mock_case):
         started, release = asyncio.Event(), asyncio.Event()
         asked = []
@@ -227,9 +212,7 @@ class TestCall20SandboxAskRetries:
 
 
 class TestAskRunsThroughTheRealExecutorEntry:
-    async def test_gate_6_real_execute_routes_the_ask_over_http_without_the_case_header(
-        self, in_mock_case, monkeypatch
-    ):
+    async def test_gate_6_real_execute_routes_the_ask_over_http_with_the_case_header(self, in_mock_case, monkeypatch):
         monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
         monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
         headers = []
@@ -245,4 +228,4 @@ class TestAskRunsThroughTheRealExecutorEntry:
             await fetch_invoice("I1")
             await ActionExecutor.execute("erp_other", {"x": 1})
 
-        assert headers == [None, "case-1"]
+        assert headers == ["case-1", "case-1"]

@@ -13,9 +13,6 @@
   `_authorization` joins the credential suffixes.
 - **Breaking: shared call helpers move to `zamp_sdk.decorated_calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
   now `zamp_sdk.decorated_calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.decorated_calls.constants`.
-- **The `mock_call` request over HTTP carries no mock case** (no `X-MOCK-CASE-ID`). On the gateway the run's context
-  still carries it, so zamp-sdk relies on no case's rules naming pantheon's `mock_call` or zamp-executor's
-  `call_external_action`, so the gateway never asks mocks about the ask itself.
 
 ## 2.1.0
 

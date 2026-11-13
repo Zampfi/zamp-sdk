@@ -3,7 +3,6 @@ from typing import Any
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from zamp_sdk.context import without_mock_case
 from zamp_sdk.decorated_calls.constants import MOCK_CALL_ACTION_NAME
 from zamp_sdk.decorated_calls.utils import (
     arguments_without_credentials,
@@ -37,8 +36,7 @@ def build_mock_call(
 
 
 async def ask_mocks(call: MockCall) -> MockDecision:
-    with without_mock_case():
-        reply = await call_platform_action(MOCK_CALL_ACTION_NAME, call.model_dump(mode="json"))
+    reply = await call_platform_action(MOCK_CALL_ACTION_NAME, call.model_dump(mode="json"))
     try:
         return _mock_decision_adapter.validate_python(reply)
     except ValidationError:
