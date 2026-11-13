@@ -18,14 +18,14 @@ class MockCall(BaseModel):
 
 
 class Returned(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     kind: Literal["returned"] = Field(description="The call returned")
     value: JsonValue = Field(description="What the call returned")
 
 
 class Raised(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     kind: Literal["raised"] = Field(description="The call raised")
     type: str = Field(description="The exception's type name")
@@ -33,7 +33,7 @@ class Raised(BaseModel):
 
 
 class MockFailed(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     kind: Literal["mock_failed"] = Field(description="Mocks could not answer; the call fails and is not retried")
     message: str = Field(description="Neutral text the subject sees")
@@ -43,13 +43,13 @@ MockOutcome: TypeAlias = Annotated[Returned | Raised | MockFailed, Field(discrim
 
 
 class RunReal(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     decision: Literal["run_real"] = Field(description="The real call runs")
 
 
 class Answered(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     decision: Literal["answered"] = Field(description="Mocks answered the call")
     outcome: MockOutcome = Field(description="What the call is answered with")

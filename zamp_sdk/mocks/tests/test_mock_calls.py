@@ -119,7 +119,6 @@ class TestDecision:
         "reply",
         [
             {"kind": "returned", "value": {"id": "O1", "total": 7}},
-            {"decision": "answered", "outcome": {"kind": "mock_failed", "code": "MOCK_FAILED", "message": "m"}},
             {"decision": "skipped"},
             None,
         ],
@@ -129,6 +128,16 @@ class TestDecision:
 
         with pytest.raises(mocks.MockFailedError, match="^erp.order: mocks replied with something that is not a"):
             await fetch_order("O1")
+        assert real_calls == []
+
+    async def test_a_field_pantheon_adds_later_is_ignored(self, in_mock_case, execute_action):
+        execute_action.return_value = {
+            "decision": "answered",
+            "outcome": {"kind": "returned", "value": {"id": "O1", "total": 7}, "recorded_at": "t"},
+            "call_id": "c",
+        }
+
+        assert await fetch_order("O1") == Order(id="O1", total=7)
         assert real_calls == []
 
     async def test_a_rejected_reply_is_raised_without_its_cause_chain(self, in_mock_case, execute_action):
@@ -154,8 +163,13 @@ class TestReplyModels:
         ]
 
         assert [decisions.dump_python(decisions.validate_python(reply), mode="json") for reply in wire] == wire
+        assert decisions.dump_python(decisions.validate_python({"decision": "run_real", "extra": 1})) == {
+            "decision": "run_real"
+        }
         with pytest.raises(ValidationError):
-            decisions.validate_python({"decision": "run_real", "extra": 1})
+            MockCall.model_validate(
+                {"case_id": "c", "name": "n", "input": {}, "output_schema": None, "call_id": "i", "extra": 1}
+            )
         assert set(MockCall.model_fields) == {"case_id", "name", "input", "output_schema", "call_id"}
 
 
