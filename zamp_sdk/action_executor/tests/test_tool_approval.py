@@ -13,6 +13,7 @@ from zamp_sdk.action_executor.constants import (
 )
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import ActionRequest
+from zamp_sdk.action_executor.utils import HttpClientError
 from zamp_sdk.context import ENV_EXECUTION_HOST, ExecutionHost
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
@@ -187,3 +188,65 @@ class TestApi:
         ):
             await ActionExecutor.execute("send_email", {}, execution_mode=mode)
         _assert_halted("sandbox", raised, capsys)
+
+
+def _transport(responses: dict[tuple[str, str], tuple[int, dict]]):
+    """A stand-in for ``aiohttp.ClientSession`` so the REAL ``HttpClient`` parses each response."""
+
+    def _session(*_args, **_kwargs):
+        def _request(method, url, **_kw):
+            status, body = responses[(method, url.removeprefix("https://api.zamp.test"))]
+            response = AsyncMock()
+            response.ok = 200 <= status < 300
+            response.status = status
+            response.text = AsyncMock(return_value=json.dumps(body))
+            ctx = AsyncMock()
+            ctx.__aenter__.return_value = response
+            ctx.__aexit__.return_value = False
+            return ctx
+
+        session = AsyncMock()
+        session.__aenter__.return_value = session
+        session.__aexit__.return_value = False
+        session.request = _request
+        return session
+
+    return patch("aiohttp.ClientSession", side_effect=_session)
+
+
+@pytest.mark.parametrize("mode", [ExecutionMode.INLINE, ExecutionMode.DURABLE])
+class TestThroughRealHttpClient:
+    """The platform answers APPROVAL_REQUIRED with HTTP 200 and a non-null ``error``, which
+    ``HttpClient`` raises on; the executor must still halt rather than surface that error."""
+
+    async def _run(self, mode, responses):
+        config = type("Cfg", (), {"base_url": "https://api.zamp.test", "auth_token": "t"})()
+        with _transport(responses), patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock):
+            await ActionExecutor._execute_action("send_email", {}, config=config, execution_mode=mode)
+
+    def _responses(self, mode):
+        if mode is ExecutionMode.INLINE:
+            return {("POST", "/actions"): (200, _BODY)}
+        return {
+            ("POST", "/actions"): (200, {"id": "act-1", "status": "PENDING", "result": None, "error": None}),
+            ("GET", "/actions/act-1"): (200, _BODY),
+        }
+
+    async def test_halts(self, host, mode, capsys):
+        with pytest.raises((SystemExit, ToolApprovalRequired)) as raised:
+            await self._run(mode, self._responses(mode))
+        _assert_halted(host, raised, capsys)
+
+    async def test_missing_policy_result_id_is_runtime_error(self, host, mode):
+        bad = {k: v for k, v in _BODY.items() if k != "policy_result_id"}
+        responses = self._responses(mode)
+        responses[("POST", "/actions") if mode is ExecutionMode.INLINE else ("GET", "/actions/act-1")] = (200, bad)
+        with pytest.raises(RuntimeError, match="APPROVAL_REQUIRED without a policy_result_id"):
+            await self._run(mode, responses)
+
+    async def test_failed_body_still_raises_http_client_error(self, host, mode):
+        failed = {"id": "act-1", "status": "FAILED", "result": None, "error": "boom"}
+        responses = self._responses(mode)
+        responses[("POST", "/actions") if mode is ExecutionMode.INLINE else ("GET", "/actions/act-1")] = (200, failed)
+        with pytest.raises(HttpClientError, match="boom"):
+            await self._run(mode, responses)

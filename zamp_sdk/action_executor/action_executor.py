@@ -466,6 +466,20 @@ class ActionExecutor:
                 elapsed += interval
                 interval = cls._next_post_retry_interval(interval)
 
+    @classmethod
+    def _halt_if_approval_required(cls, exc: HttpClientError, action_name: str) -> None:
+        """Halt when ``exc`` is a 2xx action body that needs approval; otherwise return.
+
+        ``HttpClient`` raises for any 2xx body with a non-null ``error``, and the platform's
+        APPROVAL_REQUIRED body carries one ("<tool> needs approval; ..."). The raised error keeps
+        the body, so it is recognised here rather than special-cased in the generic client.
+        """
+        if exc.status_code is None or not 200 <= exc.status_code < 300:
+            return
+        data = exc.json_body
+        if data is not None and data.get("status") in APPROVAL_REQUIRED_STATUSES:
+            cls._halt_for_tool_approval(data, str(data.get("id")), action_name)
+
     @staticmethod
     def _is_retryable_5xx(exc: HttpClientError) -> bool:
         """A 5xx (server-error) response is transient and worth retrying."""
@@ -486,7 +500,11 @@ class ActionExecutor:
         cls, client: HttpClient, body: dict, action_start_to_close_timeout: timedelta | None
     ) -> Any:
         """POST, then poll until the action reaches a terminal state."""
-        response = await cls._post_action(client, "/actions", body)
+        try:
+            response = await cls._post_action(client, "/actions", body)
+        except HttpClientError as exc:
+            cls._halt_if_approval_required(exc, body["action_name"])
+            raise
         action_id = response["id"]
         poll_timeout = POLL_TIMEOUT_SECONDS
         if action_start_to_close_timeout is not None:
@@ -506,9 +524,13 @@ class ActionExecutor:
             else INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS
         )
         # Never the 5xx-retry helper: a failed inline POST may already have run the action.
-        response = await client.post(
-            "/actions", data=body, timeout=math.ceil(server_timeout + INLINE_RESPONSE_GRACE_SECONDS)
-        )
+        try:
+            response = await client.post(
+                "/actions", data=body, timeout=math.ceil(server_timeout + INLINE_RESPONSE_GRACE_SECONDS)
+            )
+        except HttpClientError as exc:
+            cls._halt_if_approval_required(exc, body["action_name"])
+            raise
         return cls._result_or_raise(response, response["id"], action_name=body["action_name"])
 
     @staticmethod
@@ -550,6 +572,7 @@ class ActionExecutor:
             try:
                 data = await client.get(f"/actions/{action_id}")
             except HttpClientError as exc:
+                cls._halt_if_approval_required(exc, action_name)
                 # A transient 5xx while polling shouldn't fail the action: keep
                 # polling (with backoff) until the action completes or the
                 # overall poll_timeout is hit. Non-5xx errors still propagate.
