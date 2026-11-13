@@ -31,6 +31,7 @@ from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfi
 from zamp_sdk.action_executor.routing import resolve_route
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError, ToolApprovalRequired
 from zamp_sdk.action_executor.utils.errors import tool_approval_marker_line
+from zamp_sdk.action_executor.utils.tool_approval_tracking import record_tool_approval
 from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import (
     ENV_AUTH_TOKEN,
@@ -130,6 +131,10 @@ class ActionExecutor:
             # looking for. The block was already closed as failed by the route that opened it.
             cls._capture_action_step(action_name, params, None, error=exc)
             raise
+        except ToolApprovalRequired as halt:
+            # Not an ``Exception``, so the clause above misses it: record the halted call too.
+            cls._capture_action_step(action_name, params, None, error=halt)
+            raise
         cls._capture_action_step(action_name, params, result)
         return result
 
@@ -154,14 +159,19 @@ class ActionExecutor:
         Exits rather than raises in a sandbox script, for the reason ``request_user_input``
         does: a raise is catchable, and an author's ``except Exception`` would carry on without
         the approval. The code-executor host cannot exit inside a workflow, so there it raises
-        ``ToolApprovalRequired``, a ``BaseException`` the executor catches to end the phase.
+        ``ToolApprovalRequired``, a ``BaseException`` the executor catches to end the phase. The
+        halt is also recorded (see ``tool_approval_tracking``): authored code can lose the raise
+        (``gather(return_exceptions=True)``, a dropped task, a ``TaskGroup``), and the host ends
+        the phase from the record instead.
         """
         policy_result_id = data.get("policy_result_id")
         if not policy_result_id:
             # Malformed: nothing could approve this call, so halting would strand the run.
             raise RuntimeError(f"Action {action_id} APPROVAL_REQUIRED without a policy_result_id")
         if current_execution_host() is ExecutionHost.ACTIONS_HUB:
-            raise ToolApprovalRequired(policy_result_id, action_name)
+            halt = ToolApprovalRequired(policy_result_id, action_name)
+            record_tool_approval(halt)
+            raise halt
         print(tool_approval_marker_line(policy_result_id, action_name), flush=True)
         logger.info("tool call needs approval, halting", action_name=action_name, policy_result_id=policy_result_id)
         sys.exit(SDK_TOOL_APPROVAL_EXIT_CODE)
@@ -230,7 +240,9 @@ class ActionExecutor:
     async def _execute_via_gateway(cls, request: ActionRequest, gateway: Callable[..., Any]) -> Any:
         """Hand the action to the host's gateway, showing the call in the live message.
 
-        Returns the gateway's envelope unchanged — only the block is unwrapped.
+        Returns the gateway's envelope unchanged — only the block is unwrapped. ``return_type`` is
+        applied here, after the approval check, and not by the gateway: a model validated from the
+        envelope would hide the ``APPROVAL_REQUIRED`` status the halt depends on.
         """
         block_id = await open_action_log(
             request.action_name,
@@ -243,7 +255,7 @@ class ActionExecutor:
                 request.action_name,
                 request.params,
                 summary=request.summary,
-                return_type=request.return_type,
+                return_type=None,
                 action_retry_policy=request.action_retry_policy,
                 action_start_to_close_timeout=request.action_start_to_close_timeout,
             )
@@ -257,6 +269,8 @@ class ActionExecutor:
             and result["status"] in APPROVAL_REQUIRED_STATUSES
         ):
             cls._halt_for_tool_approval(result, result["id"], request.action_name)
+        if request.return_type and hasattr(request.return_type, "model_validate"):
+            return request.return_type.model_validate(result)
         return result
 
     @staticmethod
