@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **`evals.read_trace()` reads the `not_rebuildable` outcome.** An external call whose answered reply cannot be rebuilt
+  because a pinned file changed after the run is returned with `NotRebuildableOutcome{kind, message}` instead of failing
+  to parse.
 - **Breaking: `@mocks.mockable` gates on the mock case, not the eval trial.** It asks mocks only when
   `current_mock_case_id()` (env `ZAMP_MOCK_CASE_ID`, or `mock_case_id` on the executor's context) is set, sends
   `MockCall{case_id, name, input, output_schema, call_id}` as the `mock_call` action through `ActionExecutor` on

@@ -62,6 +62,19 @@ class TestReadTrace:
 
         assert entry.outcome.code == "MOCK_FAILED"
 
+    async def test_an_external_call_can_carry_a_not_rebuildable_reply(self, in_eval_trial, execute_action):
+        not_rebuildable = {"kind": "not_rebuildable", "message": "fixtures/o1.pdf changed after the run"}
+        execute_action.return_value = {
+            "entries": [trace_entry("external_call", "erp.order", not_rebuildable, key="O1")]
+        }
+
+        (entry,) = await evals.read_trace()
+
+        assert (entry.outcome.kind, entry.outcome.message) == (
+            "not_rebuildable",
+            "fixtures/o1.pdf changed after the run",
+        )
+
     async def test_an_entry_keeps_any_name_key_and_error_type(self, in_eval_trial, execute_action, raised):
         execute_action.return_value = {
             "entries": [trace_entry("external_call", "Mail.Fetch", raised("TimeoutError", "late"), key="notes #2.msg")]
