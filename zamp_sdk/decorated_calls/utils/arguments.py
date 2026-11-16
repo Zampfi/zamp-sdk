@@ -52,6 +52,11 @@ def _without_credentials(value: JsonValue) -> JsonValue:
 
 
 def _is_unsent(name: str) -> bool:
-    normalised = _CAMEL_CASE_BOUNDARY.sub("_", name).lower().replace("-", "_").replace(" ", "_")
+    return any(
+        normalised in UNSENT_ARGUMENT_NAMES or normalised.endswith(UNSENT_ARGUMENT_NAME_SUFFIXES)
+        for normalised in (_normalised(name), _normalised(_CAMEL_CASE_BOUNDARY.sub("_", name)))
+    )
 
-    return normalised in UNSENT_ARGUMENT_NAMES or normalised.endswith(UNSENT_ARGUMENT_NAME_SUFFIXES)
+
+def _normalised(name: str) -> str:
+    return name.lower().replace("-", "_").replace(" ", "_")

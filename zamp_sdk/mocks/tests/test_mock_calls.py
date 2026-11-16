@@ -234,6 +234,10 @@ class TestCredentialNamesAreStrippedInAnyCasing:
             "awsCredential",
             "client_key",
             "clientKey",
+            "APIkey",
+            "PassWord",
+            "passWord",
+            "PassPhrase",
         ],
     )
     def test_a_credential_name_is_not_sent(self, name):

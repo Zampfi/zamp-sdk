@@ -8,8 +8,9 @@
   every route (HTTP in a sandbox, the host's action gateway on the actions hub), and acts out the reply: `RunReal` runs
   the function, `Answered` returns `Returned`, raises `Raised`, or raises `MockFailedError` for `MockFailed`, any other
   reply, or an answered value that does not fit the return type. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
-- **Credential names are matched after splitting camelCase boundaries, lowercasing, and reading `-` and spaces as
-  `_`**, so `apiKey`, `accessToken`, `x-authorization` and `X-Api-Key` are left out of mock inputs and traces.
+- **Credential names are matched after lowercasing and reading `-` and spaces as `_`, both as written and with
+  camelCase boundaries split**, so `apiKey`, `APIkey`, `accessToken`, `passWord`, `x-authorization` and `X-Api-Key`
+  are left out of mock inputs and traces.
   `credential` and `client_key` join the credential names, and `_apikey`, `_authorization`, `_credential` and
   `_client_key` join the credential suffixes.
 - **Breaking: shared call helpers move to `zamp_sdk.decorated_calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
