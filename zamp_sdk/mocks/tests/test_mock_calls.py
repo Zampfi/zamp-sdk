@@ -1,6 +1,7 @@
 import ast
 import sys
 import traceback
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -130,6 +131,20 @@ class TestDecision:
             await fetch_order("O1")
         assert real_calls == []
 
+    async def test_a_return_type_without_a_json_schema_sends_none(
+        self, in_mock_case, execute_action, answered_returned
+    ):
+        @mockable("erp.callback")
+        async def fetch_callback() -> Callable[[], None] | None:
+            raise NotImplementedError
+
+        execute_action.return_value = answered_returned(None)
+
+        await fetch_callback()
+
+        (call,) = sent(execute_action)
+        assert call["output_schema"] is None
+
     async def test_a_field_pantheon_adds_later_is_ignored(self, in_mock_case, execute_action):
         execute_action.return_value = {
             "decision": "answered",
@@ -238,6 +253,10 @@ class TestCredentialNamesAreStrippedInAnyCasing:
             "PassWord",
             "passWord",
             "PassPhrase",
+            "signing_key",
+            "bearer",
+            "dsn",
+            "connection_string",
         ],
     )
     def test_a_credential_name_is_not_sent(self, name):

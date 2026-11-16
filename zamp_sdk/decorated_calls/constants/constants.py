@@ -22,6 +22,10 @@ UNSENT_ARGUMENT_NAMES = frozenset(
         "apikey",
         "cookie",
         "cookies",
+        "signing_key",
+        "bearer",
+        "dsn",
+        "connection_string",
     }
 )
 UNSENT_ARGUMENT_NAME_SUFFIXES = (

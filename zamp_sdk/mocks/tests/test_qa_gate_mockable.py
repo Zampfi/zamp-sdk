@@ -65,7 +65,9 @@ class TestGate7BodyRunsOnlyOnRunReal:
             None,
         ],
     )
-    async def test_gate_7_no_answer_runs_the_body(self, in_mock_case, execute_action, decision):
+    async def test_gate_7_a_reply_that_is_not_run_real_does_not_run_the_body(
+        self, in_mock_case, execute_action, decision
+    ):
         execute_action.return_value = decision
 
         await both("I1")
