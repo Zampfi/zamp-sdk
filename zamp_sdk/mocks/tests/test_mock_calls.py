@@ -222,7 +222,19 @@ class TestLayering:
 
 class TestCredentialNamesAreStrippedInAnyCasing:
     @pytest.mark.parametrize(
-        "name", ["accessToken", "clientSecret", "authToken", "privateKey", "Api-Key", "DB_PASSWORD"]
+        "name",
+        [
+            "accessToken",
+            "clientSecret",
+            "authToken",
+            "privateKey",
+            "Api-Key",
+            "DB_PASSWORD",
+            "credential",
+            "awsCredential",
+            "client_key",
+            "clientKey",
+        ],
     )
     def test_a_credential_name_is_not_sent(self, name):
         sent = arguments_without_credentials({name: "CANARY", "orderId": "O1"})
