@@ -92,6 +92,7 @@ class TestDecision:
         assert await fetch_order("O1") == Order(id="O1", total=-1)
         assert fetch_order_sync("O2") == Order(id="O2", total=-1)
         assert real_calls == ["O1", "O2"]
+        assert execute_action.await_count == 2
 
     async def test_answered_returned_is_returned(self, in_mock_case, execute_action, answered_returned):
         execute_action.return_value = answered_returned({"id": "O1", "total": 7})
