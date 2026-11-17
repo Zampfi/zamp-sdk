@@ -1,7 +1,23 @@
-from zamp_sdk.mocks.models.call_inputs import MockCallInput
 from zamp_sdk.mocks.models.http_response import MockHttpResponse
+from zamp_sdk.mocks.models.mock_call import (
+    Answered,
+    MockCall,
+    MockDecision,
+    MockFailed,
+    MockOutcome,
+    Raised,
+    Returned,
+    RunReal,
+)
 
 __all__ = [
-    "MockCallInput",
+    "Answered",
+    "MockCall",
+    "MockDecision",
+    "MockFailed",
     "MockHttpResponse",
+    "MockOutcome",
+    "Raised",
+    "Returned",
+    "RunReal",
 ]

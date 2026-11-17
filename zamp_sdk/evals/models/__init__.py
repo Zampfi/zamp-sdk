@@ -2,6 +2,7 @@ from zamp_sdk.evals.models.call_inputs import ObservedStepInput, TracedCallInput
 from zamp_sdk.evals.models.outcomes import (
     ExternalCallOutcome,
     MockFailedOutcome,
+    NotRebuildableOutcome,
     ObservedStepOutcome,
     RaisedOutcome,
     ReturnedOutcome,
@@ -12,6 +13,7 @@ __all__ = [
     "ExternalCall",
     "ExternalCallOutcome",
     "MockFailedOutcome",
+    "NotRebuildableOutcome",
     "ObservedStep",
     "ObservedStepInput",
     "ObservedStepOutcome",

@@ -10,7 +10,12 @@ class TracedCall(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     name: str
-    key: str | None = Field(description="Value of the argument the decorator names as key_argument, if it names one")
+    key: str | None = Field(
+        description=(
+            "Value of the argument the decorator names as key_argument, if it names one; "
+            "a mocked call's key is the fixture entry's key values as JSON text"
+        )
+    )
     call_number: int = Field(ge=1, description="Calls of this name and key so far in the trial, this one included")
     invocation_id: str = Field(
         description="Id the SDK gives this call; a retry of the call has the same id, so it keeps its call_number"

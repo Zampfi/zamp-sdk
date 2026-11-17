@@ -429,6 +429,37 @@ class TestExecuteAction:
             "X-EVAL-TRIAL-ID": "run1-1-item1-1",
         }
 
+    async def test_sends_mock_case_header_in_a_mock_case(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
+        monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
+        monkeypatch.delenv("ZAMP_BRANCH_ID", raising=False)
+        monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "run1-1-item1-1")
+        monkeypatch.setenv("ZAMP_MOCK_CASE_ID", "case-1")
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-123"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client) as client_cls:
+            await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
+
+        assert client_cls.call_args.kwargs["default_headers"] == {
+            "Authorization": "Bearer tok",
+            "X-EVAL-TRIAL-ID": "run1-1-item1-1",
+            "X-MOCK-CASE-ID": "case-1",
+        }
+
+    async def test_mock_case_header_not_sent_to_another_deployment(self, monkeypatch):
+        monkeypatch.setenv("ZAMP_BASE_URL", "https://ambient.zamp.test")
+        monkeypatch.setenv("ZAMP_MOCK_CASE_ID", "case-1")
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-123"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client) as client_cls:
+            await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
+
+        assert "X-MOCK-CASE-ID" not in client_cls.call_args.kwargs["default_headers"]
+
     async def test_eval_trial_header_not_sent_to_another_deployment(self, monkeypatch):
         monkeypatch.setenv("ZAMP_BASE_URL", "https://ambient.zamp.test")
         monkeypatch.setenv("ZAMP_EVAL_TRIAL_ID", "run1-1-item1-1")

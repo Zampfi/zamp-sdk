@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+- **`evals.read_trace()` reads the `not_rebuildable` outcome.** An external call whose answered reply cannot be rebuilt
+  because a pinned file changed after the run is returned with `NotRebuildableOutcome{kind, message}` instead of failing
+  to parse.
+- **Breaking: `@mocks.mockable` gates on the mock case, not the eval trial.** It asks mocks only when
+  `current_mock_case_id()` (env `ZAMP_MOCK_CASE_ID`, or `mock_case_id` on the executor's context) is set, sends
+  `MockCall{case_id, name, input, output_schema, call_id}` as the `mock_call` action through `ActionExecutor` on
+  every route (HTTP in a sandbox, the host's action gateway on the actions hub), and acts out the reply: `RunReal` runs
+  the function, `Answered` returns `Returned`, raises `Raised`, or raises `MockFailedError` for `MockFailed`, any other
+  reply, or an answered value that does not fit the return type. The reply models live in `zamp_sdk.mocks.models`. API calls send the case as `X-MOCK-CASE-ID`.
+- **Credential names are matched after lowercasing and reading `-` and spaces as `_`, both as written and with
+  camelCase boundaries split**, so `apiKey`, `APIkey`, `accessToken`, `passWord`, `x-authorization` and `X-Api-Key`
+  are left out of mock inputs and traces.
+  `credential` and `client_key` join the credential names, and `_apikey`, `_authorization`, `_credential` and
+  `_client_key` join the credential suffixes.
+  `signing_key`, `bearer`, `dsn` and `connection_string` join the credential names, matching what Pantheon's log sanitizer redacts.
+- **Breaking: shared call helpers move to `zamp_sdk.decorated_calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
+  now `zamp_sdk.decorated_calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.decorated_calls.constants`.
+- **Breaking: the mock and eval call helpers are removed, renamed or moved.** Moved with the same name, from
+  `zamp_sdk.evals.utils` to `zamp_sdk.decorated_calls.utils`: `bind_arguments`, `new_call_id`, `raise_if_on_actions_hub`,
+  `reject_generator`, `run_blocking`; and from `zamp_sdk.evals.constants` to `zamp_sdk.decorated_calls.constants`:
+  `GENERATOR_FUNCTION_ERROR`, `SYNC_CALL_ON_ACTIONS_HUB_ERROR`, `PLACEHOLDER_CIRCULAR_VALUE`. Renamed, in
+  `zamp_sdk.decorated_calls`: `call_eval_action` is `utils.call_platform_action`, `EVAL_ACTION_FAILED_ERROR` is
+  `constants.PLATFORM_ACTION_FAILED_ERROR`, and `UNTRACED_*` is `UNSENT_*`. Removed: `MockCallInput`, and
+  `answer_from_mock` and `build_mock_call_input` from `zamp_sdk.mocks.utils`; `as_return_type` and `build_exception`
+  are no longer exported from `zamp_sdk.mocks.utils`.
+
 ## 2.1.0
 
 - **Changed: the `zamp_sdk.db` helpers (`datasets.table/tables/execute/transaction/stream/create/drop`) default to

@@ -1,5 +1,5 @@
 from zamp_sdk.action_executor.constants.envelope import ACTION_ENVELOPE_KEYS
-from zamp_sdk.action_executor.constants.headers import BRANCH_HEADERS, EVAL_TRIAL_ID_HEADER
+from zamp_sdk.action_executor.constants.headers import BRANCH_HEADERS, EVAL_TRIAL_ID_HEADER, MOCK_CASE_ID_HEADER
 from zamp_sdk.action_executor.constants.inline import (
     INLINE_RESPONSE_GRACE_SECONDS,
     INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS,
@@ -26,6 +26,7 @@ __all__ = [
     "ACTION_ENVELOPE_KEYS",
     "BRANCH_HEADERS",
     "EVAL_TRIAL_ID_HEADER",
+    "MOCK_CASE_ID_HEADER",
     "ActionStatus",
     "IN_PROGRESS_STATUSES",
     "INLINE_RESPONSE_GRACE_SECONDS",

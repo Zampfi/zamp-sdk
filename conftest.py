@@ -51,9 +51,10 @@ def drained_steps() -> list[dict]:
 
 
 @pytest.fixture(autouse=True)
-def _outside_any_eval_trial(monkeypatch):
+def _outside_any_eval_trial_or_mock_case(monkeypatch):
     monkeypatch.delenv("ZAMP_SDK_EXECUTION_HOST", raising=False)
     monkeypatch.delenv("ZAMP_EVAL_TRIAL_ID", raising=False)
+    monkeypatch.delenv("ZAMP_MOCK_CASE_ID", raising=False)
 
 
 @pytest.fixture
@@ -68,7 +69,26 @@ def in_eval_trial_on_actions_hub(monkeypatch, bind_metadata_context):
 
 
 @pytest.fixture
-def on_actions_hub_outside_a_trial(monkeypatch, bind_metadata_context):
+def in_mock_case(monkeypatch):
+    monkeypatch.setenv("ZAMP_MOCK_CASE_ID", "case-1")
+
+
+@pytest.fixture
+def in_mock_case_on_actions_hub(monkeypatch, bind_metadata_context):
+    with _on_actions_hub(monkeypatch, bind_metadata_context({"mock_case_id": "case-1"})):
+        yield
+
+
+@pytest.fixture
+def in_mocked_eval_trial_on_actions_hub(monkeypatch, bind_metadata_context):
+    with _on_actions_hub(
+        monkeypatch, bind_metadata_context({"eval_trial_id": "run1-1-item1-1", "mock_case_id": "case-1"})
+    ):
+        yield
+
+
+@pytest.fixture
+def on_actions_hub_without_trial_or_case(monkeypatch, bind_metadata_context):
     with _on_actions_hub(monkeypatch, bind_metadata_context({"branch_id": "b1"})):
         yield
 
@@ -93,6 +113,16 @@ def action_response():
         return {"id": "action-1", "status": status, "result": result, "error": error}
 
     return build
+
+
+@pytest.fixture
+def answered():
+    return lambda outcome: {"decision": "answered", "outcome": outcome}
+
+
+@pytest.fixture
+def run_real():
+    return {"decision": "run_real"}
 
 
 @pytest.fixture

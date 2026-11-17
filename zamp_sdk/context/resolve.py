@@ -4,7 +4,7 @@ import os
 from typing import Any, Optional
 
 from zamp_sdk.context.channel_context import ChannelContext, current_channel_context
-from zamp_sdk.context.constants import EVAL_TRIAL_ID_FIELD
+from zamp_sdk.context.constants import EVAL_TRIAL_ID_FIELD, MOCK_CASE_ID_FIELD
 from zamp_sdk.context.env import (
     ENV_BRANCH_ID,
     ENV_CHANNEL_ID,
@@ -13,6 +13,7 @@ from zamp_sdk.context.env import (
     ENV_ENVIRONMENT,
     ENV_EVAL_TRIAL_ID,
     ENV_MESSAGE_ID,
+    ENV_MOCK_CASE_ID,
     ENV_RUN_ID,
     ENV_STREAMING_ID,
     ENV_TOOL_CALL_ID,
@@ -60,13 +61,21 @@ def current_branch_context() -> dict[str, str]:
 
 
 def current_eval_trial_id() -> str | None:
+    return _current_run_value(ENV_EVAL_TRIAL_ID, EVAL_TRIAL_ID_FIELD)
+
+
+def current_mock_case_id() -> str | None:
+    return _current_run_value(ENV_MOCK_CASE_ID, MOCK_CASE_ID_FIELD)
+
+
+def _current_run_value(env_name: str, context_field: str) -> str | None:
     if current_execution_host() is not ExecutionHost.ACTIONS_HUB:
-        return os.environ.get(ENV_EVAL_TRIAL_ID) or None
+        return os.environ.get(env_name) or None
 
     from zamp_public_workflow_sdk.actions_hub.utils.context_utils import get_variable_from_context
 
     # The executor's metadata interceptor binds each field flat in the context, not nested under a key.
-    return get_variable_from_context(EVAL_TRIAL_ID_FIELD) or None
+    return get_variable_from_context(context_field) or None
 
 
 def resolve_channel_context() -> Optional[ChannelContext]:

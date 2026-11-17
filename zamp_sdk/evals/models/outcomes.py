@@ -28,7 +28,14 @@ class MockFailedOutcome(BaseModel):
     message: str
 
 
+class NotRebuildableOutcome(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    kind: Literal["not_rebuildable"]
+    message: str
+
+
 ExternalCallOutcome: TypeAlias = Annotated[
-    ReturnedOutcome | RaisedOutcome | MockFailedOutcome, Field(discriminator="kind")
+    ReturnedOutcome | RaisedOutcome | MockFailedOutcome | NotRebuildableOutcome, Field(discriminator="kind")
 ]
 ObservedStepOutcome: TypeAlias = Annotated[ReturnedOutcome | RaisedOutcome, Field(discriminator="kind")]

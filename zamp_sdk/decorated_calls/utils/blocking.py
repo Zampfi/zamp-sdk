@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TypeVar
 
 from zamp_sdk.context import ExecutionHost, current_execution_host
-from zamp_sdk.evals.constants import SYNC_CALL_ON_ACTIONS_HUB_ERROR
+from zamp_sdk.decorated_calls.constants import SYNC_CALL_ON_ACTIONS_HUB_ERROR
 
 ResultT = TypeVar("ResultT")
 
