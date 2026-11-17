@@ -363,6 +363,8 @@ class ActionExecutor:
             base_url=config.base_url,
             default_headers={
                 "Authorization": f"Bearer {config.auth_token}",
+                # The platform runs the action in this branch (DB, files, spawned tasks), eval trial and
+                # mock case, only on the deployment that supplied them.
                 **(cls._ambient_run_headers() if cls._is_ambient_deployment(config) else {}),
             },
         )

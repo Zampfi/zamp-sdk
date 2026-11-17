@@ -19,12 +19,14 @@
   `signing_key`, `bearer`, `dsn` and `connection_string` join the credential names, matching what Pantheon's log sanitizer redacts.
 - **Breaking: shared call helpers move to `zamp_sdk.decorated_calls`.** `zamp_sdk.evals.utils.arguments.arguments_to_trace` is
   now `zamp_sdk.decorated_calls.utils.arguments_without_credentials`; `zamp_sdk.constants` is now `zamp_sdk.decorated_calls.constants`.
-- **Breaking: the mock and eval call helpers are removed or moved.** Gone: `MockCallInput`; from `zamp_sdk.mocks.utils`
-  `answer_from_mock`, `as_return_type`, `build_exception`, `build_mock_call_input`; from `zamp_sdk.evals.utils`
-  `call_eval_action` (now `decorated_calls.utils.call_platform_action`), `bind_arguments`, `new_call_id`,
-  `raise_if_on_actions_hub`, `reject_generator`, `run_blocking`; from `zamp_sdk.evals.constants`
-  `EVAL_ACTION_FAILED_ERROR`, `GENERATOR_FUNCTION_ERROR`, `SYNC_CALL_ON_ACTIONS_HUB_ERROR`, `PLACEHOLDER_CIRCULAR_VALUE`,
-  and `UNTRACED_*` (now `UNSENT_*` in `zamp_sdk.decorated_calls.constants`).
+- **Breaking: the mock and eval call helpers are removed, renamed or moved.** Moved with the same name, from
+  `zamp_sdk.evals.utils` to `zamp_sdk.decorated_calls.utils`: `bind_arguments`, `new_call_id`, `raise_if_on_actions_hub`,
+  `reject_generator`, `run_blocking`; and from `zamp_sdk.evals.constants` to `zamp_sdk.decorated_calls.constants`:
+  `GENERATOR_FUNCTION_ERROR`, `SYNC_CALL_ON_ACTIONS_HUB_ERROR`, `PLACEHOLDER_CIRCULAR_VALUE`. Renamed, in
+  `zamp_sdk.decorated_calls`: `call_eval_action` is `utils.call_platform_action`, `EVAL_ACTION_FAILED_ERROR` is
+  `constants.PLATFORM_ACTION_FAILED_ERROR`, and `UNTRACED_*` is `UNSENT_*`. Removed: `MockCallInput`, and
+  `answer_from_mock` and `build_mock_call_input` from `zamp_sdk.mocks.utils`; `as_return_type` and `build_exception`
+  are no longer exported from `zamp_sdk.mocks.utils`.
 
 ## 2.1.0
 

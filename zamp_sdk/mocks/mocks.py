@@ -21,6 +21,13 @@ _FunctionT = TypeVar("_FunctionT", bound=Callable[..., Any])
 
 
 def mockable(name: str) -> Callable[[_FunctionT], _FunctionT]:
+    """In a mock case, answer the call from mocks instead of running it; outside one, run it as written.
+
+    A call asks mocks only when `current_mock_case_id()` is set. It sends its name, its arguments as `input`, the
+    return type's JSON schema, a `call_id` and the case id; the platform decides the reply from its own mock config.
+    The function runs only when mocks replies `run_real`.
+    """
+
     def decorate(func: _FunctionT) -> _FunctionT:
         reject_generator(name, func)
 

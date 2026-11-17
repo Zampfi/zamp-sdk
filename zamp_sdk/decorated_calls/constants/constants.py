@@ -1,3 +1,5 @@
+# An argument, or a key inside a dict argument at any depth, whose lowercased name is one of these names or ends in
+# one of the suffixes is left out of what is sent. Whole names only, so max_tokens or sort_key stay in.
 UNSENT_ARGUMENT_NAMES = frozenset(
     {
         "self",
