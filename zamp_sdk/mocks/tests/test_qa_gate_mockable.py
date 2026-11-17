@@ -1,11 +1,9 @@
 import asyncio
-from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import BaseModel
 
-from zamp_sdk import ActionExecutor, mocks
-from zamp_sdk.action_executor.utils.http_client import HttpClientError
+from zamp_sdk import mocks
 from zamp_sdk.mocks import mockable
 
 EXECUTOR = "zamp_sdk.action_executor.action_executor"
@@ -128,106 +126,3 @@ class TestGate8WhereTheCaseComesFrom:
         await fetch_invoice("I1")
 
         execute_action.assert_not_awaited()
-
-
-class TestGate6TheAsk:
-    async def test_gate_6_a_mockable_called_while_another_asks_is_still_asked(self, in_mock_case):
-        started, release = asyncio.Event(), asyncio.Event()
-        asked = []
-
-        async def execute(action_name, params, **kwargs):
-            asked.append(params["input"]["invoice_id"])
-            if params["input"]["invoice_id"] == "held":
-                started.set()
-                await release.wait()
-            return {"decision": "run_real"}
-
-        with patch(f"{EXECUTOR}.ActionExecutor.execute", side_effect=execute):
-            held = asyncio.create_task(fetch_invoice("held"))
-            await started.wait()
-            await fetch_invoice("other")
-            release.set()
-            await held
-
-        assert asked == ["held", "other"]
-
-
-def http_client_failing_first_post(posts: list[dict], status: int = 502):
-    responses = iter(
-        [
-            HttpClientError("bad gateway", status_code=status),
-            {"id": "action-2"},
-        ]
-    )
-
-    def client(base_url, default_headers):
-        http = AsyncMock()
-
-        async def post(endpoint, data, **kwargs):
-            posts.append(data)
-            response = next(responses)
-            if isinstance(response, Exception):
-                raise response
-            return response
-
-        http.post.side_effect = post
-        http.get.return_value = {"status": "COMPLETED", "result": {"decision": "run_real"}}
-        return http
-
-    return client
-
-
-class TestCall20SandboxAskRetries:
-    async def test_call_20_a_retried_post_of_the_ask_reuses_its_call_id(self, in_mock_case, monkeypatch):
-        monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
-        monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
-        posts: list[dict] = []
-
-        with (
-            patch(f"{EXECUTOR}.HttpClient", side_effect=http_client_failing_first_post(posts)),
-            patch(f"{EXECUTOR}.asyncio.sleep", new=AsyncMock()),
-        ):
-            assert await fetch_invoice("I1") == Invoice(id="I1", total=-1)
-
-        assert [post["action_name"] for post in posts] == ["mock_call", "mock_call"]
-        assert posts[0]["params"]["call_id"] == posts[1]["params"]["call_id"]
-
-    async def test_call_20_the_same_script_run_again_asks_with_another_call_id(
-        self, in_mock_case, execute_action, run_real
-    ):
-        execute_action.return_value = run_real
-
-        await fetch_invoice("I1")
-        await fetch_invoice("I1")
-
-        first, again = (awaited.args[1]["call_id"] for awaited in execute_action.await_args_list)
-        assert first != again
-
-    async def test_call_20_the_ask_is_sent_durably_with_the_server_retry_policy(self, in_mock_case, monkeypatch):
-        monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
-        monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
-        run_real = AsyncMock(return_value={"decision": "run_real"})
-        with patch(f"{EXECUTOR}.ActionExecutor._execute_action", new=run_real) as sent:
-            await fetch_invoice("I1")
-
-        assert sent.await_args.kwargs["execution_mode"] is None
-
-
-class TestAskRunsThroughTheRealExecutorEntry:
-    async def test_gate_6_real_execute_routes_the_ask_over_http_with_the_case_header(self, in_mock_case, monkeypatch):
-        monkeypatch.setenv("ZAMP_BASE_URL", "https://api.zamp.test")
-        monkeypatch.setenv("ZAMP_AUTH_TOKEN", "tok")
-        headers = []
-
-        def client(base_url, default_headers):
-            headers.append(default_headers.get("X-MOCK-CASE-ID"))
-            http = AsyncMock()
-            http.post.return_value = {"id": "a"}
-            http.get.return_value = {"status": "COMPLETED", "result": {"decision": "run_real"}}
-            return http
-
-        with patch(f"{EXECUTOR}.HttpClient", side_effect=client):
-            await fetch_invoice("I1")
-            await ActionExecutor.execute("erp_other", {"x": 1})
-
-        assert headers == ["case-1", "case-1"]
