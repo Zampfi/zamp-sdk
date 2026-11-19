@@ -93,10 +93,22 @@ async def test_explicit_key_works_without_env(monkeypatch):
     assert await Checkpoint(key="mine").once("s", lambda: 2) == 1
 
 
-def test_no_key_is_an_error(monkeypatch):
+async def test_no_key_runs_without_resuming(monkeypatch, tmp_path, capsys):
     monkeypatch.delenv("ZAMP_RERUN_CHAIN_ID")
-    with pytest.raises(ValueError, match="ZAMP_RERUN_CHAIN_ID"):
-        Checkpoint()
+    calls = []
+
+    def step():
+        calls.append(1)
+        return len(calls)
+
+    first = Checkpoint()
+    assert await first.once("s", step) == 1
+    assert await first.once("s", step) == 1
+    assert first.value("v", lambda: "x") == "x"
+    assert await Checkpoint().once("s", step) == 2
+    assert len(calls) == 2
+    assert _files(tmp_path) == []
+    assert "progress will not be resumed" in capsys.readouterr().out
 
 
 async def test_write_is_atomic_and_leaves_one_file(tmp_path):

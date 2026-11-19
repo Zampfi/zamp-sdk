@@ -305,7 +305,7 @@ saying it needs approval and did not run.
 
 `zamp_sdk.Checkpoint` keeps a JSON file in the working directory, written atomically after every step and keyed by
 `ZAMP_RERUN_CHAIN_ID` (else `ZAMP_TOOL_CALL_ID`), so a fresh run never skips work because of an older one. Outside the
-platform pass `Checkpoint(key="...")`; with no key at all it raises `ValueError`. Results must be JSON-serialisable.
+platform pass `Checkpoint(key="...")`; with no key at all it still runs but logs a warning and does not resume across runs. Results must be JSON-serialisable.
 
 - `await cp.once(step, fn)`: run `fn` (sync or async) once; a re-run returns the saved result.
 - `cp.value(step, fn)`: freeze a value such as a timestamp so it is identical on every re-run.
