@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.2.0
+## Unreleased
 
 - **Added: a sandbox script stops when a tool call needs approval.** The platform refuses such a call with the new
   action status `APPROVAL_REQUIRED` and a `policy_result_id`. On every route (inline, durable poll, and the 2xx error
