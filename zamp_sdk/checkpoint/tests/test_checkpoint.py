@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -148,3 +149,34 @@ async def test_non_serialisable_result_is_a_clear_error(tmp_path):
     with pytest.raises(TypeError, match="'bad2'.*not JSON-serialisable"):
         Checkpoint().value("bad2", lambda: {1, 2})
     assert _files(tmp_path) == []
+
+
+async def test_overlapping_calls_for_one_step_run_it_once():
+    calls = []
+    release = asyncio.Event()
+
+    async def step():
+        calls.append(1)
+        await release.wait()
+        return len(calls)
+
+    cp = Checkpoint()
+    first = asyncio.create_task(cp.once("notify", step))
+    second = asyncio.create_task(cp.once("notify", step))
+    await asyncio.sleep(0)
+    release.set()
+    assert await asyncio.gather(first, second) == [1, 1]
+    assert calls == [1]
+
+
+async def test_overlapping_call_retries_after_the_first_fails():
+    async def boom():
+        await asyncio.sleep(0)
+        raise RuntimeError("x")
+
+    cp = Checkpoint()
+    first = asyncio.create_task(cp.once("s", boom))
+    second = asyncio.create_task(cp.once("s", lambda: "ok"))
+    with pytest.raises(RuntimeError):
+        await first
+    assert await second == "ok"

@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import inspect
 import json
@@ -24,9 +25,13 @@ class Checkpoint:
 
     Step results must be JSON-serialisable. A result is returned as its JSON round trip (a tuple becomes a
     list) on the first run too, so the first run and a re-run see the same value.
+
+    Concurrent ``once`` calls for the same step on one instance run ``fn`` once: later callers wait for the
+    first and get its saved result.
     """
 
     def __init__(self, key: str | None = None) -> None:
+        self._step_locks: dict[str, asyncio.Lock] = {}
         run_key = key or os.environ.get(ENV_RERUN_CHAIN_ID) or os.environ.get(ENV_TOOL_CALL_ID)
         if not run_key:
             self._path: Path | None = None
@@ -68,13 +73,14 @@ class Checkpoint:
 
     async def once(self, step: str, fn: Callable[[], Any | Awaitable[Any]]) -> Any:
         """Run ``fn`` (sync or async) unless ``step`` is already recorded; return its saved result."""
-        saved = self._load()
-        if step in saved:
-            return saved[step]
-        result = fn()
-        if inspect.isawaitable(result):
-            result = await result
-        return self._record(step, result)
+        async with self._step_locks.setdefault(step, asyncio.Lock()):
+            saved = self._load()
+            if step in saved:
+                return saved[step]
+            result = fn()
+            if inspect.isawaitable(result):
+                result = await result
+            return self._record(step, result)
 
     def value(self, step: str, fn: Callable[[], Any]) -> Any:
         """Freeze ``fn()`` (e.g. a timestamp) on first use so every re-run gets the same value."""
