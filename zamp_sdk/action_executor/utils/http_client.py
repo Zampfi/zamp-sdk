@@ -22,6 +22,17 @@ class HttpClientError(Exception):
         self.response_body = response_body
         super().__init__(self.message)
 
+    @property
+    def json_body(self) -> Optional[dict]:
+        """The response body as a JSON object, or ``None`` when it is absent or not one."""
+        if not self.response_body:
+            return None
+        try:
+            payload = json.loads(self.response_body)
+        except (ValueError, RecursionError):
+            return None
+        return payload if isinstance(payload, dict) else None
+
 
 def _platform_message(body: str) -> Optional[str]:
     """The ``message`` of the platform's JSON error body, or ``None`` when the body carries none."""

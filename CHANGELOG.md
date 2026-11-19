@@ -1,7 +1,15 @@
 # Changelog
 
-## Unreleased
+## 2.2.0
 
+- **Added: a sandbox script stops when a tool call needs approval.** The platform refuses such a call with the new
+  action status `APPROVAL_REQUIRED` and a `policy_result_id`. On every route (inline, durable poll, and the 2xx error
+  body) the SDK prints `__ZAMP_SDK_TOOL_APPROVAL__ {"policy_result_id", "action_name"}` and exits with code `43`, like
+  `request_user_input`; the platform re-runs the script from the top after approval. `APPROVAL_REQUIRED` without a
+  `policy_result_id`, or seen on the code-executor host (which waits for approval server-side), raises a plain
+  `RuntimeError`.
+- **Added: `zamp_sdk.Checkpoint`** makes a script resumable across those re-runs: `once(step, fn)`, `value(step, fn)`
+  and `clear()`, backed by an atomically written JSON file keyed by `ZAMP_RERUN_CHAIN_ID` (else `ZAMP_TOOL_CALL_ID`).
 - **`evals.read_trace()` reads the `not_rebuildable` outcome.** An external call whose answered reply cannot be rebuilt
   because a pinned file changed after the run is returned with `NotRebuildableOutcome{kind, message}` instead of failing
   to parse.
