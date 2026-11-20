@@ -281,6 +281,51 @@ entries = await evals.read_trace()        # the trial's calls so far; [] outside
   Generator functions cannot be decorated.
 - Only an observed step records a `parent`; a mocked call's trace entry does not.
 
+## When a tool call needs approval
+
+A workspace can require a human's approval before a tool runs. When it does, the platform refuses the call with the
+action status `APPROVAL_REQUIRED`. In a sandbox script the SDK prints
+`__ZAMP_SDK_TOOL_APPROVAL__ {"policy_result_id": ..., "action_name": ...}` and **exits with code `43`**, the same model
+as `request_user_input` (exit `42`). The platform shows an approval card and, once it is granted, **re-runs the script
+from the top**. So:
+
+- Make the script resumable: save progress after each step that changes something, and skip steps already done
+  (see `Checkpoint` below).
+- Keep a gated call's params identical across runs: no `now()`, no unsorted or re-fetched inputs. Freeze such values
+  with `Checkpoint.value`.
+- Do not catch `SystemExit` or `BaseException` (`except Exception` is fine, it does not catch the exit), and do not
+  call the SDK from threads.
+- Many gated calls, or one in a loop, belong in a code-executor workflow, which waits for approval in place.
+
+In a code-executor workflow the platform waits for the approval itself, so the SDK should never see
+`APPROVAL_REQUIRED` there. If it does (for example the server is not upgraded), the call raises a plain `RuntimeError`
+saying it needs approval and did not run.
+
+### Resumable scripts with `Checkpoint`
+
+`zamp_sdk.Checkpoint` keeps a JSON file in `~/.agent/checkpoints/` (writable in every sandbox mode, kept across re-runs, independent of the script's directory), written atomically after every step and keyed by
+`ZAMP_RERUN_CHAIN_ID` (else `ZAMP_TOOL_CALL_ID`), so a fresh run never skips work because of an older one. Outside the
+platform pass `Checkpoint(key="...")`; with no key at all it still runs but logs a warning and does not resume across runs. If the directory is not writable, `Checkpoint()` raises before any step runs. Results must be JSON-serialisable.
+
+- `await cp.once(step, fn)`: run `fn` (sync or async) once; a re-run returns the saved result.
+- `cp.value(step, fn)`: freeze a value such as a timestamp so it is identical on every re-run.
+- `cp.clear()`: delete the saved state.
+
+```python
+from zamp_sdk import ActionExecutor, Checkpoint
+
+cp = Checkpoint()
+invoices = await cp.once("fetch", lambda: ActionExecutor.execute("list_unsynced_invoices", {}))
+for inv in invoices:
+    await cp.once(f"crm:{inv['id']}", lambda inv=inv: ActionExecutor.execute("update_crm", {"invoice": inv}))
+text = f"Synced {len(invoices)} invoices"  # built only from saved data, so identical on re-runs
+await cp.once("slack", lambda: ActionExecutor.execute("send_slack", {"text": text}))
+await cp.once("mark", lambda: ActionExecutor.execute("mark_synced", {"ids": [i["id"] for i in invoices]}))
+```
+
+If `send_slack` needs approval, run 1 stops there with exit `43`. After approval the re-run skips the fetch and the CRM
+updates (their saved results come back), runs `send_slack`, then `mark_synced`.
+
 ## Error Handling
 
 | Exception | When |
