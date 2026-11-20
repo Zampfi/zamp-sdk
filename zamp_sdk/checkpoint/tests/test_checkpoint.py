@@ -9,15 +9,21 @@ from zamp_sdk import Checkpoint
 
 
 @pytest.fixture(autouse=True)
-def _cwd(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+def _env(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(work)
     monkeypatch.delenv("ZAMP_RERUN_CHAIN_ID", raising=False)
     monkeypatch.delenv("ZAMP_TOOL_CALL_ID", raising=False)
     monkeypatch.setenv("ZAMP_RERUN_CHAIN_ID", "chain-1")
 
 
 def _files(tmp_path: Path) -> list[Path]:
-    return sorted(tmp_path.iterdir())
+    directory = tmp_path / "home" / ".agent" / "checkpoints"
+    return sorted(directory.iterdir()) if directory.exists() else []
 
 
 async def test_once_runs_then_skips_on_rerun():
@@ -180,3 +186,37 @@ async def test_overlapping_call_retries_after_the_first_fails():
     with pytest.raises(RuntimeError):
         await first
     assert await second == "ok"
+
+
+async def test_file_lands_under_home_agent_checkpoints_not_cwd(tmp_path):
+    await Checkpoint().once("a", lambda: 1)
+    (path,) = _files(tmp_path)
+    assert path.parent == tmp_path / "home" / ".agent" / "checkpoints"
+    assert list((tmp_path / "work").iterdir()) == []
+
+
+async def test_same_key_from_another_cwd_finds_progress(tmp_path, monkeypatch):
+    await Checkpoint().once("a", lambda: 1)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert await Checkpoint().once("a", lambda: 2) == 1
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_unwritable_directory_raises_before_any_step_runs(tmp_path):
+    directory = tmp_path / "home" / ".agent" / "checkpoints"
+    directory.mkdir(parents=True)
+    directory.chmod(0o500)
+    try:
+        with pytest.raises(OSError, match=r"checkpoints is not writable.*No step has run"):
+            Checkpoint()
+    finally:
+        directory.chmod(0o700)
+
+
+async def test_no_key_mode_writes_nothing(monkeypatch, tmp_path):
+    monkeypatch.delenv("ZAMP_RERUN_CHAIN_ID")
+    await Checkpoint().once("a", lambda: 1)
+    assert not (tmp_path / "home" / ".agent").exists()
+    assert list((tmp_path / "work").iterdir()) == []

@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
+from zamp_sdk.checkpoint.constants import CHECKPOINT_DIR_PARTS, CHECKPOINT_FILE_PREFIX
 from zamp_sdk.context import ENV_RERUN_CHAIN_ID, ENV_TOOL_CALL_ID
 from zamp_sdk.logger import get_logger
 
@@ -16,7 +17,8 @@ logger = get_logger(__name__)
 class Checkpoint:
     """Make a script resumable: a step that already ran is skipped when the script is re-run from the top.
 
-    Progress is a JSON file in the current working directory, rewritten atomically after every step. It is
+    Progress is a JSON file in ``~/.agent/checkpoints/`` (writable in every sandbox mode and kept across re-runs,
+    whatever directory the script runs from), rewritten atomically after every step. It is
     keyed by ``ZAMP_RERUN_CHAIN_ID`` (the platform sets it on every re-run of one script), else
     ``ZAMP_TOOL_CALL_ID``, so a fresh run never skips work because of an older, abandoned one. Pass ``key=``
     to run outside the platform. With neither env var nor ``key``, progress is kept in memory only: steps
@@ -42,7 +44,22 @@ class Checkpoint:
             )
             return
         digest = hashlib.sha256(run_key.encode()).hexdigest()[:16]
-        self._path = Path.cwd() / f".zamp_checkpoint_{digest}.json"
+        directory = Path.home().joinpath(*CHECKPOINT_DIR_PARTS)
+        self._ensure_writable(directory)
+        self._path = directory / f"{CHECKPOINT_FILE_PREFIX}{digest}.json"
+
+    @staticmethod
+    def _ensure_writable(directory: Path) -> None:
+        """Fail before any step runs if progress could not be saved, instead of after its side effect."""
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            fd, probe = tempfile.mkstemp(dir=directory, prefix=CHECKPOINT_FILE_PREFIX, suffix=".probe")
+            os.close(fd)
+            Path(probe).unlink()
+        except OSError as exc:
+            raise OSError(
+                f"Checkpoint cannot save progress: {directory} is not writable ({exc}). No step has run."
+            ) from exc
 
     def _load(self) -> dict[str, Any]:
         if self._path is None:
@@ -61,7 +78,7 @@ class Checkpoint:
         if self._path is None:
             self._memory = saved
             return saved[step]
-        fd, tmp = tempfile.mkstemp(dir=self._path.parent, prefix=".zamp_checkpoint_", suffix=".tmp")
+        fd, tmp = tempfile.mkstemp(dir=self._path.parent, prefix=CHECKPOINT_FILE_PREFIX, suffix=".tmp")
         try:
             with os.fdopen(fd, "w") as handle:
                 json.dump(saved, handle)
