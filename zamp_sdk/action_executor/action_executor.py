@@ -1,11 +1,13 @@
 import asyncio
 import math
 import os
+import sys
 from datetime import timedelta
-from typing import Any, Callable
+from typing import Any, Callable, NoReturn
 
 from zamp_sdk.action_executor.constants import (
     ACTION_ENVELOPE_KEYS,
+    APPROVAL_REQUIRED_STATUSES,
     BRANCH_HEADERS,
     EVAL_TRIAL_ID_HEADER,
     IN_PROGRESS_STATUSES,
@@ -20,6 +22,7 @@ from zamp_sdk.action_executor.constants import (
     POST_RETRY_INITIAL_INTERVAL_SECONDS,
     POST_RETRY_MAX_INTERVAL_SECONDS,
     POST_RETRY_TIMEOUT_SECONDS,
+    SDK_TOOL_APPROVAL_EXIT_CODE,
     SUCCESS_STATUSES,
     TERMINAL_FAILURE_STATUSES,
     Route,
@@ -27,11 +30,13 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.routing import resolve_route
-from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
+from zamp_sdk.action_executor.utils import HttpClient, HttpClientError, tool_approval_marker_line
 from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import (
     ENV_AUTH_TOKEN,
     ENV_BASE_URL,
+    ENV_RERUN_CHAIN_ID,
+    ENV_TOOL_CALL_ID,
     ChannelContext,
     current_branch_context,
     current_eval_trial_id,
@@ -142,6 +147,22 @@ class ActionExecutor:
         if isinstance(result, dict) and ACTION_ENVELOPE_KEYS.issubset(result):
             return result.get("error") or result["result"]
         return result
+
+    @staticmethod
+    def _halt_for_tool_approval(data: dict, action_id: str, action_name: str) -> NoReturn:
+        """Stop the calling code: the platform refused the call until a human approves it.
+
+        Exits rather than raises in a sandbox script, for the reason ``request_user_input``
+        does: a raise is catchable, and an author's ``except Exception`` would carry on without
+        the approval. The platform re-runs the script from the top after approval.
+        """
+        policy_result_id = data.get("policy_result_id")
+        if not policy_result_id:
+            # Malformed: nothing could approve this call, so halting would strand the run.
+            raise RuntimeError(f"Action {action_id} APPROVAL_REQUIRED without a policy_result_id")
+        print(tool_approval_marker_line(policy_result_id, action_name), flush=True)
+        logger.info("tool call needs approval, halting", action_name=action_name, policy_result_id=policy_result_id)
+        sys.exit(SDK_TOOL_APPROVAL_EXIT_CODE)
 
     @classmethod
     async def _dispatch(cls, request: ActionRequest, route: Route, gateway: Callable[..., Any] | None) -> Any:
@@ -317,6 +338,10 @@ class ActionExecutor:
         except Exception as exc:
             await fail_action_log(block_id, request.action_name, exc)
             raise
+        except SystemExit:
+            # A halt for approval is not an ``Exception``; without this the block stays open.
+            await close_action_log(block_id, request.action_name, "Waiting for approval")
+            raise
         await close_action_log(block_id, request.action_name, result)
         return result
 
@@ -385,6 +410,10 @@ class ActionExecutor:
             body["summary"] = summary
         if action_start_to_close_timeout is not None:
             body["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
+        rerun_chain_id = os.environ.get(ENV_RERUN_CHAIN_ID) or os.environ.get(ENV_TOOL_CALL_ID)
+        if rerun_chain_id:
+            # Lets the platform tie an approval to this run's re-run chain.
+            body["rerun_chain_id"] = rerun_chain_id
         if execution_mode is ExecutionMode.INLINE:
             body["execution_mode"] = ExecutionMode.INLINE.value
             result = await cls._execute_inline(client, body, action_start_to_close_timeout)
@@ -460,7 +489,9 @@ class ActionExecutor:
         poll_timeout = POLL_TIMEOUT_SECONDS
         if action_start_to_close_timeout is not None:
             poll_timeout = max(POLL_TIMEOUT_SECONDS, action_start_to_close_timeout.total_seconds())
-        return await cls._poll_action_result(client, action_id, poll_timeout=poll_timeout)
+        return await cls._poll_action_result(
+            client, action_id, poll_timeout=poll_timeout, action_name=body["action_name"]
+        )
 
     @classmethod
     async def _execute_inline(
@@ -476,14 +507,19 @@ class ActionExecutor:
         response = await client.post(
             "/actions", data=body, timeout=math.ceil(server_timeout + INLINE_RESPONSE_GRACE_SECONDS)
         )
-        return cls._result_or_raise(response, response["id"])
+        return cls._result_or_raise(response, response["id"], action_name=body["action_name"])
 
     @staticmethod
-    def _result_or_raise(data: dict, action_id: str) -> Any:
-        """The result of a terminal action response; a failed or unexpected one raises."""
+    def _result_or_raise(data: dict, action_id: str, action_name: str = "") -> Any:
+        """The result of a terminal action response; a failed or unexpected one raises.
+
+        One that needs approval halts the calling code instead (see ``_halt_for_tool_approval``).
+        """
         action_status = data["status"]
         if action_status in SUCCESS_STATUSES:
             return data.get("result")
+        if action_status in APPROVAL_REQUIRED_STATUSES:
+            ActionExecutor._halt_for_tool_approval(data, action_id, action_name)
         if action_status in TERMINAL_FAILURE_STATUSES:
             raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
         raise RuntimeError(f"Action {action_id} unexpected status: {action_status}")
@@ -494,6 +530,7 @@ class ActionExecutor:
         client: HttpClient,
         action_id: str,
         poll_timeout: float = POLL_TIMEOUT_SECONDS,
+        action_name: str = "",
     ) -> Any:
         """Poll ``GET /actions/{id}`` with exponential backoff until a terminal state.
 
@@ -530,6 +567,8 @@ class ActionExecutor:
 
             if action_status in SUCCESS_STATUSES:
                 return data.get("result")
+            if action_status in APPROVAL_REQUIRED_STATUSES:
+                cls._halt_for_tool_approval(data, action_id, action_name)
             if action_status in TERMINAL_FAILURE_STATUSES:
                 raise RuntimeError(f"Action {action_id} {action_status}: {data.get('error', 'unknown error')}")
             if action_status not in IN_PROGRESS_STATUSES:

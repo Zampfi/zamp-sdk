@@ -509,6 +509,31 @@ class TestExecuteAction:
             )
         assert "channel_context" not in mock_client.post.call_args.kwargs["data"]
 
+    @pytest.mark.parametrize(
+        ("env", "expected"),
+        [
+            ({"ZAMP_RERUN_CHAIN_ID": "chain-1", "ZAMP_TOOL_CALL_ID": "call-2"}, "chain-1"),
+            ({"ZAMP_TOOL_CALL_ID": "call-2"}, "call-2"),
+            ({"ZAMP_RERUN_CHAIN_ID": "chain-1"}, "chain-1"),
+            ({}, None),
+        ],
+    )
+    async def test_rerun_chain_id_in_body(self, monkeypatch, env, expected):
+        monkeypatch.delenv("ZAMP_RERUN_CHAIN_ID", raising=False)
+        monkeypatch.delenv("ZAMP_TOOL_CALL_ID", raising=False)
+        for key, value in env.items():
+            monkeypatch.setenv(key, value)
+        mock_client = AsyncMock()
+        mock_client.post.return_value = {"id": "action-123"}
+        mock_client.get.return_value = {"status": "COMPLETED", "result": None}
+        with patch(f"{_MODULE}.HttpClient", return_value=mock_client):
+            await self._executor()._execute_action(action_name="a", params={}, config=self._make_config())
+        body = mock_client.post.call_args.kwargs["data"]
+        if expected is None:
+            assert "rerun_chain_id" not in body
+        else:
+            assert body["rerun_chain_id"] == expected
+
     async def test_sends_sdk_default_retry_policy_when_none_passed(self):
         # When the caller does not supply a retry policy, the SDK must inject its
         # own (short) default so the server doesn't apply its longer fallback.
@@ -1317,3 +1342,14 @@ async def test_execute_returns_the_result_when_its_step_cannot_be_serialized(mon
     (step,) = drained_steps()
     assert step["name"] == "get_invoice"
     assert step["capture_error"] == "ValueError: Circular reference detected"
+
+
+async def test_gateway_does_not_receive_rerun_chain_id(monkeypatch):
+    monkeypatch.setenv("ZAMP_RERUN_CHAIN_ID", "chain-1")
+    gateway = AsyncMock(return_value="g")
+    request = ActionRequest(action_name="a", params={})
+
+    await ActionExecutor._execute_via_gateway(request, gateway)
+
+    assert "rerun_chain_id" not in gateway.call_args.kwargs
+    assert "rerun_chain_id" not in gateway.call_args.args[1]
