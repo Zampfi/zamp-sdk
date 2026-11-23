@@ -30,8 +30,7 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_execution_mode
 from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.routing import resolve_route
-from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
-from zamp_sdk.action_executor.utils.tool_approval import tool_approval_marker_line
+from zamp_sdk.action_executor.utils import HttpClient, HttpClientError, tool_approval_marker_line
 from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import (
     ENV_AUTH_TOKEN,

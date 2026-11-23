@@ -1343,11 +1343,13 @@ async def test_execute_returns_the_result_when_its_step_cannot_be_serialized(mon
     assert step["name"] == "get_invoice"
     assert step["capture_error"] == "ValueError: Circular reference detected"
 
-    async def test_gateway_does_not_receive_rerun_chain_id(self, monkeypatch):
-        monkeypatch.setenv("ZAMP_RERUN_CHAIN_ID", "chain-1")
-        gateway = AsyncMock(return_value="g")
-        request = ActionRequest(action_name="a", params={})
 
-        await ActionExecutor._execute_via_gateway(request, gateway)
+async def test_gateway_does_not_receive_rerun_chain_id(monkeypatch):
+    monkeypatch.setenv("ZAMP_RERUN_CHAIN_ID", "chain-1")
+    gateway = AsyncMock(return_value="g")
+    request = ActionRequest(action_name="a", params={})
 
-        assert "rerun_chain_id" not in gateway.call_args.kwargs
+    await ActionExecutor._execute_via_gateway(request, gateway)
+
+    assert "rerun_chain_id" not in gateway.call_args.kwargs
+    assert "rerun_chain_id" not in gateway.call_args.args[1]
