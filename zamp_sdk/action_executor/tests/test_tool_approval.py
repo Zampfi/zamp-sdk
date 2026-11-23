@@ -13,7 +13,7 @@ from zamp_sdk.action_executor.constants import (
 from zamp_sdk.action_executor.execution_mode import ExecutionMode
 from zamp_sdk.action_executor.models import ActionRequest
 from zamp_sdk.action_executor.utils import HttpClientError
-from zamp_sdk.context import ENV_EXECUTION_HOST, ExecutionHost
+from zamp_sdk.context import ENV_EXECUTION_HOST
 
 _MODULE = "zamp_sdk.action_executor.action_executor"
 _POLICY_ID = "6f1c1c0e-0000-4000-8000-000000000001"
@@ -21,46 +21,32 @@ _BODY = {
     "id": "act-1",
     "status": "APPROVAL_REQUIRED",
     "result": None,
-    "error": "needs approval",
+    "error": None,
+    "message": "send_email needs approval; the user has been asked",
     "policy_result_id": _POLICY_ID,
 }
 
 
-@pytest.fixture(params=["sandbox", "code_executor"])
-def host(request, monkeypatch):
-    if request.param == "code_executor":
-        monkeypatch.setenv(ENV_EXECUTION_HOST, ExecutionHost.ACTIONS_HUB.value)
-    else:
-        monkeypatch.delenv(ENV_EXECUTION_HOST, raising=False)
-    return request.param
-
-
-def _assert_halted(host: str, raised: pytest.ExceptionInfo, capsys, action_name: str = "send_email") -> None:
-    """A sandbox script exits 43 with the marker; the code-executor host gets a plain, catchable error."""
-    if host == "sandbox":
-        assert raised.type is SystemExit
-        assert raised.value.code == SDK_TOOL_APPROVAL_EXIT_CODE == 43
-        line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith(SDK_TOOL_APPROVAL_MARKER))
-        payload = json.loads(line.removeprefix(SDK_TOOL_APPROVAL_MARKER + " "))
-        assert payload == {"policy_result_id": _POLICY_ID, "action_name": action_name}
-    else:
-        assert raised.type is RuntimeError
-        assert issubclass(raised.type, Exception)
-        assert action_name in str(raised.value) and "did not run" in str(raised.value)
-        assert SDK_TOOL_APPROVAL_MARKER not in capsys.readouterr().out
+def _assert_halted(raised: pytest.ExceptionInfo, capsys, action_name: str = "send_email") -> None:
+    """A sandbox script exits 43 after printing the marker line."""
+    assert raised.type is SystemExit
+    assert raised.value.code == SDK_TOOL_APPROVAL_EXIT_CODE == 43
+    line = next(ln for ln in capsys.readouterr().out.splitlines() if ln.startswith(SDK_TOOL_APPROVAL_MARKER))
+    payload = json.loads(line.removeprefix(SDK_TOOL_APPROVAL_MARKER + " "))
+    assert payload == {"policy_result_id": _POLICY_ID, "action_name": action_name}
 
 
 @pytest.mark.parametrize("missing", [{}, {"policy_result_id": None}, {"policy_result_id": ""}])
 class TestMissingPolicyResultId:
-    """Nothing can approve such a response, so it is a plain error on both hosts, not a halt."""
+    """Nothing can approve such a response, so it is a plain error, not a halt."""
 
     _BAD = {"id": "act-9", "status": "APPROVAL_REQUIRED", "result": None, "error": "x"}
 
-    def test_inline(self, host, missing):
+    def test_inline(self, missing):
         with pytest.raises(RuntimeError, match="Action act-9 APPROVAL_REQUIRED without a policy_result_id"):
             ActionExecutor._result_or_raise({**self._BAD, **missing}, "act-9", action_name="send_email")
 
-    async def test_poll(self, host, missing):
+    async def test_poll(self, missing):
         client = AsyncMock()
         client.get.return_value = {**self._BAD, **missing}
         with (
@@ -68,12 +54,6 @@ class TestMissingPolicyResultId:
             pytest.raises(RuntimeError, match="Action act-9 APPROVAL_REQUIRED without a policy_result_id"),
         ):
             await ActionExecutor._poll_action_result(client, "act-9", action_name="send_email")
-
-    async def test_gateway(self, host, missing):
-        request = ActionRequest(action_name="send_email", params={})
-        gateway = AsyncMock(return_value={**self._BAD, **missing})
-        with pytest.raises(RuntimeError, match="Action act-9 APPROVAL_REQUIRED without a policy_result_id"):
-            await ActionExecutor._execute_via_gateway(request, gateway)
 
 
 def test_marker_and_exit_code_match_the_platform():
@@ -87,25 +67,25 @@ def test_approval_required_is_neither_a_failure_nor_in_progress():
 
 
 class TestInline:
-    def test_halts(self, host, capsys):
+    def test_halts(self, capsys):
         with pytest.raises(BaseException) as raised:
             ActionExecutor._result_or_raise(_BODY, "act-1", action_name="send_email")
-        _assert_halted(host, raised, capsys)
+        _assert_halted(raised, capsys)
 
-    async def test_execute_inline_names_the_action(self, host, capsys):
+    async def test_execute_inline_names_the_action(self, capsys):
         client = AsyncMock()
         client.post.return_value = _BODY
         with pytest.raises(BaseException) as raised:
             await ActionExecutor._execute_inline(client, {"action_name": "send_email"}, None)
-        _assert_halted(host, raised, capsys)
+        _assert_halted(raised, capsys)
 
     @pytest.mark.parametrize("status", ["FAILED", "WEIRD"])
-    def test_other_statuses_are_unchanged(self, host, status):
+    def test_other_statuses_are_unchanged(self, status):
         error = RuntimeError
         with pytest.raises(error, match="FAILED: bad|unexpected status: WEIRD"):
             ActionExecutor._result_or_raise({"status": status, "error": "bad"}, "x")
 
-    def test_completed_is_unchanged(self, host):
+    def test_completed_is_unchanged(self):
         assert ActionExecutor._result_or_raise({"status": "COMPLETED", "result": 7}, "x") == 7
 
 
@@ -117,16 +97,16 @@ class TestPoll:
         with patch(f"{_MODULE}.asyncio.sleep", new_callable=AsyncMock):
             return await ActionExecutor._poll_action_result(client, "act-1", action_name="send_email")
 
-    async def test_halts(self, host, capsys):
+    async def test_halts(self, capsys):
         with pytest.raises(BaseException) as raised:
             await self._poll({"status": "RUNNING"}, _BODY)
-        _assert_halted(host, raised, capsys)
+        _assert_halted(raised, capsys)
 
-    async def test_unknown_status_still_raises(self, host):
+    async def test_unknown_status_still_raises(self):
         with pytest.raises(RuntimeError, match="unexpected status: WEIRD"):
             await self._poll({"status": "WEIRD"})
 
-    async def test_completed_and_failed_are_unchanged(self, host):
+    async def test_completed_and_failed_are_unchanged(self):
         assert await self._poll({"status": "COMPLETED", "result": 3}) == 3
         with pytest.raises(RuntimeError, match="FAILED.*boom"):
             await self._poll({"status": "FAILED", "error": "boom"})
@@ -138,34 +118,16 @@ class TestGateway:
         request = ActionRequest(action_name="send_email", params={})
         return await ActionExecutor._execute_via_gateway(request, AsyncMock(return_value=envelope))
 
-    async def test_halts(self, host, capsys):
-        with pytest.raises(BaseException) as raised:
-            await self._run(_BODY)
-        _assert_halted(host, raised, capsys)
-
-    async def test_halt_closes_the_step_block_as_failed(self, host):
-        request = ActionRequest(action_name="send_email", params={})
-        with (
-            patch(f"{_MODULE}.fail_action_log", new_callable=AsyncMock) as failed,
-            patch(f"{_MODULE}.close_action_log", new_callable=AsyncMock) as closed,
-            pytest.raises(BaseException),
-        ):
-            await ActionExecutor._execute_via_gateway(request, AsyncMock(return_value=_BODY))
-        if host == "code_executor":
-            failed.assert_awaited_once()
-            closed.assert_not_awaited()
-
-    async def test_completed_envelope_is_returned_untouched(self, host):
+    async def test_completed_envelope_is_returned_untouched(self):
         envelope = {"id": "a", "status": "COMPLETED", "result": 1, "error": None}
         assert await self._run(envelope) == envelope
 
-    async def test_failed_envelope_is_returned_untouched(self, host):
+    async def test_failed_envelope_is_returned_untouched(self):
         envelope = {"id": "a", "status": "FAILED", "result": None, "error": "bad"}
         assert await self._run(envelope) == envelope
 
-    async def test_a_result_that_merely_has_a_status_key_is_left_alone(self, host):
-        value = {"status": "APPROVAL_REQUIRED"}
-        assert await self._run(value) == value
+    async def test_an_approval_envelope_is_returned_untouched(self):
+        assert await self._run(_BODY) == _BODY
 
 
 class TestApi:
@@ -185,7 +147,7 @@ class TestApi:
             pytest.raises(BaseException) as raised,
         ):
             await ActionExecutor.execute("send_email", {}, execution_mode=mode)
-        _assert_halted("sandbox", raised, capsys)
+        _assert_halted(raised, capsys)
 
 
 def _transport(responses: dict[tuple[str, str], tuple[int, dict]]):
@@ -214,8 +176,7 @@ def _transport(responses: dict[tuple[str, str], tuple[int, dict]]):
 
 @pytest.mark.parametrize("mode", [ExecutionMode.INLINE, ExecutionMode.DURABLE])
 class TestThroughRealHttpClient:
-    """The platform answers APPROVAL_REQUIRED with HTTP 200 and a non-null ``error``, which
-    ``HttpClient`` raises on; the executor must still halt rather than surface that error."""
+    """The platform answers APPROVAL_REQUIRED as a normal 200 body with ``error: null``."""
 
     async def _run(self, mode, responses):
         config = type("Cfg", (), {"base_url": "https://api.zamp.test", "auth_token": "t"})()
@@ -230,19 +191,19 @@ class TestThroughRealHttpClient:
             ("GET", "/actions/act-1"): (200, _BODY),
         }
 
-    async def test_halts(self, host, mode, capsys):
+    async def test_halts(self, mode, capsys):
         with pytest.raises((SystemExit, RuntimeError)) as raised:
             await self._run(mode, self._responses(mode))
-        _assert_halted(host, raised, capsys)
+        _assert_halted(raised, capsys)
 
-    async def test_missing_policy_result_id_is_runtime_error(self, host, mode):
+    async def test_missing_policy_result_id_is_runtime_error(self, mode):
         bad = {k: v for k, v in _BODY.items() if k != "policy_result_id"}
         responses = self._responses(mode)
         responses[("POST", "/actions") if mode is ExecutionMode.INLINE else ("GET", "/actions/act-1")] = (200, bad)
         with pytest.raises(RuntimeError, match="APPROVAL_REQUIRED without a policy_result_id"):
             await self._run(mode, responses)
 
-    async def test_failed_body_still_raises_http_client_error(self, host, mode):
+    async def test_failed_body_still_raises_http_client_error(self, mode):
         failed = {"id": "act-1", "status": "FAILED", "result": None, "error": "boom"}
         responses = self._responses(mode)
         responses[("POST", "/actions") if mode is ExecutionMode.INLINE else ("GET", "/actions/act-1")] = (200, failed)

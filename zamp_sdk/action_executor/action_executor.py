@@ -31,16 +31,16 @@ from zamp_sdk.action_executor.execution_mode import ExecutionMode, resolve_ah_ex
 from zamp_sdk.action_executor.models import ActionRequest, RetryPolicy, SdkConfig
 from zamp_sdk.action_executor.routing import resolve_route
 from zamp_sdk.action_executor.utils import HttpClient, HttpClientError
-from zamp_sdk.action_executor.utils.errors import tool_approval_marker_line
+from zamp_sdk.action_executor.utils.tool_approval import tool_approval_marker_line
 from zamp_sdk.capture import capture_active, capture_step
 from zamp_sdk.context import (
     ENV_AUTH_TOKEN,
     ENV_BASE_URL,
+    ENV_RERUN_CHAIN_ID,
+    ENV_TOOL_CALL_ID,
     ChannelContext,
-    ExecutionHost,
     current_branch_context,
     current_eval_trial_id,
-    current_execution_host,
     current_mock_case_id,
     resolve_channel_context,
 )
@@ -155,19 +155,12 @@ class ActionExecutor:
 
         Exits rather than raises in a sandbox script, for the reason ``request_user_input``
         does: a raise is catchable, and an author's ``except Exception`` would carry on without
-        the approval. The platform re-runs the script from the top after approval. The
-        code-executor host cannot exit inside a workflow and the server waits for approval there,
-        so seeing the status at all is a plain, catchable error.
+        the approval. The platform re-runs the script from the top after approval.
         """
         policy_result_id = data.get("policy_result_id")
         if not policy_result_id:
             # Malformed: nothing could approve this call, so halting would strand the run.
             raise RuntimeError(f"Action {action_id} APPROVAL_REQUIRED without a policy_result_id")
-        if current_execution_host() is ExecutionHost.ACTIONS_HUB:
-            raise RuntimeError(
-                f"Action {action_name!r} needs approval and did not run (policy_result_id={policy_result_id}). "
-                "A code-executor phase waits for approval on the server, so this means the server did not wait."
-            )
         print(tool_approval_marker_line(policy_result_id, action_name), flush=True)
         logger.info("tool call needs approval, halting", action_name=action_name, policy_result_id=policy_result_id)
         sys.exit(SDK_TOOL_APPROVAL_EXIT_CODE)
@@ -256,16 +249,6 @@ class ActionExecutor:
         except Exception as exc:
             await fail_action_log(block_id, request.action_name, exc)
             raise
-        if (
-            isinstance(result, dict)
-            and ACTION_ENVELOPE_KEYS.issubset(result)
-            and result["status"] in APPROVAL_REQUIRED_STATUSES
-        ):
-            try:
-                cls._halt_for_tool_approval(result, result["id"], request.action_name)
-            except RuntimeError as exc:
-                await fail_action_log(block_id, request.action_name, exc)
-                raise
         await close_action_log(block_id, request.action_name, cls._unwrap_envelope(result))
         return result
 
@@ -428,6 +411,10 @@ class ActionExecutor:
             body["summary"] = summary
         if action_start_to_close_timeout is not None:
             body["start_to_close_timeout_seconds"] = action_start_to_close_timeout.total_seconds()
+        rerun_chain_id = os.environ.get(ENV_RERUN_CHAIN_ID) or os.environ.get(ENV_TOOL_CALL_ID)
+        if rerun_chain_id:
+            # Lets the platform tie an approval to this run's re-run chain.
+            body["rerun_chain_id"] = rerun_chain_id
         if execution_mode is ExecutionMode.INLINE:
             body["execution_mode"] = ExecutionMode.INLINE.value
             result = await cls._execute_inline(client, body, action_start_to_close_timeout)
@@ -478,20 +465,6 @@ class ActionExecutor:
                 elapsed += interval
                 interval = cls._next_post_retry_interval(interval)
 
-    @classmethod
-    def _halt_if_approval_required(cls, exc: HttpClientError, action_name: str) -> None:
-        """Halt when ``exc`` is a 2xx action body that needs approval; otherwise return.
-
-        ``HttpClient`` raises for any 2xx body with a non-null ``error``, and the platform's
-        APPROVAL_REQUIRED body carries one ("<tool> needs approval; ..."). The raised error keeps
-        the body, so it is recognised here rather than special-cased in the generic client.
-        """
-        if exc.status_code is None or not 200 <= exc.status_code < 300:
-            return
-        data = exc.json_body
-        if data is not None and data.get("status") in APPROVAL_REQUIRED_STATUSES:
-            cls._halt_for_tool_approval(data, str(data.get("id")), action_name)
-
     @staticmethod
     def _is_retryable_5xx(exc: HttpClientError) -> bool:
         """A 5xx (server-error) response is transient and worth retrying."""
@@ -512,11 +485,7 @@ class ActionExecutor:
         cls, client: HttpClient, body: dict, action_start_to_close_timeout: timedelta | None
     ) -> Any:
         """POST, then poll until the action reaches a terminal state."""
-        try:
-            response = await cls._post_action(client, "/actions", body)
-        except HttpClientError as exc:
-            cls._halt_if_approval_required(exc, body["action_name"])
-            raise
+        response = await cls._post_action(client, "/actions", body)
         action_id = response["id"]
         poll_timeout = POLL_TIMEOUT_SECONDS
         if action_start_to_close_timeout is not None:
@@ -536,13 +505,9 @@ class ActionExecutor:
             else INLINE_SERVER_DEFAULT_TIMEOUT_SECONDS
         )
         # Never the 5xx-retry helper: a failed inline POST may already have run the action.
-        try:
-            response = await client.post(
-                "/actions", data=body, timeout=math.ceil(server_timeout + INLINE_RESPONSE_GRACE_SECONDS)
-            )
-        except HttpClientError as exc:
-            cls._halt_if_approval_required(exc, body["action_name"])
-            raise
+        response = await client.post(
+            "/actions", data=body, timeout=math.ceil(server_timeout + INLINE_RESPONSE_GRACE_SECONDS)
+        )
         return cls._result_or_raise(response, response["id"], action_name=body["action_name"])
 
     @staticmethod
@@ -584,7 +549,6 @@ class ActionExecutor:
             try:
                 data = await client.get(f"/actions/{action_id}")
             except HttpClientError as exc:
-                cls._halt_if_approval_required(exc, action_name)
                 # A transient 5xx while polling shouldn't fail the action: keep
                 # polling (with backoff) until the action completes or the
                 # overall poll_timeout is hit. Non-5xx errors still propagate.

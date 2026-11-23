@@ -3,11 +3,13 @@
 ## Unreleased
 
 - **Added: a sandbox script stops when a tool call needs approval.** The platform refuses such a call with the new
-  action status `APPROVAL_REQUIRED` and a `policy_result_id`. On every route (inline, durable poll, and the 2xx error
-  body) the SDK prints `__ZAMP_SDK_TOOL_APPROVAL__ {"policy_result_id", "action_name"}` and exits with code `43`, like
+  action status `APPROVAL_REQUIRED` and a `policy_result_id`. On every route (inline and durable poll) the SDK prints `__ZAMP_SDK_TOOL_APPROVAL__ {"policy_result_id", "action_name"}` and exits with code `43`, like
   `request_user_input`; the platform re-runs the script from the top after approval. `APPROVAL_REQUIRED` without a
-  `policy_result_id`, or seen on the code-executor host (which waits for approval server-side), raises a plain
-  `RuntimeError`.
+  `policy_result_id` raises a plain `RuntimeError`. The status arrives as a normal response (`error: null`, human text
+  in `message`), not as an error body.
+- **Added: `rerun_chain_id` on action calls.** A script's `POST /actions` carries `ZAMP_RERUN_CHAIN_ID` (else
+  `ZAMP_TOOL_CALL_ID`) as `rerun_chain_id`, omitted when neither is set, so the platform ties an approval to the run's
+  re-run chain. The gateway and in-process routes do not send it.
 - **Added: `zamp_sdk.Checkpoint`** makes a script resumable across those re-runs: `once(step, fn)`, `value(step, fn)`
   and `clear()`, backed by an atomically written JSON file in `~/.agent/checkpoints/` (writable on versioned homes, unlike the working directory; an unwritable directory raises in the constructor, before any step runs) keyed by `ZAMP_RERUN_CHAIN_ID` (else `ZAMP_TOOL_CALL_ID`). With no key at all it logs a warning and runs without resuming.
 - **`evals.read_trace()` reads the `not_rebuildable` outcome.** An external call whose answered reply cannot be rebuilt

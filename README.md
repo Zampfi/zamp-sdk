@@ -298,8 +298,10 @@ from the top**. So:
 - Many gated calls, or one in a loop, belong in a code-executor workflow, which waits for approval in place.
 
 In a code-executor workflow the platform waits for the approval itself, so the SDK should never see
-`APPROVAL_REQUIRED` there. If it does (for example the server is not upgraded), the call raises a plain `RuntimeError`
-saying it needs approval and did not run.
+`APPROVAL_REQUIRED` there.
+
+The SDK also sends the run's chain id (`ZAMP_RERUN_CHAIN_ID`, else `ZAMP_TOOL_CALL_ID`) as `rerun_chain_id` with every
+action call from a script, so an approval applies to the re-runs of that run only.
 
 ### Resumable scripts with `Checkpoint`
 
