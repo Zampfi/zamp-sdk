@@ -9,7 +9,7 @@ from zamp_sdk.context import (
     clear_channel_context,
     current_channel_context,
 )
-from zamp_sdk.db import AgentDbError, datasets
+from zamp_sdk.db.utils.errors import AgentDbError
 from zamp_sdk.logging import (
     ContentBlock,
     ContentBlockType,
@@ -50,6 +50,19 @@ from zamp_sdk.workflows import (
     BaseActivity,
     BaseWorkflow,
 )
+
+_LAZY_DB = {"db", "datasets"}
+
+
+def __getattr__(name: str):
+    # zamp_sdk.db.datasets pulls in sqlalchemy; it is loaded on first use, not when zamp_sdk is imported.
+    if name in _LAZY_DB:
+        import importlib
+
+        db = importlib.import_module("zamp_sdk.db")
+        return db if name == "db" else getattr(db, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "AWAITING_USER_INPUT",

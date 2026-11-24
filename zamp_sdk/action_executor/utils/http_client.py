@@ -2,12 +2,19 @@ import asyncio
 import json
 from typing import Any, Dict, NoReturn, Optional, Union
 
-import aiohttp
 from pydantic import BaseModel
 
 from zamp_sdk.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_aiohttp_error(exc: Exception) -> bool:
+    """aiohttp.ClientError, without importing aiohttp when no request was ever made."""
+    import sys
+
+    aiohttp = sys.modules.get("aiohttp")
+    return aiohttp is not None and isinstance(exc, aiohttp.ClientError)
 
 
 class HttpClientError(Exception):
@@ -56,7 +63,7 @@ class HttpClient:
             raise exc
         elif isinstance(exc, asyncio.TimeoutError):
             raise HttpClientError(f"Request timed out: {exc}")
-        elif isinstance(exc, aiohttp.ClientError):
+        elif _is_aiohttp_error(exc):
             raise HttpClientError(f"Network error: {exc}")
         else:
             raise HttpClientError(f"Unexpected error: {exc}")
@@ -84,6 +91,10 @@ class HttpClient:
                 else:
                     request_data = json.dumps(data)
                 request_headers.setdefault("Content-Type", "application/json")
+
+            # Imported here, not at module level: inside a workflow, actions go through the gateway and never
+            # use this client, so importing the SDK must not load aiohttp.
+            import aiohttp
 
             client_timeout = aiohttp.ClientTimeout(total=timeout or self.timeout)
 
