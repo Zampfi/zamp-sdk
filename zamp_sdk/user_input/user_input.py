@@ -92,23 +92,40 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def text_input(question: str) -> dict:
-    """A free-text question."""
-    return {"input_type": "text", "question": question}
+def _question(question: dict, file_path: Optional[str]) -> dict:
+    """``question``, with ``file_path`` when one is given."""
+    if file_path is None:
+        return question
+    if not file_path.strip():
+        raise ValueError("file_path must name a file; leave it out for none")
+    return {**question, "file_path": file_path}
 
 
-def select_one(question: str, options: list) -> dict:
-    """A single-select question. ``options`` are ``(id, label)`` tuples, dicts, or InputOption."""
-    return {"input_type": "select_one", "question": question, "options": build_options(options)}
+def text_input(question: str, *, file_path: Optional[str] = None) -> dict:
+    """A free-text question. ``file_path``: a file shown with it (see :func:`request_user_input`)."""
+    return _question({"input_type": "text", "question": question}, file_path)
 
 
-def multiple_choice(question: str, options: list) -> dict:
-    """A multi-select question. ``options`` are ``(id, label)`` tuples, dicts, or InputOption."""
-    return {
-        "input_type": "multiple_choice",
-        "question": question,
-        "options": build_options(options),
-    }
+def select_one(question: str, options: list, *, file_path: Optional[str] = None) -> dict:
+    """A single-select question. ``options`` are ``(id, label)`` tuples, dicts, or InputOption.
+    ``file_path``: a file shown with it (see :func:`request_user_input`)."""
+    return _question(
+        {"input_type": "select_one", "question": question, "options": build_options(options)},
+        file_path,
+    )
+
+
+def multiple_choice(question: str, options: list, *, file_path: Optional[str] = None) -> dict:
+    """A multi-select question. ``options`` are ``(id, label)`` tuples, dicts, or InputOption.
+    ``file_path``: a file shown with it (see :func:`request_user_input`)."""
+    return _question(
+        {
+            "input_type": "multiple_choice",
+            "question": question,
+            "options": build_options(options),
+        },
+        file_path,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +194,7 @@ async def request_user_input(
     requests: list,
     *,
     post_action: Optional[dict] = None,
+    file_path: Optional[str] = None,
 ) -> None:
     """Ask the user one or more questions, then stop.
 
@@ -192,6 +210,13 @@ async def request_user_input(
             In a **workflow**: :func:`run_workflow` — name the phase to run next, e.g.
             ``run_workflow("ApplyCategoryDecision", code_directory_path=...)``. Required
             there; there is no sensible default, since only the author knows the next phase.
+        file_path: A file in the sandbox shown to the user with the questions, e.g. the
+            Markdown context the code wrote for the decision. Absolute, or relative to the
+            home directory. It goes on each question that does not name its own (a question
+            built with ``file_path=``). The questions stay short: the user opens the file
+            for the detail. When the agent that ran the code is asked first
+            (``hitl-parent-escalation``), it reads the same file, and passes the questions
+            on with it if it asks the user.
 
     Returns:
         Nothing you can use, in either runtime — the answer never comes back to this caller.
@@ -203,9 +228,11 @@ async def request_user_input(
 
     Raises:
         ValueError: ``post_action`` is not the one this runtime can act on, or does not say
-            what to start.
+            what to start; or ``file_path`` is empty.
     """
     normalized = [r if isinstance(r, dict) else dict(r) for r in requests]
+    if file_path is not None:
+        normalized = [r if r.get("file_path") else _question(r, file_path) for r in normalized]
 
     if current_execution_host() is ExecutionHost.ACTIONS_HUB:
         await _ask_and_end_phase(normalized, post_action)

@@ -387,3 +387,44 @@ class TestUserInputFrom:
 
     def test_the_halt_sentinel_is_what_a_phase_returns(self):
         assert AWAITING_USER_INPUT == {"_awaiting_user_input": True}
+
+
+class TestFilePath:
+    """A file shown with the questions: on a question, or on every question that has none."""
+
+    def test_builders_carry_it_only_when_given(self):
+        assert "file_path" not in text_input("q?")
+        assert text_input("q?", file_path="~/review.md")["file_path"] == "~/review.md"
+        assert select_one("q?", [("y", "Yes")], file_path="/home/a/r.md")["file_path"] == "/home/a/r.md"
+        assert multiple_choice("q?", [("y", "Yes")], file_path="r.md")["file_path"] == "r.md"
+
+    @pytest.mark.parametrize("empty", ["", "  "])
+    def test_an_empty_path_is_rejected(self, empty):
+        with pytest.raises(ValueError, match="file_path"):
+            text_input("q?", file_path=empty)
+
+    @pytest.mark.asyncio
+    async def test_request_user_input_puts_it_on_questions_without_their_own(self, monkeypatch):
+        monkeypatch.setenv(ENV_EXECUTION_HOST, ExecutionHost.ACTIONS_HUB.value)
+        execute = AsyncMock(return_value={})
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
+            await request_user_input(
+                [
+                    select_one("Approve PR-1?", [("approve", "Approve"), ("reject", "Reject")]),
+                    text_input("Why?", file_path="~/why.md"),
+                ],
+                post_action=run_workflow("Apply", code_directory_path="d/"),
+                file_path="~/review.md",
+            )
+
+        requests = execute.call_args.args[1]["requests"]
+        assert [r["file_path"] for r in requests] == ["~/review.md", "~/why.md"]
+
+    @pytest.mark.asyncio
+    async def test_without_one_the_payload_is_unchanged(self, monkeypatch):
+        monkeypatch.setenv(ENV_EXECUTION_HOST, ExecutionHost.ACTIONS_HUB.value)
+        execute = AsyncMock(return_value={})
+        with patch("zamp_sdk.user_input.user_input.ActionExecutor.execute", execute):
+            await request_user_input([text_input("q?")], post_action=run_workflow("Apply", code_directory_path="d/"))
+
+        assert execute.call_args.args[1]["requests"] == [{"input_type": "text", "question": "q?"}]

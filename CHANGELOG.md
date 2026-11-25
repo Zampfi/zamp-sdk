@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`request_user_input(..., file_path=...)` shows a file with the questions.** Also on a single question:
+  `text_input` / `select_one` / `multiple_choice` take `file_path=`, and `request_user_input`'s goes on each question
+  that names none. The path (absolute, or relative to the home directory) is sent on the question; the user opens the
+  file from the card, so a long Markdown context no longer has to go in the question text. When the agent that ran the
+  code is asked first (Pantheon's `hitl-parent-escalation`), it reads the file and passes the questions on with it.
+  A Pantheon without support ignores the field, and the card shows only the questions.
+
 - **`evals.read_trace()` reads the `not_rebuildable` outcome.** An external call whose answered reply cannot be rebuilt
   because a pinned file changed after the run is returned with `NotRebuildableOutcome{kind, message}` instead of failing
   to parse.
