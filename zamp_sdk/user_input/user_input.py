@@ -92,23 +92,44 @@ logger = get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def text_input(question: str) -> dict:
-    """A free-text question."""
-    return {"input_type": "text", "question": question}
+def text_input(question: str, *, file_path: Optional[str] = None) -> dict:
+    """A free-text question. ``file_path``: an absolute path the user can open from the card."""
+    return _with_file_path({"input_type": "text", "question": question}, file_path)
 
 
-def select_one(question: str, options: list) -> dict:
-    """A single-select question. ``options`` are ``(id, label)`` tuples, dicts, or InputOption."""
-    return {"input_type": "select_one", "question": question, "options": build_options(options)}
+def select_one(question: str, options: list, *, file_path: Optional[str] = None) -> dict:
+    """A single-select question. ``options`` are ``(id, label)`` tuples, dicts, or InputOption.
+
+    ``file_path``: an absolute path the user can open from the card.
+    """
+    return _with_file_path(
+        {"input_type": "select_one", "question": question, "options": build_options(options)},
+        file_path,
+    )
 
 
-def multiple_choice(question: str, options: list) -> dict:
-    """A multi-select question. ``options`` are ``(id, label)`` tuples, dicts, or InputOption."""
-    return {
-        "input_type": "multiple_choice",
-        "question": question,
-        "options": build_options(options),
-    }
+def multiple_choice(question: str, options: list, *, file_path: Optional[str] = None) -> dict:
+    """A multi-select question. ``options`` are ``(id, label)`` tuples, dicts, or InputOption.
+
+    ``file_path``: an absolute path the user can open from the card.
+    """
+    return _with_file_path(
+        {
+            "input_type": "multiple_choice",
+            "question": question,
+            "options": build_options(options),
+        },
+        file_path,
+    )
+
+
+def _with_file_path(request: dict, file_path: Optional[str]) -> dict:
+    """Attach ``file_path`` when given; without one the request is unchanged."""
+    if file_path is None:
+        return request
+    if not file_path.startswith("/"):
+        raise ValueError(f"file_path must be an absolute path, got {file_path!r}")
+    return {**request, "file_path": file_path}
 
 
 # ---------------------------------------------------------------------------
