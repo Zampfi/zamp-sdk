@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **`text_input`, `select_one` and `multiple_choice` take `file_path=`**, an absolute path sent with the
+  question so the user can open the file from the card. Without it the request is unchanged; a path that is not
+  absolute raises `ValueError`.
 - **`evals.read_trace()` reads the `not_rebuildable` outcome.** An external call whose answered reply cannot be rebuilt
   because a pinned file changed after the run is returned with `NotRebuildableOutcome{kind, message}` instead of failing
   to parse.

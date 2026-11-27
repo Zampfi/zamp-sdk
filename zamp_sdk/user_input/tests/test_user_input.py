@@ -57,6 +57,27 @@ class TestQuestionBuilders:
         assert q["input_type"] == "multiple_choice"
         assert q["options"] == [{"id": "a", "label": "A"}]
 
+    def test_no_file_path_leaves_the_request_unchanged(self):
+        assert "file_path" not in text_input("q?")
+        assert "file_path" not in select_one("pick", [("a", "A")])
+        assert "file_path" not in multiple_choice("pick many", [("a", "A")])
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda f: text_input("q?", file_path=f),
+            lambda f: select_one("pick", [("a", "A")], file_path=f),
+            lambda f: multiple_choice("pick many", [("a", "A")], file_path=f),
+        ],
+    )
+    def test_file_path_is_sent_with_the_question(self, build):
+        assert build("/home/acme/plan.md")["file_path"] == "/home/acme/plan.md"
+
+    @pytest.mark.parametrize("bad", ["", "plan.md", "~/plan.md"])
+    def test_file_path_must_be_absolute(self, bad):
+        with pytest.raises(ValueError, match="absolute"):
+            text_input("q?", file_path=bad)
+
     def test_options_accepts_input_option_and_dict(self):
         opts = build_options([InputOption(id="x", label="X"), {"id": "y", "label": "Y"}])
         assert opts == [{"id": "x", "label": "X"}, {"id": "y", "label": "Y"}]
